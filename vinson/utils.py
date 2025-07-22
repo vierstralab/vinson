@@ -61,12 +61,14 @@ def one_hot_encode(sequence, dtype=np.float32):
     """
     seq_idxs = np.frombuffer(bytearray(sequence, "utf8"), dtype=np.int8)
     n, m = len(sequence), _dna_embed.shape[1]
+    
     one_hot_encoding = np.zeros((n, m), dtype=np.int8)
+
     _fast_one_hot_encode(one_hot_encoding, seq_idxs, _dna_embed)
 
-    one_hot_encoding = (
-        one_hot_encoding.astype(dtype) / one_hot_encoding.sum(axis=1)[:, np.newaxis]
-    )
+    one_hot_encoding = one_hot_encoding.astype(dtype)
+    one_hot_encoding /= one_hot_encoding.sum(axis=1)[:, np.newaxis]
+
     return one_hot_encoding.T
 
 

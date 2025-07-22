@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-]
 import h5py
 
 import torch
@@ -10,6 +9,7 @@ from genome_tools import GenomicInterval
 from genome_tools.data.extractors import FastaExtractor
 
 from .utils import one_hot_encode
+
 
 class SequenceEmbeddingDataset(Dataset):
     def __init__(
@@ -77,11 +77,7 @@ class SequenceEmbeddingDataset(Dataset):
         dna_seq = self.fasta_extr[interval]
 
         try:
-            X_seq = one_hot_encode(
-                dna_seq,
-                ignore=["W", "S", "M", "K", "R", "Y", "B", "D", "H", "V", "N"],
-                dtype=np.float32,
-            )
+            X_seq = one_hot_encode(dna_seq, dtype=np.float32)
         except ValueError as e:
             print(
                 f"Error converting DNA to one-hot encoding ({chrom}:{mid} -- {dna_seq})"
@@ -195,11 +191,7 @@ class VariantEmbeddingDataset(Dataset):
 
         try:
             X_seq = [
-                one_hot_encode(
-                    seq,
-                    ignore=["W", "S", "M", "K", "R", "Y", "B", "D", "H", "V", "N"],
-                    dtype=np.float32,
-                )
+                one_hot_encode(seq, dtype=np.float32)
                 for seq in [dna_seq_ref, dna_seq_alt]
             ]
         except ValueError as e:
