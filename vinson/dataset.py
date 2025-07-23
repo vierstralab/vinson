@@ -109,6 +109,7 @@ class SequenceEmbeddingDataset(Dataset):
             "density": density if density < 10.0 else 10.0,
             "r": r,
             "read_depth": read_depth,
+            "class": self.samples["class"][i].astype(str),
         }
 
     def __len__(self):

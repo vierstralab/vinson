@@ -141,12 +141,12 @@ class VinsonModel(L.LightningModule):
         # FC layers
         self.fc1 = torch.nn.LazyLinear(out_features=1024)
         self.bn1 = torch.nn.BatchNorm1d(num_features=1024, momentum=0.1)
-        self.dropout1 = torch.nn.Dropout(p=0.3)
+        self.dropout1 = torch.nn.Dropout(p=0.1)
         self.relu1 = torch.nn.ReLU()
 
         self.fc2 = torch.nn.LazyLinear(out_features=1024)
         self.bn2 = torch.nn.BatchNorm1d(num_features=1024, momentum=0.1)
-        self.dropout2 = torch.nn.Dropout(p=0.3)
+        self.dropout2 = torch.nn.Dropout(p=0.1)
         self.relu2 = torch.nn.ReLU()
 
         self.final = torch.nn.LazyLinear(out_features=1)
@@ -208,12 +208,11 @@ class VinsonModel(L.LightningModule):
         return x
 
     def training_step(self, batch, batch_idx):
-        X_seq, indicator, density, read_depth, r = (
+        X_seq, indicator, density, read_depth = (
             batch["seq"],
             batch["indicator"],
             batch["density"],
             batch["read_depth"],
-            batch["r"],
         )
 
         y = self(X_seq).squeeze()
@@ -221,8 +220,8 @@ class VinsonModel(L.LightningModule):
         if self.regression:
             # Transform normalized density to counts
             # The model ouputs the log counts
-            pred_counts = (torch.exp(y) / 1e6 * read_depth) + 1.0
-            target_counts = (density / 1e6 * read_depth) + 1.0
+            pred_counts = (torch.exp(y) / 1e6 * read_depth) + 1e-6
+            target_counts = (density / 1e6 * read_depth) + 1e-6
 
             loss = poisson_loss(pred_counts, target_counts)
         else:
@@ -237,12 +236,11 @@ class VinsonModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        X_seq, indicator, density, read_depth, r = (
+        X_seq, indicator, density, read_depth = (
             batch["seq"],
             batch["indicator"],
             batch["density"],
             batch["read_depth"],
-            batch["r"],
         )
 
         y = self(X_seq).squeeze()
@@ -250,8 +248,8 @@ class VinsonModel(L.LightningModule):
         if self.regression:
             # Transform normalized density to counts
             # The model ouputs the log counts
-            pred_counts = (torch.exp(y) / 1e6 * read_depth) + 1.0
-            target_counts = (density / 1e6 * read_depth) + 1.0
+            pred_counts = (torch.exp(y) / 1e6 * read_depth) + 1e-6
+            target_counts = (density / 1e6 * read_depth) + 1e-6
 
             loss = poisson_loss(pred_counts, target_counts)
 
@@ -288,13 +286,12 @@ class VinsonEmbedModel(VinsonModel):
         return x
 
     def training_step(self, batch, batch_idx):
-        X_seq, X_embed, indicator, density, read_depth, r = (
+        X_seq, X_embed, indicator, density, read_depth = (
             batch["seq"],
             batch["embed"],
             batch["indicator"],
             batch["density"],
             batch["read_depth"],
-            batch["r"],
         )
 
         y = self(X_seq, X_embed).squeeze()
@@ -302,8 +299,8 @@ class VinsonEmbedModel(VinsonModel):
         if self.regression:
             # Transform normalized density to counts
             # The model ouputs the log counts
-            pred_counts = (torch.exp(y) / 1e6 * read_depth) + 1.0
-            target_counts = (density / 1e6 * read_depth) + 1.0
+            pred_counts = (torch.exp(y) / 1e6 * read_depth) + 1e-6
+            target_counts = (density / 1e6 * read_depth) + 1e-6
 
             loss = poisson_loss(pred_counts, target_counts)
         else:
@@ -320,13 +317,12 @@ class VinsonEmbedModel(VinsonModel):
     def validation_step(self, batch, batch_idx):
         """
         """
-        X_seq, X_embed, indicator, density, read_depth, r = (
+        X_seq, X_embed, indicator, density, read_depth = (
             batch["seq"],
             batch["embed"],
             batch["indicator"],
             batch["density"],
             batch["read_depth"],
-            batch["r"],
         )
 
         y = self(X_seq, X_embed).squeeze()
@@ -334,8 +330,8 @@ class VinsonEmbedModel(VinsonModel):
         if self.regression:
             # Transform normalized density to counts
             # The model ouputs the log counts
-            pred_counts = (torch.exp(y) / 1e6 * read_depth) + 1.0
-            target_counts = (density / 1e6 * read_depth) + 1.0
+            pred_counts = (torch.exp(y) / 1e6 * read_depth) + 1e-6
+            target_counts = (density / 1e6 * read_depth) + 1e-6
 
             loss = poisson_loss(pred_counts, target_counts)
 
