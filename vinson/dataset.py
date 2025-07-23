@@ -37,6 +37,9 @@ class SequenceEmbeddingDataset(Dataset):
 
         print("Opening samples file...")
         self.samples = h5py.File(samples_file, "r")
+        
+        #class is positive,negative gcmatch negative
+        #sample_id is agnumber
 
         assert set(["chrom", "mid", "class", "disp", "density", "sample_id"]).issubset(
             self.samples.keys()
@@ -103,14 +106,18 @@ class SequenceEmbeddingDataset(Dataset):
         read_depth = self.read_depths.loc[sample_id]
 
         return {
-            "seq": X_seq.copy(),
-            "embed": X_embed.copy(),
-            "indicator": indicator,
-            "density": density if density < 10.0 else 10.0,
-            "r": r,
-            "read_depth": read_depth,
-            "class": self.samples["class"][i].astype(str),
+            "seq": X_seq.astype(np.float32),                         # np.ndarray (float32)
+            "embed": X_embed.astype(np.float32),                     # np.ndarray (float32)
+            "indicator": int(indicator),                             # int
+            "density": float(density),                               # float
+            "r": float(r),                                           # float
+            "read_depth": float(read_depth),                         # float
+            "chrom": str(chrom, "utf-8") if isinstance(chrom, bytes) else str(chrom),
+            "mid": int(mid) if not isinstance(mid, bytes) else int(mid.decode("utf-8")),
+            "sample_id": str(sample_id, "utf-8") if isinstance(sample_id, bytes) else str(sample_id),
+            "class": str(self.samples["class"][i], "utf-8") if isinstance(self.samples["class"][i], bytes) else str(self.samples["class"][i]),
         }
+
 
     def __len__(self):
         return self.samples["chrom"].shape[0]
