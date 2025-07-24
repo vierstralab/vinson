@@ -14,9 +14,8 @@ from vinson.dataset import SequenceEmbeddingDataset
 from vinson.model import (
     CellEmbedding,
     BassetTrunkEmbed,
-    VinsonEmbedModel,
+    EmbedModel,
 )
-
 
 def main(args):
     embeddings_file = "/home/jvierstra/proj/vinson/data/embeddings.tsv"
@@ -63,7 +62,9 @@ def main(args):
 
     embed = CellEmbedding(n_inputs=637, n_layers=1)
     trunk = BassetTrunkEmbed(embed)
-    model = VinsonEmbedModel(trunk, regression=args.regression)
+    model = EmbedModel(trunk, embed, regression=args.regression)
+
+    model.init_model()
 
     logger = CSVLogger(os.path.join(args.outdir, "logs"))
 

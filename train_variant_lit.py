@@ -14,7 +14,7 @@ from vinson.dataset import VariantEmbeddingDataset
 from vinson.model import (
     CellEmbedding,
     BassetTrunkEmbed,
-    VinsonVariantEmbedModel,
+    VariantEmbedModel,
 )
 
 
@@ -60,8 +60,10 @@ def main(args):
 
     embed = CellEmbedding(n_inputs=637, n_layers=1)
     trunk = BassetTrunkEmbed(embed)
-    model = VinsonVariantEmbedModel(trunk)
+    model = VariantEmbedModel(trunk)
 
+    model.init_model()
+    
     # Load weights
     if args.weights:
         print(f"Loading weights from pre-trained model ({args.weights})")
