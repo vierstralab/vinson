@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 from genome_tools import GenomicInterval as genomic_interval
 import pandas as pd
-
+import argparse
 from vinson.dataset import SequenceEmbeddingDataset
 from vinson.model import (
     BassetTrunkEmbed,
@@ -77,8 +77,7 @@ all_embed_id = []
 #store some sort of chr marker for dhs
 #no grad means dont have to detach everytime
 with torch.no_grad():
-    for batch in tqdm(dataloader, desc="Predicting"):
-        
+    for batch in dataloader:
         X_seq = batch["seq"].to(device)
         X_embed = batch["embed"].to(device)
         density = batch["density"].to(device)
