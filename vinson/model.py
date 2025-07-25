@@ -13,6 +13,7 @@ from torchmetrics.regression import PearsonCorrCoef
 from vinson.loss import (
     poisson_loss,
     binomial_mixture_loss,
+    binomial_mixture_normed_loss,
 )
 
 import copy
@@ -402,6 +403,7 @@ class VariantEmbedModel(EmbedModel):
         y = self(X_seq_ref, X_seq_alt, X_embed).squeeze()
 
         loss = binomial_mixture_loss(y, ref_counts, total_counts, bad_score)
+        #loss = binomial_mixture_normed_loss(y, ref_counts, total_counts, bad_score)
 
         self.log(
             "loss", loss, on_step=True, on_epoch=False, sync_dist=True, prog_bar=True
@@ -410,22 +412,22 @@ class VariantEmbedModel(EmbedModel):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        X_seq_ref, X_seq_alt, X_embed, ref_counts, total_counts, bad_score = (
+        X_seq_ref, X_seq_alt, X_embed, ref_counts, total_counts, bad_score, lfc = (
             batch["seq_ref"],
             batch["seq_alt"],
             batch["embed"],
             batch["ref_counts"],
             batch["total_counts"],
             batch["bad_score"],
+            batch["lfc"],
         )
 
         y = self(X_seq_ref, X_seq_alt, X_embed).squeeze()
 
         loss = binomial_mixture_loss(y, ref_counts, total_counts, bad_score)
+        #loss = binomial_mixture_normed_loss(y, ref_counts, total_counts, bad_score)
 
-        self.valid_metrics.update(
-            y, torch.log(ref_counts / (total_counts - ref_counts))
-        )
+        self.valid_metrics.update(y, lfc)
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 

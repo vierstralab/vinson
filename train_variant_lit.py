@@ -27,8 +27,8 @@ def main(args):
         embeddings_file,
         fasta_file,
         reverse_complement=True,
-        jitter=5,
-        noise=0,
+        jitter=25,
+        noise=0.1,
     )
 
     valid_dataset = VariantEmbeddingDataset(
@@ -59,36 +59,36 @@ def main(args):
     )
 
     embed = CellEmbedding(n_inputs=637, n_layers=1)
-    trunk = BassetTrunkEmbed(embed)
-    model = VariantEmbedModel(trunk)
+    trunk = BassetTrunkEmbed(embed.n_outputs)
+    model = VariantEmbedModel(trunk, embed)
 
     model.init_model()
     
     # Load weights
     if args.weights:
-        print(f"Loading weights from pre-trained model ({args.weights})")
+        print(f"Loading weights from pre-trained model: {args.weights}")
         pretrained_state_dict = torch.load(
             args.weights,
             map_location=torch.device("cpu"),
         )["state_dict"]
 
-        trunk_pretrained = {
-            k: v for k, v in pretrained_state_dict.items() if "trunk." in k
-        }
+        embed_pretrained_dict = {k: v for k, v in pretrained_state_dict.items() if "embedding." in k}
+        trunk_pretrained_dict = {k: v for k, v in pretrained_state_dict.items() if "trunk." in k}
 
         model_dict = model.state_dict()
-        model_dict.update(trunk_pretrained)
+        model_dict.update({**embed_pretrained_dict, **trunk_pretrained_dict})
 
         model.load_state_dict(model_dict, strict=False)
+
 
     logger = CSVLogger(os.path.join(args.outdir, "logs"))
 
     callbacks = [
-        EarlyStopping(monitor="val_pcc", mode="max", min_delta=0.0005, patience=10),
+        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.0005, patience=10),
         ModelCheckpoint(
-            monitor="val_pcc",
-            mode="max",
-            filename="{epoch}-{step}-{val_pcc:.4f}",
+            monitor="val_loss",
+            mode="min",
+            filename="{epoch}-{step}-{val_loss:.4f}",
             dirpath=os.path.join(
                 args.outdir,
                 "checkpoints",
