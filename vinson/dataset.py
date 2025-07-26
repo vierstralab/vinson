@@ -8,6 +8,8 @@ from torch.utils.data import Dataset
 from genome_tools import GenomicInterval
 from genome_tools.data.extractors import FastaExtractor, TabixExtractor
 
+import pyBigWig as pbw
+
 from .utils import one_hot_encode, get_iupac_char_from_alleles
 
 import logging
@@ -58,6 +60,7 @@ class BaseDataset(Dataset):
 
     def __len__(self):
         raise NotImplementedError
+
 
 class SequenceEmbeddingDataset(BaseDataset):
     """
@@ -176,7 +179,7 @@ class SequenceEmbeddingDataset(BaseDataset):
         )
 
         # Define region
-        interval = GenomicInterval(chrom, mid, mid).widen(self.seqlen//2)
+        interval = GenomicInterval(chrom, mid, mid).widen(self.seqlen // 2)
 
         # Jitter/shift region as necesary
         if self.jitter > 0:
@@ -192,7 +195,7 @@ class SequenceEmbeddingDataset(BaseDataset):
                 indiv_id = self.sample_to_genotype_df.loc[sample_id].indiv_id
                 variants = self.genotype_extr[interval]
                 variants = variants[variants[13].str.contains(indiv_id)]
-            
+
                 logger.debug(
                     f"Found {len(variants)} variants in sample {sample_id} from individual {indiv_id}"
                 )
@@ -217,7 +220,7 @@ class SequenceEmbeddingDataset(BaseDataset):
             except Exception as e:
                 logger.debug(f"Error: {sample_id} -- {indiv_id}")
                 # pass
-            
+
         # One-hot encode DNA sequence
         try:
             X_seq = one_hot_encode(dna_seq, dtype=np.float32)
@@ -251,6 +254,9 @@ class SequenceEmbeddingDataset(BaseDataset):
             "r": r,
             "read_depth": read_depth,
             "class": self.samples["class"][i].astype(str),
+            "sample_id": sample_id,
+            "chrom": chrom,
+            "mid": mid,
         }
 
     def __len__(self):
@@ -313,7 +319,7 @@ class VariantEmbeddingDataset(BaseDataset):
             reverse_complement=reverse_complement,
             jitter=jitter,
             noise=noise,
-            random_state=random_state
+            random_state=random_state,
         )
 
         assert set(
@@ -347,7 +353,7 @@ class VariantEmbeddingDataset(BaseDataset):
         )
 
         variant = GenomicInterval(chrom, pos, pos)
-        interval = variant.widen(self.seqlen//2)
+        interval = variant.widen(self.seqlen // 2)
 
         if self.jitter > 0:
             shift = self.random_state.randint(-self.jitter, self.jitter + 1)
@@ -388,8 +394,49 @@ class VariantEmbeddingDataset(BaseDataset):
             "ref_counts": ref_counts,
             "total_counts": total_counts,
             "bad_score": bad,
-            "lfc": lfc / np.log(2),
+            "lfc": lfc * np.log(2),
+            "sample_id": sample_id,
         }
 
     def __len__(self):
         return self.samples["chrom"].shape[0]
+
+
+class CrossSampleLoader(Dataset):
+    def __init__(self, embeddings_file, filepath_pattern):
+        self.filepath_pattern = filepath_pattern
+
+        logger.info("Loading embeddings.")
+        self.embeddings_df = pd.read_table(embeddings_file, index_col=0)
+
+        self.bw_filehandles = None
+
+    def __del__(self):
+        for fh in self.bw_filehandles:
+            fh.close()
+
+    def __getitem__(self, x):
+        if not self.bw_filehandles:
+            self.bw_filehandles = [
+                pbw.open(self.filepath_pattern.format(x=k))
+                for k in self.embeddings_df.columns
+            ]
+
+        if isinstance(x, tuple):
+            chrom, mid = x
+        elif isinstance(x, GenomicInterval):
+            chrom = x.chrom
+            mid = (x.end - x.start) // 2 + x.start
+
+        values = pd.Series(
+            np.nan_to_num(
+                [
+                    fh.values(chrom, mid, mid + 1, numpy=True)[0]
+                    for fh in self.bw_filehandles
+                ],
+                0.0,
+            ),
+            index=self.embeddings_df.columns,
+        )
+
+        return values

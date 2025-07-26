@@ -402,8 +402,8 @@ class VariantEmbedModel(EmbedModel):
 
         y = self(X_seq_ref, X_seq_alt, X_embed).squeeze()
 
-        loss = binomial_mixture_loss(y, ref_counts, total_counts, bad_score)
-        #loss = binomial_mixture_normed_loss(y, ref_counts, total_counts, bad_score)
+        #loss = binomial_mixture_loss(y, ref_counts, total_counts, bad_score)
+        loss = binomial_mixture_normed_loss(y, ref_counts, total_counts, bad_score)
 
         self.log(
             "loss", loss, on_step=True, on_epoch=False, sync_dist=True, prog_bar=True
@@ -424,8 +424,8 @@ class VariantEmbedModel(EmbedModel):
 
         y = self(X_seq_ref, X_seq_alt, X_embed).squeeze()
 
-        loss = binomial_mixture_loss(y, ref_counts, total_counts, bad_score)
-        #loss = binomial_mixture_normed_loss(y, ref_counts, total_counts, bad_score)
+        #loss = binomial_mixture_loss(y, ref_counts, total_counts, bad_score)
+        loss = binomial_mixture_normed_loss(y, ref_counts, total_counts, bad_score)
 
         self.valid_metrics.update(y, lfc)
 
@@ -459,4 +459,21 @@ class VariantEmbedModelWrapper(VariantEmbedModel):
         x = self.forward_final(x)
 
         return x
+    
+    @torch.no_grad()
+    def predict(self, dataset, batch_size=32, device="gpu"):
+        y_hat = []
+
+        dataloader = torch.data.Dataloader(dataset, batch_size=batch_size, shuffle=False)
+
+        for _, batch in enumerate(dataloader):
+            seq_ref = batch["seq_ref"].to(device)
+            seq_alt = batch["seq_alt"].to(device)
+            embed = batch["embed"].to(device)
+
+            preds = self(seq_ref, seq_alt, embed)
+            y_hat.append(preds.cpu())
+
+        return torch.cat(y_hat, dim=0)
+
     

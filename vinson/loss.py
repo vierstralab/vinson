@@ -220,7 +220,7 @@ def binomial_mixture_nll_grad_hess(logit, k, n, d, tau):
 
 
 def binomial_mixture_normed_loss(
-    input, target, n, bad_score, tau=0, iters=5, reduction="mean"
+    input, target, n, bad_score, tau=0, iters=5, max_step_frac=0.5, reduction="mean"
 ):
     """
     Compute the normalized negative log-likelihood (NLL) for the binomial mixture model.
@@ -239,6 +239,9 @@ def binomial_mixture_normed_loss(
         Prior scale parameter. If tau > 0, a quadratic prior is added. Default is 0.
     iters : int, optional
         Number of Newton-Raphson iterations for root finding (default is 5).
+    max_step_frac : float, optional
+        Fraction of the mean distance from each root to the initial guesses that any
+        single NR step can move. Prevents large jumps. Default: 0.5.
     reduction : str, optional
         Specifies the reduction to apply to the output: 'mean' or 'none' (default is 'mean').
 
@@ -259,12 +262,19 @@ def binomial_mixture_normed_loss(
 
     # Initial roots: logit of empirical probability ± log_bad_score
     logit_p = torch.logit(target / n)
-    roots = torch.stack([logit_p - d, logit_p + d], dim=0)
+    initial_roots = torch.stack(
+        [logit_p - 2 * d, logit_p - d, logit_p, logit_p + d, logit_p + 2 * d], dim=0
+    )
+    roots = initial_roots
 
     # Newton-Raphson optimization to refine roots
     for _ in range(iters):
         _, grad, hess = binomial_mixture_nll_grad_hess(roots, target, n, d, tau)
-        roots = roots - grad / hess
+        max_step = (roots.unsqueeze(0) - initial_roots.unsqueeze(1)).abs().mean(
+            dim=0
+        ) * max_step_frac
+        step = -grad / hess
+        roots += torch.minimum(torch.abs(step), max_step) * torch.sign(step)
 
     # Compute NLL at roots and input
     nll_at_roots, _, _ = binomial_mixture_nll_grad_hess(roots, target, n, d, tau)

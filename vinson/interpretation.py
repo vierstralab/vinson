@@ -1,42 +1,57 @@
+import numpy as np
 import torch
 
-from tangermeme.ersatz import dinucleotide_shuffle
+from tangermeme.ersatz import dinucleotide_shuffle as dinuc_shuffle
 
-def dinucleotide_shuffle_variant(X_ref, X_alt, n=20, random_state=None):
-    """Shuffles set one sequences with SNVs. 
-    
-    This performs dinucleotide shuffling and then places the SNVs exactly
-    as they were (same location and identity).
-    
+
+def force_strict_ohe(X):
+    """
+    Ensure input tensor is strictly one-hot encoded along the nucleotide axis.
+
+    For each position in each sequence, if the maximum value along the nucleotide axis is less than 1.0,
+    randomly selects a base according to the current probabilities and sets that base to 1.0 (others to 0).
+    Returns a tensor with strict one-hot encoding at every position.
+
     Parameters
     ----------
-    X_ref : torch.tensor, shape=(-1, len(alphabet), length)
-        A one-hot encoded set of sequences to be shuffled
-        containing the REF alleles.
-    X_alt : torch.tensor, shape=(-1, len(alphabet), length)
-        A one-hot encoded set of sequences to be shuffled
-        containing the ALT alleles.
-    n : int, optional
-        Number of shuffles to perform, by default 20
-    random_state : _type_, optional
-        Random number generator seed, by default None
+    X : torch.Tensor
+        Input tensor of shape (batch, 4, sequence_length), representing probabilistic one-hot encoding.
 
     Returns
     -------
-    shuffled_sequences: (torch.tensor, torch.tensor), each shape (-1, n, k, -1) 
-        The shuffled sequences.
+    torch.Tensor
+        Output tensor of the same shape as X, with strict one-hot encoding at every position.
     """
-    diff = (X_ref - X_alt).abs()
-    pos = torch.where(diff.sum(dim=1) > 0)
+    X_ = X.clone()
+    seq_idx, pos = torch.where(torch.max(X, dim=1)[0] < 1.0)
+    for i, j in zip(seq_idx, pos):
+        base = np.random.choice(4, p=X[i, :, j])
+        X_[i, :, j] = torch.zeros(4)
+        X_[i, base, j] = 1.0
+    return X_
 
-    assert len(pos[0]) > 0, "Inputs are the exact same!"
 
-    X_ref_shuf = dinucleotide_shuffle(X_ref, n=n, random_state=random_state)
-    X_alt_shuf = torch.clone(X_ref_shuf)
+def dinucleotide_shuffle(X, **kwargs):
+    """
+    Shuffle input sequences while preserving dinucleotide composition.
 
-    for seq_idx, k in zip(*pos):
-        X_ref_shuf[seq_idx, :, :, k] = X_ref[seq_idx][:, k].repeat(n, 1)
-        X_alt_shuf[seq_idx, :, :, k] = X_alt[seq_idx][:, k].repeat(n, 1)
-    
-    return X_ref_shuf, X_alt_shuf
+    This function ensures the input tensor is strictly one-hot encoded, then applies
+    dinucleotide shuffling to each sequence. Dinucleotide shuffling randomizes the
+    sequence order while maintaining the original dinucleotide (adjacent base pair)
+    frequencies, which is useful for generating background/control sequences in
+    sequence analysis tasks.
 
+    Parameters
+    ----------
+    X : torch.Tensor
+        Input tensor of shape (batch, 4, sequence_length), representing one-hot encoded sequences.
+    **kwargs
+        Additional keyword arguments passed to the underlying dinucleotide shuffling function.
+
+    Returns
+    -------
+    torch.Tensor
+        Tensor of the same shape as X, with each sequence dinucleotide-shuffled.
+    """
+    X_ = force_strict_ohe(X)
+    return dinuc_shuffle(X_, **kwargs)
