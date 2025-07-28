@@ -13,8 +13,10 @@ from torchmetrics.regression import PearsonCorrCoef
 from vinson.loss import (
     poisson_loss,
     binomial_mixture_loss,
+    binomial_mixture_normed_loss,
 )
 
+import copy
 
 class CellEmbedding(torch.nn.Module):
     """
@@ -82,7 +84,7 @@ class BassetTrunk(torch.nn.Module):
         )
         self.relu3 = torch.nn.ReLU()
 
-        self.flatten = torch.nn.Flatten()
+        # self.flatten = torch.nn.Flatten()
 
     def forward(self, x):
         x = self.layer1(x)
@@ -95,43 +97,43 @@ class BassetTrunk(torch.nn.Module):
         x = self.relu3(x)
 
         # flatten
-        x = self.flatten(x)
+        # x = self.flatten(x)
+        x = torch.flatten(x, start_dim=1)
 
         return x
 
 
 class BassetTrunkEmbed(BassetTrunk):
-    def __init__(self, embed):
+    def __init__(self, n_embed_outputs):
         super(BassetTrunkEmbed, self).__init__()
 
-        self.embed = embed
-
         # TODO: inference output size from BassetTrunk convolutional layers
-        self.bias2 = torch.nn.Linear(embed.n_outputs, 200)
-        self.bias3 = torch.nn.Linear(embed.n_outputs, 200)
+        self.bias2 = torch.nn.Linear(n_embed_outputs, 200)
+        self.bias3 = torch.nn.Linear(n_embed_outputs, 200)
 
-    def forward(self, x, embedding):
-        embedding = self.embed(embedding)
+    def forward(self, x, embed):
 
         x = self.layer1(x)
         x = self.relu1(x)
 
         x_conv = self.layer2(x)
-        x_bias = self.bias2(embedding).unsqueeze(-1)
+        x_bias = self.bias2(embed).unsqueeze(-1)
         x = self.relu2(x_conv + x_bias)
 
         x_conv = self.layer3(x)
-        x_bias = self.bias3(embedding).unsqueeze(-1)
+        x_bias = self.bias3(embed).unsqueeze(-1)
         x = self.relu3(x_conv + x_bias)
 
-        x = self.flatten(x)
-
+        # flatten
+        #x = self.flatten(x)
+        x = torch.flatten(x, start_dim=1)
+        
         return x
 
 
-class VinsonModel(L.LightningModule):
+class BaseModel(L.LightningModule):
     def __init__(self, trunk, seqlen=1344, regression=False, pos_weight=1):
-        super(VinsonModel, self).__init__()
+        super(BaseModel, self).__init__()
 
         self.trunk = trunk
         self.seqlen = seqlen
@@ -153,9 +155,6 @@ class VinsonModel(L.LightningModule):
 
         # init metrics
         self.init_metrics()
-
-        # init model
-        self.init_model()
 
     def init_metrics(self):
         if self.regression:
@@ -179,6 +178,7 @@ class VinsonModel(L.LightningModule):
 
     def init_model(self):
         self(torch.zeros((2, 4, self.seqlen)))
+        return self
 
     def forward_fc(self, x):
         x = self.fc1(x)
@@ -254,6 +254,10 @@ class VinsonModel(L.LightningModule):
             loss = poisson_loss(pred_counts, target_counts)
 
             self.valid_metrics.update(pred_counts.log(), target_counts.log())
+        else:
+            loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                y, indicator.float(), pos_weight=torch.tensor(self.pos_weight)
+            )
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
@@ -267,20 +271,24 @@ class VinsonModel(L.LightningModule):
         return torch.optim.AdamW(self.parameters(), lr=0.0005)
 
 
-class VinsonEmbedModel(VinsonModel):
-    def __init__(self, *args, **kwargs):
-        super(VinsonEmbedModel, self).__init__(*args, **kwargs)
+class EmbedModel(BaseModel):
+    def __init__(self, trunk, embed, *args, **kwargs):
+        super(EmbedModel, self).__init__(trunk, *args, **kwargs)
+    
+        self.embedding = embed
 
     def init_model(self):
         self(
             torch.zeros((2, 4, self.seqlen)),
-            torch.zeros((2, self.trunk.embed.n_inputs)),
+            torch.zeros((2, self.embedding.n_inputs)),
         )
 
     def forward(self, seq, embed):
-        features = self.trunk(seq, embed)
 
-        x = self.forward_fc(features)
+        x = self.embedding(embed)
+        x = self.trunk(seq, x)
+
+        x = self.forward_fc(x)
         x = self.forward_final(x)
 
         return x
@@ -348,9 +356,9 @@ class VinsonEmbedModel(VinsonModel):
         return loss
 
 
-class VinsonVariantEmbedModel(VinsonModel):
+class VariantEmbedModel(EmbedModel):
     def __init__(self, *args, **kwargs):
-        super(VinsonVariantEmbedModel, self).__init__(*args, **kwargs)
+        super(VariantEmbedModel, self).__init__(*args, **kwargs)
 
     def init_metrics(self):
         self.train_metrics = MetricCollection(
@@ -366,15 +374,18 @@ class VinsonVariantEmbedModel(VinsonModel):
         self(
             torch.zeros((2, 4, self.seqlen)),
             torch.zeros((2, 4, self.seqlen)),
-            torch.zeros((2, self.trunk.embed.n_inputs)),
+            torch.zeros((2, self.embedding.n_inputs)),
         )
 
     def forward(self, seq_ref, seq_alt, embed):
-        ref_features = self.trunk(seq_ref, embed)
-        alt_features = self.trunk(seq_alt, embed)
-        features = ref_features - alt_features
 
-        x = self.forward_fc(features)
+        x = self.embedding(embed)
+        ref_features = self.trunk(seq_ref, x)
+        alt_features = self.trunk(seq_alt, x)
+
+        x = torch.subtract(ref_features, alt_features)
+
+        x = self.forward_fc(x)
         x = self.forward_final(x)
 
         return x
@@ -391,7 +402,8 @@ class VinsonVariantEmbedModel(VinsonModel):
 
         y = self(X_seq_ref, X_seq_alt, X_embed).squeeze()
 
-        loss = binomial_mixture_loss(y, ref_counts, total_counts, bad_score)
+        #loss = binomial_mixture_loss(y, ref_counts, total_counts, bad_score)
+        loss = binomial_mixture_normed_loss(y, ref_counts, total_counts, bad_score)
 
         self.log(
             "loss", loss, on_step=True, on_epoch=False, sync_dist=True, prog_bar=True
@@ -400,23 +412,68 @@ class VinsonVariantEmbedModel(VinsonModel):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        X_seq_ref, X_seq_alt, X_embed, ref_counts, total_counts, bad_score = (
+        X_seq_ref, X_seq_alt, X_embed, ref_counts, total_counts, bad_score, lfc = (
             batch["seq_ref"],
             batch["seq_alt"],
             batch["embed"],
             batch["ref_counts"],
             batch["total_counts"],
             batch["bad_score"],
+            batch["lfc"],
         )
 
         y = self(X_seq_ref, X_seq_alt, X_embed).squeeze()
 
-        loss = binomial_mixture_loss(y, ref_counts, total_counts, bad_score)
+        #loss = binomial_mixture_loss(y, ref_counts, total_counts, bad_score)
+        loss = binomial_mixture_normed_loss(y, ref_counts, total_counts, bad_score)
 
-        self.valid_metrics.update(
-            y, torch.log(ref_counts / (total_counts - ref_counts))
-        )
+        self.valid_metrics.update(y, lfc)
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
         return loss
+
+class VariantEmbedModelWrapper(VariantEmbedModel):
+    """Wrapper class for VariantModel to perform only inference
+    """
+    def __init__(self, model):
+        super(VariantEmbedModelWrapper, self).__init__(model.trunk, model.embedding)
+
+        self.__dict__.update(model.__dict__)
+
+        self.embedding_ref = copy.deepcopy(self.embedding)
+        self.embedding_alt = copy.deepcopy(self.embedding)
+
+        self.trunk_ref = copy.deepcopy(self.trunk)
+        self.trunk_alt = copy.deepcopy(self.trunk)
+
+    def forward(self, seq_ref, seq_alt, embed):
+        """
+        """
+        ref_features = self.trunk_ref(seq_ref, self.embedding_ref(embed))
+        alt_features = self.trunk_alt(seq_alt, self.embedding_alt(embed.clone()))
+
+        x = torch.subtract(ref_features, alt_features)
+
+        x = self.forward_fc(x)
+        x = self.forward_final(x)
+
+        return x
+    
+    @torch.no_grad()
+    def predict(self, dataset, batch_size=32, device="gpu"):
+        y_hat = []
+
+        dataloader = torch.data.Dataloader(dataset, batch_size=batch_size, shuffle=False)
+
+        for _, batch in enumerate(dataloader):
+            seq_ref = batch["seq_ref"].to(device)
+            seq_alt = batch["seq_alt"].to(device)
+            embed = batch["embed"].to(device)
+
+            preds = self(seq_ref, seq_alt, embed)
+            y_hat.append(preds.cpu())
+
+        return torch.cat(y_hat, dim=0)
+
+    

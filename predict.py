@@ -8,7 +8,7 @@ from vinson.dataset import SequenceEmbeddingDataset
 from vinson.model import (
     BassetTrunkEmbed,
     CellEmbedding,
-    VinsonEmbedModel,
+    EmbedModel,
 )
 
 #inputs
@@ -52,8 +52,8 @@ dataloader = DataLoader(
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 embed = CellEmbedding(n_inputs=637, n_layers=1)
-trunk = BassetTrunkEmbed(embed)
-model = VinsonEmbedModel(trunk, regression=True)
+trunk = BassetTrunkEmbed(embed.n_outputs)
+model = EmbedModel(trunk, embed, regression=True)
 
 pretrained_state_dict = torch.load(
     model_ckpt,

@@ -12,12 +12,14 @@
 source ~/.bashrc
 conda activate tangermeme
 
+export MASTER_ADDR=127.0.0.1
+
 EVAL_SAMPLES_FILE="/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/JUL10/continious_annotation/data_JUL10.batch2.val.h5"
 EMBEDDINGS_FILE="/home/jvierstra/proj/vinson/data/embeddings.tsv"
 READ_DEPTH_FILE="/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/JUL10/continious_annotation/total_cutcounts.tsv"
 FASTA_FILE="/net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa"
-MODEL_CKPT="/home/jvierstra/proj/vinson/models/regression_data_JUL10.batch1_v3_poisson/checkpoints/last.ckpt"
-OUTPUT_FILE="/home/mbrannon/output.tsv"
+MODEL_CKPT="/home/jvierstra/proj/vinson/models/regression_data_JUL10.batch1_v5_poisson_genotypes_8gpus/checkpoints/last.ckpt"
+OUTPUT_FILE="/home/mbrannon/tmp/regression_data_JUL10.batch1_v5_poisson_genotypes_prediction.tsv"
 
 
 # Run the script

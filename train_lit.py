@@ -14,23 +14,27 @@ from vinson.dataset import SequenceEmbeddingDataset
 from vinson.model import (
     CellEmbedding,
     BassetTrunkEmbed,
-    VinsonEmbedModel,
+    EmbedModel,
 )
-
 
 def main(args):
     embeddings_file = "/home/jvierstra/proj/vinson/data/embeddings.tsv"
     read_depth_file = "/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/JUL10/continious_annotation/total_cutcounts.tsv"
     fasta_file = "/net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa"
 
+    samples_genotype_file = "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/output/meta+sample_ids.tsv"
+    genotype_file = "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/output/all_variants_stats.bed.gz"
+
     train_dataset = SequenceEmbeddingDataset(
         args.train_file,
         embeddings_file,
         read_depth_file,
         fasta_file,
+        sample_genotype_file=samples_genotype_file,
+        genotype_file=genotype_file,
         reverse_complement=True,
         jitter=5,
-        noise=0,
+        noise=0.1,
     )
 
     valid_dataset = SequenceEmbeddingDataset(
@@ -38,6 +42,8 @@ def main(args):
         embeddings_file,
         read_depth_file,
         fasta_file,
+        sample_genotype_file=samples_genotype_file,
+        genotype_file=genotype_file,
         reverse_complement=False,
         jitter=0,
         noise=0,
@@ -62,8 +68,10 @@ def main(args):
     )
 
     embed = CellEmbedding(n_inputs=637, n_layers=1)
-    trunk = BassetTrunkEmbed(embed)
-    model = VinsonEmbedModel(trunk, regression=args.regression)
+    trunk = BassetTrunkEmbed(embed.n_outputs)
+    model = EmbedModel(trunk, embed, regression=args.regression)
+
+    model.init_model()
 
     logger = CSVLogger(os.path.join(args.outdir, "logs"))
 
