@@ -8,12 +8,9 @@ from torch.utils.data import Dataset
 from genome_tools import GenomicInterval
 from genome_tools.data.extractors import FastaExtractor, TabixExtractor
 
-import pyBigWig as pbw
-
 from .utils import one_hot_encode, get_iupac_char_from_alleles
 
 import logging
-
 logger = logging.getLogger(__name__)
 
 
@@ -26,7 +23,7 @@ class BaseDataset(Dataset):
         reverse_complement=False,
         jitter=0,
         noise=0,
-        random_state=None,
+        seed=None,
         seqlen=1344,
     ):
         self.fasta_file = fasta_file
@@ -38,8 +35,6 @@ class BaseDataset(Dataset):
         assert seqlen % 2 == 0, "Error 'seqlen' must be a even number!"
         self.seqlen = seqlen
 
-        self.random_state = np.random.RandomState(random_state)
-
         self.fasta_extr = None
 
         logger.info("Opening samples file.")
@@ -47,6 +42,9 @@ class BaseDataset(Dataset):
 
         logger.info("Loading embeddings.")
         self.embeddings_df = pd.read_table(embeddings_file, index_col=0)
+
+        self.seed = seed
+        self.reset_random_state()
 
     def __del__(self):
         if self.samples:
@@ -61,8 +59,11 @@ class BaseDataset(Dataset):
     def __len__(self):
         raise NotImplementedError
 
+    def reset_random_state(self):
+        self.random_state = np.random.RandomState(self.seed)
 
-class SequenceEmbeddingDataset(BaseDataset):
+
+class SeqEmbedDataset(BaseDataset):
     """
     PyTorch Dataset for extracting sequence and cell-type embeddings, with optional
     genotype injection and read depth normalization.
@@ -121,32 +122,51 @@ class SequenceEmbeddingDataset(BaseDataset):
         embeddings_file,
         read_depth_file,
         fasta_file,
+        negative_samples_file=None,
+        negative_samples_rate=1,
+        negative_samples_weight=2.5,
         sample_genotype_file=None,
         genotype_file=None,
-        reverse_complement=True,
+        clip_density=10,
+        min_bg=0.15,
+        reverse_complement=False,
         jitter=0,
         noise=0,
-        random_state=None,
+        seed=None,
     ):
-        super(SequenceEmbeddingDataset, self).__init__(
+        super(SeqEmbedDataset, self).__init__(
             samples_file,
             embeddings_file,
             fasta_file,
             reverse_complement=reverse_complement,
             jitter=jitter,
             noise=noise,
-            random_state=random_state,
+            seed=seed,
         )
+
+        self.negative_samples_file = negative_samples_file
+        self.negative_samples_rate = negative_samples_rate
+        self.negative_samples_weight = negative_samples_weight
+        self.negative_samples_extr = None
 
         self.genotype_file = genotype_file
         self.genotype_extr = None
 
-        assert set(["chrom", "mid", "class", "disp", "density", "sample_id"]).issubset(
+        self.clip_density = clip_density
+        self.min_bg = min_bg
+
+        assert set(["chrom", "mid", "class", "density", "sample_id"]).issubset(
             self.samples.keys()
         )
 
         logger.info("Loading sample read depths.")
         self.read_depths = pd.read_table(read_depth_file, index_col=0).iloc[:, 0]
+
+        if negative_samples_file:
+            logger.info("Sampling from negative examples file...")
+            self.sample_from_negatives = True
+        else:
+            self.sample_from_negatives = False
 
         if sample_genotype_file:
             logger.info("Loading genotype metadata...")
@@ -165,18 +185,42 @@ class SequenceEmbeddingDataset(BaseDataset):
         # pysam is not thread-safe
         if not self.fasta_extr:
             self.fasta_extr = FastaExtractor(self.fasta_file)
+            # tabix is not thread-safe
+        if self.sample_from_negatives and not self.negative_samples_extr:
+            self.negative_samples_extr = TabixExtractor(self.negative_samples_file)
         # tabix is not thread-safe
         if self.include_genotypes and not self.genotype_extr:
             self.genotype_extr = TabixExtractor(self.genotype_file)
 
-        chrom, mid, sample_id, indicator, density, r = (
-            self.samples["chrom"][i].astype(str),
-            self.samples["mid"][i],
-            self.samples["sample_id"][i].astype(str),
-            1 if self.samples["class"][i].astype(str) == "positive" else 0,
-            self.samples["density"][i],
-            self.samples["disp"][i],
+        idx = i // (self.negative_samples_rate + 1)
+
+        chrom, mid, sample_id, density, bg, indicator = (
+            self.samples["chrom"][idx].astype(str),
+            self.samples["mid"][idx].astype(int),
+            self.samples["sample_id"][idx].astype(str),
+            self.samples["density"][idx].astype(np.float32),
+            self.samples["bg_mu"][idx].astype(np.float32),
+            1 if self.samples["class"][idx].astype(str) == "positive" else 0,
         )
+
+        # TODO: Allow for different sampling "rates"
+        if self.sample_from_negatives and i % (self.negative_samples_rate + 1):
+            try:
+                negative_interval = GenomicInterval(chrom, mid, mid + 1)
+
+                negative_sample = (
+                    self.negative_samples_extr[negative_interval].sample(
+                        n=1, random_state=self.random_state
+                    )
+                ).values[0, :]
+
+                sample_id = str(negative_sample[3])
+                density = np.float32(negative_sample[4])
+                bg = np.float32(negative_sample[5])
+                indicator = 0
+
+            except ValueError:
+                pass
 
         # Define region
         interval = GenomicInterval(chrom, mid, mid).widen(self.seqlen // 2)
@@ -217,7 +261,7 @@ class SequenceEmbeddingDataset(BaseDataset):
 
                     dna_seq = dna_seq[:pos] + base + dna_seq[pos + 1 :]
 
-            except Exception as e:
+            except Exception:
                 logger.debug(f"Error: {sample_id} -- {indiv_id}")
                 # pass
 
@@ -246,22 +290,36 @@ class SequenceEmbeddingDataset(BaseDataset):
         # Sample read depth
         read_depth = self.read_depths.loc[sample_id]
 
+        # Adjust values as needed
+        density = density if density < 10.0 else 10.0
+        weight = 1.0 if indicator else self.negative_samples_weight
+        bg = np.nanmax([bg, self.min_bg])
+
         return {
             "seq": X_seq.copy(),
             "embed": X_embed.copy(),
             "indicator": indicator,
-            "density": density if density < 10.0 else 10.0,
-            "r": r,
-            "read_depth": read_depth,
-            "class": self.samples["class"][i].astype(str),
-            "sample_id": sample_id,
+            "density": np.float32(density),
+            "bg": np.float32(bg),
+            "read_depth": np.float32(read_depth),
+            "weight": np.float32(weight),
             "chrom": chrom,
             "mid": mid,
+            "sample_id": sample_id,
         }
 
     def __len__(self):
-        return self.samples["chrom"].shape[0]
+        N = self.samples["chrom"].shape[0]
+        return N * (self.negative_samples_rate + 1) if self.sample_from_negatives else N
 
+    def __del__(self):
+        super(SeqEmbedDataset, self).__del__()
+
+        if self.genotype_extr:
+            self.genotype_extr.close()
+
+        if self.negative_samples_extr:
+            self.negative_samples_extr.close()
 
 class VariantEmbeddingDataset(BaseDataset):
     """
@@ -400,43 +458,3 @@ class VariantEmbeddingDataset(BaseDataset):
 
     def __len__(self):
         return self.samples["chrom"].shape[0]
-
-
-class CrossSampleLoader(Dataset):
-    def __init__(self, embeddings_file, filepath_pattern):
-        self.filepath_pattern = filepath_pattern
-
-        logger.info("Loading embeddings.")
-        self.embeddings_df = pd.read_table(embeddings_file, index_col=0)
-
-        self.bw_filehandles = None
-
-    def __del__(self):
-        for fh in self.bw_filehandles:
-            fh.close()
-
-    def __getitem__(self, x):
-        if not self.bw_filehandles:
-            self.bw_filehandles = [
-                pbw.open(self.filepath_pattern.format(x=k))
-                for k in self.embeddings_df.columns
-            ]
-
-        if isinstance(x, tuple):
-            chrom, mid = x
-        elif isinstance(x, GenomicInterval):
-            chrom = x.chrom
-            mid = (x.end - x.start) // 2 + x.start
-
-        values = pd.Series(
-            np.nan_to_num(
-                [
-                    fh.values(chrom, mid, mid + 1, numpy=True)[0]
-                    for fh in self.bw_filehandles
-                ],
-                0.0,
-            ),
-            index=self.embeddings_df.columns,
-        )
-
-        return values
