@@ -9,7 +9,11 @@ from torch.utils.data import DataLoader
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger
 from lightning.pytorch import Callback
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.callbacks import (
+    EarlyStopping,
+    ModelCheckpoint,
+    LearningRateMonitor,
+)
 
 from vinson.dataset import SeqEmbedDataset
 from vinson.model import (
@@ -189,6 +193,7 @@ def main(args):
             save_top_k=3,
             save_last="link",
         ),
+        LearningRateMonitor(),
         IterateDatatsetCallback(datamodule),
     ]
 
