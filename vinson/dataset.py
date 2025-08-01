@@ -11,6 +11,7 @@ from genome_tools.data.extractors import FastaExtractor, TabixExtractor
 from .utils import one_hot_encode, get_iupac_char_from_alleles
 
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,7 +67,7 @@ class BaseDataset(Dataset):
 class SeqEmbedDataset(BaseDataset):
     """
     PyTorch Dataset for extracting sequence and cell-type embeddings, with optional
-    genotype injection and read depth normalization.
+    genotype injection, negative sampling, and read depth normalization.
 
     Parameters
     ----------
@@ -78,20 +79,28 @@ class SeqEmbedDataset(BaseDataset):
         Path to tab-delimited file with sample read depths.
     fasta_file : str
         Path to reference genome FASTA file.
+    negative_samples_file : str, optional
+        Path to tabix file containing negative samples for augmentation.
+    negative_samples_rate : int, optional
+        Ratio of negative to positive samples (default: 1).
+    negative_samples_weight : float, optional
+        Weight assigned to negative samples (default: 2.5).
     sample_genotype_file : str, optional
         Path to genotype metadata file (tab-delimited).
     genotype_file : str, optional
         Path to genotype file in tabix format.
+    clip_density : float, optional
+        Maximum allowed density value (default: 5).
+    min_bg : float, optional
+        Minimum allowed background value (default: 0.15).
     reverse_complement : bool, optional
-        If True, randomly reverse-complement sequences for augmentation (default: True).
+        If True, randomly reverse-complement sequences for augmentation (default: False).
     jitter : int, optional
         Maximum number of bases to randomly shift the region (default: 0).
     noise : float, optional
         Standard deviation of Gaussian noise added to embeddings (default: 0).
-    random_state : int or None, optional
+    seed : int or None, optional
         Seed for random number generator (default: None).
-    random_sample : bool, optional
-        If True, randomly sample cell-type embeddings (default: False).
 
     Attributes
     ----------
@@ -101,19 +110,22 @@ class SeqEmbedDataset(BaseDataset):
         DataFrame of cell-type/state embeddings.
     read_depths : pandas.Series
         Series of sample read depths.
-    sample_to_genotype_df: pandas.DataFrame
+    sample_to_genotype_df : pandas.DataFrame
         DataFrame of genotype metadata.
     fasta_extr : FastaExtractor
         Extractor for reference genome sequences.
     genotype_extr : TabixExtractor
         Extractor for genotype data.
+    negative_samples_extr : TabixExtractor
+        Extractor for negative samples.
 
     Notes
     -----
-    - Injects genotypes into reference sequence if genotype_file is provided.
+    - Injects genotypes into reference sequence if genotype files are provided.
     - Supports region jittering and reverse complementation for data augmentation.
-    - Returns a dictionary with sequence, embedding, indicator, density, dispersion,
-      read depth, and class label for each sample.
+    - Supports negative sampling for training with imbalanced data.
+    - Returns a dictionary with sequence, embedding, indicator, density, background,
+      read depth, weight, chromosome, midpoint, and sample ID for each sample.
     """
 
     def __init__(
@@ -127,7 +139,7 @@ class SeqEmbedDataset(BaseDataset):
         negative_samples_weight=2.5,
         sample_genotype_file=None,
         genotype_file=None,
-        clip_density=10,
+        clip_density=5,
         min_bg=0.15,
         reverse_complement=False,
         jitter=0,
@@ -321,7 +333,8 @@ class SeqEmbedDataset(BaseDataset):
         if self.negative_samples_extr:
             self.negative_samples_extr.close()
 
-class VariantEmbeddingDataset(BaseDataset):
+
+class VariantEmbedDataset(BaseDataset):
     """
     PyTorch Dataset for extracting reference and alternate allele sequences and
     cell-type embeddings for variant effect prediction.
@@ -368,16 +381,16 @@ class VariantEmbeddingDataset(BaseDataset):
         reverse_complement=True,
         jitter=0,
         noise=0,
-        random_state=None,
+        seed=None,
     ):
-        super(VariantEmbeddingDataset, self).__init__(
+        super(VariantEmbedDataset, self).__init__(
             samples_file,
             embeddings_file,
             fasta_file,
             reverse_complement=reverse_complement,
             jitter=jitter,
             noise=noise,
-            random_state=random_state,
+            seed=seed,
         )
 
         assert set(
@@ -390,6 +403,7 @@ class VariantEmbeddingDataset(BaseDataset):
                 "total_counts",
                 "BAD",
                 "sample_id",
+                "logit_es",
             ]
         ).issubset(self.samples.keys())
 
@@ -403,10 +417,10 @@ class VariantEmbeddingDataset(BaseDataset):
             self.samples["pos"][i],
             self.samples["ref"][i].astype(str),
             self.samples["alt"][i].astype(str),
-            self.samples["ref_counts"][i],
-            self.samples["total_counts"][i],
-            self.samples["BAD"][i],
-            self.samples["logit_es"][i],
+            self.samples["ref_counts"][i].astype(np.float32),
+            self.samples["total_counts"][i].astype(np.float32),
+            self.samples["BAD"][i].astype(np.float32),
+            self.samples["logit_es"][i].astype(np.float32),
             self.samples["sample_id"][i].astype(str),
         )
 
@@ -454,6 +468,7 @@ class VariantEmbeddingDataset(BaseDataset):
             "bad_score": bad,
             "lfc": lfc * np.log(2),
             "sample_id": sample_id,
+            "weight": 1.0,
         }
 
     def __len__(self):

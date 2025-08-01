@@ -18,6 +18,7 @@ from vinson.model import (
     EmbedModel,
 )
 
+
 class SeqEmbedDataModule(L.LightningDataModule):
     def __init__(
         self,
@@ -38,9 +39,9 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.read_depth_file = read_depth_file
         self.fasta_file = fasta_file
 
-        assert len(train_samples_files) == len(
-            train_samples_negative_files
-        ), "Train samples and negative samples files have same length!"
+        assert len(train_samples_files) == len(train_samples_negative_files), (
+            "Train samples and negative samples files have same length!"
+        )
 
         self.train_samples_files = train_samples_files
         self.train_samples_negative_files = train_samples_negative_files
@@ -58,7 +59,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.curr_file = 0
 
     def setup(self, stage):
-
         self.update_train_dataset(epoch=0)
 
         self.val = SeqEmbedDataset(
@@ -93,7 +93,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.curr_file = i
 
         return True
-    
+
     def update_validation_dataset(self):
         self.val.reset_random_state()
 
@@ -117,14 +117,14 @@ class IterateDatatsetCallback(Callback):
 
 
 def main(args):
-
+    """  """
     embeddings_file = "/home/jvierstra/proj/vinson/data/embeddings.tsv"
     read_depth_file = "/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/JUL10/continious_annotation/total_cutcounts.tsv"
     fasta_file = "/net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa"
-    sample_genotype_file="/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/output/meta+sample_ids.tsv"
-    genotype_file="/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/output/all_variants_stats.bed.gz"
+    sample_genotype_file = "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/output/meta+sample_ids.tsv"
+    genotype_file = "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/output/all_variants_stats.bed.gz"
 
-    train_samples_files =  glob(args.train_samples_files_pattern)
+    train_samples_files = glob(args.train_samples_files_pattern)
     train_samples_negatives_files = glob(args.train_samples_neg_files_pattern)
 
     val_samples_file = args.val_samples_file
@@ -135,19 +135,15 @@ def main(args):
         genotype_file=genotype_file,
         negative_samples_rate=1,
         negative_samples_weight=args.negative_weight,
-        clip_density=10,
+        clip_density=2.5,
         min_bg=0.15,
     )
 
     train_dataset_kwargs = dict(
-        reverse_complement=True, 
-        jitter=args.jitter, 
-        noise=args.noise)
-    
-    val_dataset_kwargs = dict(
-        reverse_complement=False,
-        jitter=0, noise=0,
-        seed=0)
+        reverse_complement=True, jitter=args.jitter, noise=args.noise
+    )
+
+    val_dataset_kwargs = dict(reverse_complement=False, jitter=0, noise=0, seed=0)
 
     dataloader_kwargs = dict(
         batch_size=args.batch_size,
@@ -215,23 +211,93 @@ def main(args):
 if __name__ == "__main__":
     parser = ArgumentParser()
 
-    parser.add_argument("--nodes", type=int, default=1)
-    parser.add_argument("--devices", type=int, default=4)
-    parser.add_argument("--outdir", type=str, default=".")
-    parser.add_argument("--regression", action="store_true", default=False)
-    parser.add_argument("--jitter", type=int, default=5)
-    parser.add_argument("--noise", type=float, default=0.1)
-    parser.add_argument("--negative_weight", type=float, default=2.5)
-    parser.add_argument("--batch_size", type=int, default=128)
-    parser.add_argument("--lr", type=float, default=0.0005, help="Learning rate -- not implemented yet.")
-    parser.add_argument("--val_check_interval", type=float, default=0.2)
-    parser.add_argument("--num_workers", type=int, default=8)
-    parser.add_argument("--accelerator", type=str, default="gpu")
-    parser.add_argument("--strategy", type=str, default="ddp")
-    parser.add_argument("train_samples_files_pattern", type=str)
-    parser.add_argument("train_samples_neg_files_pattern", type=str)
-    parser.add_argument("val_samples_file", type=str)
-    parser.add_argument("val_samples_neg_file", type=str)
+    parser.add_argument(
+        "--nodes", type=int, default=1, help="Number of nodes for distributed training."
+    )
+    parser.add_argument(
+        "--devices", type=int, default=4, help="Number of devices (GPUs/CPUs) per node."
+    )
+    parser.add_argument(
+        "--outdir",
+        type=str,
+        default=".",
+        help="Output directory for logs and checkpoints.",
+    )
+    parser.add_argument(
+        "--regression",
+        action="store_true",
+        default=False,
+        help="Use regression mode instead of classification.",
+    )
+    parser.add_argument(
+        "--jitter",
+        type=int,
+        default=5,
+        help="Maximum number of bases to randomly shift the region for augmentation.",
+    )
+    parser.add_argument(
+        "--noise",
+        type=float,
+        default=0.1,
+        help="Standard deviation of Gaussian noise added to embeddings.",
+    )
+    parser.add_argument(
+        "--negative_weight",
+        type=float,
+        default=2.5,
+        help="Loss weight assigned to negative samples.",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=128,
+        help="Batch size for training and validation.",
+    )
+    parser.add_argument(
+        "--lr", type=float, default=0.0005, help="Learning rate (not implemented yet)."
+    )
+    parser.add_argument(
+        "--val_check_interval",
+        type=float,
+        default=0.2,
+        help="Fraction of an epoch between validation checks.",
+    )
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=8,
+        help="Number of worker processes for data loading.",
+    )
+    parser.add_argument(
+        "--accelerator",
+        type=str,
+        default="gpu",
+        help="Type of accelerator to use (e.g., 'gpu', 'cpu').",
+    )
+    parser.add_argument(
+        "--strategy",
+        type=str,
+        default="auto",
+        help="Distributed training strategy (e.g., 'ddp', 'auto').",
+    )
+    parser.add_argument(
+        "train_samples_files_pattern",
+        type=str,
+        help="Glob pattern for training sample files.",
+    )
+    parser.add_argument(
+        "train_samples_neg_files_pattern",
+        type=str,
+        help="Glob pattern for training negative sample files.",
+    )
+    parser.add_argument(
+        "val_samples_file", type=str, help="Path to validation sample file."
+    )
+    parser.add_argument(
+        "val_samples_neg_file",
+        type=str,
+        help="Path to validation negative sample file.",
+    )
 
     args = parser.parse_args()
 
