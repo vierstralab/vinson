@@ -303,7 +303,7 @@ class SeqEmbedDataset(BaseDataset):
         read_depth = self.read_depths.loc[sample_id]
 
         # Adjust values as needed
-        density = density if density < 10.0 else 10.0
+        density = density if density < self.clip_density else self.clip_density
         weight = 1.0 if indicator else self.negative_samples_weight
         bg = np.nanmax([bg, self.min_bg])
 

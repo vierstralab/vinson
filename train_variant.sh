@@ -10,7 +10,7 @@ conda activate tf-2.13.0
 
 export NCCL_DEBUG=INFO
 export NCCL_SOCKET_FAMILY=AF_INET
-export MASTER_ADDR=127.0.0.1
+export MASTER_ADDR=$(hostname -I)
 
 if [[ $HOSTNAME == 'hpcg04-heavy' ]]; then
     export NCCL_P2P_DISABLE=1

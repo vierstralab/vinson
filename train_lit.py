@@ -1,5 +1,6 @@
 import sys, os
 from glob import glob
+from itertools import cycle
 
 from argparse import ArgumentParser
 
@@ -44,7 +45,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.fasta_file = fasta_file
 
         assert len(train_samples_files) == len(train_samples_negative_files), (
-            "Train samples and negative samples files have same length!"
+            "Train samples and negative samples files must have same length!"
         )
 
         self.train_samples_files = train_samples_files
@@ -60,11 +61,9 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.train = None
         self.val = None
 
-        self.curr_file = 0
+        self.train_file_cycler = cycle(range(len(self.train_samples_files)))
 
     def setup(self, stage):
-        self.update_train_dataset(epoch=0)
-
         self.val = SeqEmbedDataset(
             self.val_samples_file,
             self.embeddings_file,
@@ -75,17 +74,9 @@ class SeqEmbedDataModule(L.LightningDataModule):
         )
 
     def train_dataloader(self):
-        return DataLoader(self.train, shuffle=True, **self.dataloader_kwargs)
-
-    def val_dataloader(self):
-        return DataLoader(self.val, shuffle=False, **self.dataloader_kwargs)
-
-    def update_train_dataset(self, epoch=0):
-        i = epoch % len(self.train_samples_files)
-
-        if i == self.curr_file and self.train:
-            return False
-
+        # Cycle to next file index
+        i = next(self.train_file_cycler)
+        # Create new dataset
         self.train = SeqEmbedDataset(
             self.train_samples_files[i],
             self.embeddings_file,
@@ -94,31 +85,14 @@ class SeqEmbedDataModule(L.LightningDataModule):
             negative_samples_file=self.train_samples_negative_files[i],
             **self.train_dataset_kwargs,
         )
-        self.curr_file = i
+        # Create new dataloader
+        return DataLoader(self.train, shuffle=True, **self.dataloader_kwargs)
 
-        return True
-
-    def update_validation_dataset(self):
+    def val_dataloader(self):
+        # Reset random seed
         self.val.reset_random_state()
-
-
-class IterateDatatsetCallback(Callback):
-    def __init__(self, datamodule):
-        self.datamodule = datamodule
-
-    def on_train_epoch_start(self, trainer, _):
-        # Update or reload your training dataset here
-        updated = self.datamodule.update_train_dataset(epoch=trainer.current_epoch)
-        # Replace the dataloader if needed
-        if updated:
-            trainer.train_dataloader = self.datamodule.train_dataloader()
-
-    def on_validation_epoch_start(self, trainer, _):
-        # Reset the validation random state so it samples same negatives each time
-        self.datamodule.update_validation_dataset()
-        # Replace the dataloader if needed
-        trainer.val_dataloader = self.datamodule.val_dataloader()
-
+        # Create new dataloader
+        return DataLoader(self.val, shuffle=False, **self.dataloader_kwargs)
 
 def main(args):
     """  """
@@ -139,7 +113,7 @@ def main(args):
         genotype_file=genotype_file,
         negative_samples_rate=1,
         negative_samples_weight=args.negative_weight,
-        clip_density=2.5,
+        clip_density=args.clip_density,
         min_bg=0.15,
     )
 
@@ -194,7 +168,6 @@ def main(args):
             save_last="link",
         ),
         LearningRateMonitor(),
-        IterateDatatsetCallback(datamodule),
     ]
 
     trainer = L.Trainer(
@@ -208,6 +181,7 @@ def main(args):
         log_every_n_steps=100,
         val_check_interval=args.val_check_interval,
         gradient_clip_val=1.0,
+        reload_dataloaders_every_n_epochs=1,
     )
 
     trainer.fit(model, datamodule=datamodule)
@@ -251,6 +225,12 @@ if __name__ == "__main__":
         type=float,
         default=2.5,
         help="Loss weight assigned to negative samples.",
+    )
+    parser.add_argument(
+        "--clip_density",
+        type=float,
+        default=2.5,
+        help="Clip densities to this value.",
     )
     parser.add_argument(
         "--batch_size",

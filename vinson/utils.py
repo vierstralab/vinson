@@ -1,7 +1,9 @@
 import numpy as np
-
 import numba
 
+from genome_tools import GenomicInterval
+
+from collections.abc import Iterable
 
 IUPAC_DNA = "XACMGRSVTWYHKDBN"
 
@@ -72,6 +74,32 @@ def one_hot_encode(sequence, dtype=np.float32):
     return one_hot_encoding.T
 
 
+def force_strict_ohe(X):
+    """
+    Ensure input tensor is strictly one-hot encoded along the nucleotide axis.
+
+    For each position in each sequence, if the maximum value along the nucleotide axis is less than 1.0,
+    randomly selects a base according to the current probabilities and sets that base to 1.0 (others to 0).
+    Returns a tensor with strict one-hot encoding at every position.
+
+    Parameters
+    ----------
+    X : torch.Tensor
+        Input tensor of shape (batch, 4, sequence_length), representing probabilistic one-hot encoding.
+
+    Returns
+    -------
+    torch.Tensor
+        Output tensor of the same shape as X, with strict one-hot encoding at every position.
+    """
+    X_ = X.clone()
+    seq_idx, pos = torch.where(torch.max(X, dim=1)[0] < 1.0)
+    for i, j in zip(seq_idx, pos):
+        base = np.random.choice(4, p=X[i, :, j])
+        X_[i, :, j] = torch.zeros(4)
+        X_[i, base, j] = 1.0
+    return X_
+
 def get_iupac_char_from_alleles(alleles):
     """Returns the IUPAC character from a list of possible
     DNA nucleotides.
@@ -96,3 +124,36 @@ def get_iupac_char_from_alleles(alleles):
         else:
             i = i | j
     return IUPAC_DNA[i]
+
+
+def intervals_to_one_hot(intervals, seqlen, fasta_extr):
+    """ """
+    ohe = []
+
+    if not isinstance(intervals, Iterable):
+        intervals = [intervals]
+
+    for i in intervals:
+        mid = (i.start + i.end) // 2
+        seq = fasta_extr[GenomicInterval(i.chrom, mid, mid).widen(seqlen//2)]
+        ohe.append(one_hot_encode(seq))
+    
+    return np.stack(ohe)
+
+def variants_to_one_hot(variants, seqlen, fasta_extr):
+    """ """
+    mid = seqlen // 2
+    ohe = []
+
+    if not isinstance(variants, Iterable):
+        variants = [variants]
+
+    for v in variants:
+        # reference 
+        seq_ref = fasta_extr[GenomicInterval(v.chrom, v.start, v.start).widen(mid)]
+        ohe.append(one_hot_encode(seq_ref))
+        # alternate
+        seq_alt = seq_ref[:mid] + v.alt + seq_ref[mid+1:]
+        ohe.append(one_hot_encode(seq_alt))
+
+    return np.stack(ohe)

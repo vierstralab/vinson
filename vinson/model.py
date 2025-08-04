@@ -18,6 +18,14 @@ from vinson.loss import (
 import copy
 
 
+class _Exp(torch.nn.Module):
+    def __init__(self):
+        super(_Exp, self).__init__()
+
+    def forward(self, X):
+        return torch.exp(X)
+
+
 class CellEmbedding(torch.nn.Module):
     """
     This a simple multilayer perceptron to encode cell states from an embedding
@@ -123,8 +131,7 @@ class BassetTrunkEmbed(BassetTrunk):
         x_bias = self.bias3(embed).unsqueeze(-1)
         x = self.relu3(x_conv + x_bias)
 
-        # flatten
-        # x = self.flatten(x)
+        # Flatten features
         x = torch.flatten(x, start_dim=1)
 
         return x
@@ -150,6 +157,7 @@ class BaseModel(L.LightningModule):
         self.relu2 = torch.nn.ReLU()
 
         self.final = torch.nn.LazyLinear(out_features=1)
+        self.exp = _Exp()
 
         # init metrics
         self.init_metrics()
@@ -195,11 +203,14 @@ class BaseModel(L.LightningModule):
         x = self.final(x)
         return x
 
-    def forward(self, seq):
+    def forward(self, seq, exp=False):
         features = self.trunk(seq)
 
         x = self.forward_fc(features)
         x = self.forward_final(x)
+
+        if exp:
+            x = self.exp(x)
 
         return x
 
@@ -282,21 +293,19 @@ class BaseModel(L.LightningModule):
         """ """
         optimizer = torch.optim.AdamW(self.parameters(), lr=0.0005)
 
-        total_batches = self.trainer.num_training_batches()
-
         # TODO: make these values settable in the command line
-        linear_lr_batches = int(total_batches * 0.05)
-        cosine_annealing_lr_batches = int(total_batches * 0.01)
+        linear_lr_batches = 10_000
+        cosine_annealing_lr_batches = 5_000
 
         scheduler_linear = torch.optim.lr_scheduler.LinearLR(
             optimizer,
             start_factor=1e-4,
             end_factor=1.0,
-            total_iter=linear_lr_batches,
+            total_iters=linear_lr_batches,
             last_epoch=-1,
         )
         scheduler_cosine_lr = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=cosine_annealing_lr_batches, eta_min=0.0, last_epoch=-1
+            optimizer, T_max=cosine_annealing_lr_batches, eta_min=5e-6, last_epoch=-1
         )
 
         scheduler = torch.optim.lr_scheduler.SequentialLR(
@@ -328,12 +337,15 @@ class EmbedModel(BaseModel):
             torch.zeros((2, self.embedding.n_inputs)),
         )
 
-    def forward(self, seq, embed):
+    def forward(self, seq, embed, exp=False):
         x = self.embedding(embed)
         x = self.trunk(seq, x)
 
         x = self.forward_fc(x)
         x = self.forward_final(x)
+
+        if exp:
+            x = self.exp(x)
 
         return x
 

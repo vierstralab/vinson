@@ -12,14 +12,14 @@ export NCCL_DEBUG=INFO
 export NCCL_SOCKET_FAMILY=AF_INET
 export MASTER_ADDR=127.0.0.1
 
-if [[ $HOSTNAME == 'hpcg04-heavy' ]]; then
-     export NCCL_P2P_DISABLE=1
-fi
+# if [[ $HOSTNAME == 'hpcg04-heavy' ]]; then
+export NCCL_P2P_DISABLE=1
+# fi
 
-TRAIN_SAMPLES_FILES_PATTERN=/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/JUL31/epoch_\*/data_JUL31_pos.batch1.train.h5
-TRAIN_SAMPLES_NEG_FILES_PATTERN=/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/JUL31/epoch_\*/data_JUL31_neg.batch1.train.bed.gz
-VAL_SAMPLES_FILE=/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/JUL31/epoch_1/data_JUL31_pos.batch1.val.h5
-VAL_SAMPLES_NEG_FILE=/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/JUL31/epoch_1/data_JUL31_neg.batch1.val.bed.gz
+TRAIN_SAMPLES_FILES_PATTERN=/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/AUG3/epoch_\*/data_AUG3_pos.batch1.train.h5
+TRAIN_SAMPLES_NEG_FILES_PATTERN=/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/AUG3/epoch_\*/data_AUG3_neg.batch1.train.bed.gz
+VAL_SAMPLES_FILE=/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/AUG3/epoch_1/data_AUG3_pos.batch1.val.h5
+VAL_SAMPLES_NEG_FILE=/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/AUG3/epoch_1/data_AUG3_neg.batch1.val.bed.gz
 
 srun python /home/jvierstra/proj/vinson/train_lit.py \
      --regression \
@@ -27,9 +27,10 @@ srun python /home/jvierstra/proj/vinson/train_lit.py \
      --accelerator gpu \
      --strategy ddp \
      --num_workers 8 \
-     --batch_size 128 \
+     --batch_size 64 \
      --negative_weight 2.5 \
-     --outdir /home/jvierstra/proj/vinson/models/data_JUL31 \
+     --clip_density 2.5 \
+     --outdir /home/jvierstra/proj/vinson/models/data_AUG3 \
      "$TRAIN_SAMPLES_FILES_PATTERN" \
      "$TRAIN_SAMPLES_NEG_FILES_PATTERN" \
      $VAL_SAMPLES_FILE \
