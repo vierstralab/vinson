@@ -7,7 +7,11 @@ from torch.utils.data import DataLoader
 
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.callbacks import (
+    EarlyStopping,
+    ModelCheckpoint,
+    LearningRateMonitor,
+)
 
 from vinson.dataset import VariantEmbedDataset
 
@@ -19,7 +23,7 @@ from vinson.model import (
 
 
 def main(args):
-    """  """
+    """ """
     embeddings_file = "/home/jvierstra/proj/vinson/data/embeddings.tsv"
     fasta_file = "/net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa"
 
@@ -64,10 +68,10 @@ def main(args):
     embed = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
     trunk = BassetTrunkEmbed(embed.n_outputs)
     model = VariantEmbedModel(trunk, embed)
-    
+
     # Initialize model
     model.init_model()
-    
+
     # Load model trunk weights
     if args.trunk_weights:
         print(f"Loading weights from pre-trained model: {args.trunk_weights}")
@@ -76,15 +80,17 @@ def main(args):
             map_location=torch.device("cpu"),
         )["state_dict"]
 
-        embed_pretrained_dict = {k: v for k, v in pretrained_state_dict.items() if "embedding." in k}
-        trunk_pretrained_dict = {k: v for k, v in pretrained_state_dict.items() if "trunk." in k}
+        embed_pretrained_dict = {
+            k: v for k, v in pretrained_state_dict.items() if "embedding." in k
+        }
+        trunk_pretrained_dict = {
+            k: v for k, v in pretrained_state_dict.items() if "trunk." in k
+        }
 
         model_dict = model.state_dict()
         model_dict.update({**embed_pretrained_dict, **trunk_pretrained_dict})
 
         model.load_state_dict(model_dict, strict=False)
-
-
 
     # Configure trainer logger & callbacks
     logger = CSVLogger(os.path.join(args.outdir, "logs"))
@@ -102,6 +108,7 @@ def main(args):
             save_top_k=3,
             save_last="link",
         ),
+        LearningRateMonitor(),
     ]
 
     # Trainer

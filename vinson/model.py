@@ -18,6 +18,14 @@ from vinson.loss import (
 import copy
 
 
+class _Exp(torch.nn.Module):
+    def __init__(self):
+        super(_Exp, self).__init__()
+
+    def forward(self, X):
+        return torch.exp(X)
+
+
 class CellEmbedding(torch.nn.Module):
     """
     This a simple multilayer perceptron to encode cell states from an embedding
@@ -123,8 +131,7 @@ class BassetTrunkEmbed(BassetTrunk):
         x_bias = self.bias3(embed).unsqueeze(-1)
         x = self.relu3(x_conv + x_bias)
 
-        # flatten
-        # x = self.flatten(x)
+        # Flatten features
         x = torch.flatten(x, start_dim=1)
 
         return x
@@ -150,6 +157,7 @@ class BaseModel(L.LightningModule):
         self.relu2 = torch.nn.ReLU()
 
         self.final = torch.nn.LazyLinear(out_features=1)
+        self.exp = _Exp()
 
         # init metrics
         self.init_metrics()
@@ -195,11 +203,14 @@ class BaseModel(L.LightningModule):
         x = self.final(x)
         return x
 
-    def forward(self, seq):
+    def forward(self, seq, exp=False):
         features = self.trunk(seq)
 
         x = self.forward_fc(features)
         x = self.forward_final(x)
+
+        if exp:
+            x = self.exp(x)
 
         return x
 
@@ -279,19 +290,36 @@ class BaseModel(L.LightningModule):
         self.valid_metrics.reset()
 
     def configure_optimizers(self):
-        """
-        """
+        """ """
         optimizer = torch.optim.AdamW(self.parameters(), lr=0.0005)
+
+        # TODO: make these values settable in the command line
+        linear_lr_batches = 10_000
+        cosine_annealing_lr_batches = 5_000
+
+        scheduler_linear = torch.optim.lr_scheduler.LinearLR(
+            optimizer,
+            start_factor=1e-4,
+            end_factor=1.0,
+            total_iters=linear_lr_batches,
+            last_epoch=-1,
+        )
+        scheduler_cosine_lr = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=cosine_annealing_lr_batches, eta_min=5e-6, last_epoch=-1
+        )
+
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            [scheduler_linear, scheduler_cosine_lr],
+            milestones=[linear_lr_batches],
+            last_epoch=-1,
+        )
 
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
-                "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
-                    optimizer, threshold=5e-4, patience=5
-                ),
-                "monitor": "val_loss",
-                # If "monitor" references validation metrics, then "frequency" should be set to a
-                # multiple of "trainer.check_val_every_n_epoch".
+                "scheduler": scheduler,
+                "interval": "step",
                 "frequency": 1,
             },
         }
@@ -309,12 +337,15 @@ class EmbedModel(BaseModel):
             torch.zeros((2, self.embedding.n_inputs)),
         )
 
-    def forward(self, seq, embed):
+    def forward(self, seq, embed, exp=False):
         x = self.embedding(embed)
         x = self.trunk(seq, x)
 
         x = self.forward_fc(x)
         x = self.forward_final(x)
+
+        if exp:
+            x = self.exp(x)
 
         return x
 
@@ -344,7 +375,7 @@ class EmbedModel(BaseModel):
             loss = torch.nn.functional.binary_cross_entropy_with_logits(
                 y, indicator.float(), reduction="none"
             )
-        
+
         loss *= weight
         loss = loss.mean()
 
@@ -441,7 +472,9 @@ class VariantEmbedModel(EmbedModel):
 
         y = self(X_seq_ref, X_seq_alt, X_embed).squeeze()
 
-        loss = binomial_mixture_normed_loss(y, ref_counts, total_counts, bad_score, reduction="none")
+        loss = binomial_mixture_normed_loss(
+            y, ref_counts, total_counts, bad_score, reduction="none"
+        )
 
         loss *= weight
         loss = loss.mean()
@@ -453,7 +486,16 @@ class VariantEmbedModel(EmbedModel):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        X_seq_ref, X_seq_alt, X_embed, ref_counts, total_counts, bad_score, lfc, weight = (
+        (
+            X_seq_ref,
+            X_seq_alt,
+            X_embed,
+            ref_counts,
+            total_counts,
+            bad_score,
+            lfc,
+            weight,
+        ) = (
             batch["seq_ref"],
             batch["seq_alt"],
             batch["embed"],
@@ -466,8 +508,10 @@ class VariantEmbedModel(EmbedModel):
 
         y = self(X_seq_ref, X_seq_alt, X_embed).squeeze()
 
-        loss = binomial_mixture_normed_loss(y, ref_counts, total_counts, bad_score, reduction="none")
-        
+        loss = binomial_mixture_normed_loss(
+            y, ref_counts, total_counts, bad_score, reduction="none"
+        )
+
         loss *= weight
         loss = loss.mean()
 
