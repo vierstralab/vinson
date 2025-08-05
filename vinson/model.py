@@ -12,11 +12,11 @@ from torchmetrics.regression import PearsonCorrCoef
 
 from vinson.loss import (
     poisson_loss,
-    binomial_mixture_loss,
     binomial_mixture_normed_loss,
 )
 
 import copy
+
 
 class CellEmbedding(torch.nn.Module):
     """
@@ -108,11 +108,10 @@ class BassetTrunkEmbed(BassetTrunk):
         super(BassetTrunkEmbed, self).__init__()
 
         # TODO: inference output size from BassetTrunk convolutional layers
-        self.bias2 = torch.nn.Linear(n_embed_outputs, 200)
-        self.bias3 = torch.nn.Linear(n_embed_outputs, 200)
+        self.bias2 = torch.nn.Linear(n_embed_outputs, self.layer2[0].out_channels)
+        self.bias3 = torch.nn.Linear(n_embed_outputs, self.layer3[0].out_channels)
 
     def forward(self, x, embed):
-
         x = self.layer1(x)
         x = self.relu1(x)
 
@@ -125,20 +124,19 @@ class BassetTrunkEmbed(BassetTrunk):
         x = self.relu3(x_conv + x_bias)
 
         # flatten
-        #x = self.flatten(x)
+        # x = self.flatten(x)
         x = torch.flatten(x, start_dim=1)
-        
+
         return x
 
 
 class BaseModel(L.LightningModule):
-    def __init__(self, trunk, seqlen=1344, regression=False, pos_weight=1):
+    def __init__(self, trunk, seqlen=1344, regression=False):
         super(BaseModel, self).__init__()
 
         self.trunk = trunk
         self.seqlen = seqlen
         self.regression = regression
-        self.pos_weight = pos_weight
 
         # FC layers
         self.fc1 = torch.nn.LazyLinear(out_features=1024)
@@ -195,8 +193,6 @@ class BaseModel(L.LightningModule):
 
     def forward_final(self, x):
         x = self.final(x)
-
-        # return x.squeeze()
         return x
 
     def forward(self, seq):
@@ -208,11 +204,13 @@ class BaseModel(L.LightningModule):
         return x
 
     def training_step(self, batch, batch_idx):
-        X_seq, indicator, density, read_depth = (
+        X_seq, indicator, density, bg, read_depth, weight = (
             batch["seq"],
             batch["indicator"],
             batch["density"],
+            batch["bg"],
             batch["read_depth"],
+            batch["weight"],
         )
 
         y = self(X_seq).squeeze()
@@ -220,14 +218,19 @@ class BaseModel(L.LightningModule):
         if self.regression:
             # Transform normalized density to counts
             # The model ouputs the log counts
-            pred_counts = (torch.exp(y) / 1e6 * read_depth) + 1e-6
-            target_counts = (density / 1e6 * read_depth) + 1e-6
+            ps = torch.tensor(1e-6)
+            pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
+            target_counts = density / 1e6 * read_depth
 
-            loss = poisson_loss(pred_counts, target_counts)
+            loss = poisson_loss(pred_counts + ps, target_counts + ps, reduction="none")
+
         else:
             loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                y, indicator.float(), pos_weight=torch.tensor(self.pos_weight)
+                y, indicator.float(), reduction="none"
             )
+
+        loss *= weight
+        loss = loss.mean()
 
         self.log(
             "loss", loss, on_step=True, on_epoch=False, sync_dist=True, prog_bar=True
@@ -236,11 +239,13 @@ class BaseModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        X_seq, indicator, density, read_depth = (
+        X_seq, indicator, density, bg, read_depth, weight = (
             batch["seq"],
             batch["indicator"],
             batch["density"],
+            batch["bg"],
             batch["read_depth"],
+            batch["weight"],
         )
 
         y = self(X_seq).squeeze()
@@ -248,16 +253,22 @@ class BaseModel(L.LightningModule):
         if self.regression:
             # Transform normalized density to counts
             # The model ouputs the log counts
-            pred_counts = (torch.exp(y) / 1e6 * read_depth) + 1e-6
-            target_counts = (density / 1e6 * read_depth) + 1e-6
+            ps = torch.tensor(1e-6)
+            pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
+            target_counts = density / 1e6 * read_depth
 
-            loss = poisson_loss(pred_counts, target_counts)
+            loss = poisson_loss(pred_counts + ps, target_counts + ps, reduction="none")
 
-            self.valid_metrics.update(pred_counts.log(), target_counts.log())
+            self.valid_metrics.update(
+                (pred_counts + 1).log(), (target_counts + 1).log()
+            )
         else:
             loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                y, indicator.float(), pos_weight=torch.tensor(self.pos_weight)
+                y, indicator.float(), reduction="none"
             )
+
+        loss *= weight
+        loss = loss.mean()
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
@@ -268,13 +279,28 @@ class BaseModel(L.LightningModule):
         self.valid_metrics.reset()
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=0.0005)
+        """
+        """
+        optimizer = torch.optim.AdamW(self.parameters(), lr=0.0005)
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
+                    optimizer, threshold=5e-4, patience=5
+                ),
+                "monitor": "val_loss",
+                # If "monitor" references validation metrics, then "frequency" should be set to a
+                # multiple of "trainer.check_val_every_n_epoch".
+                "frequency": 1,
+            },
+        }
 
 
 class EmbedModel(BaseModel):
     def __init__(self, trunk, embed, *args, **kwargs):
         super(EmbedModel, self).__init__(trunk, *args, **kwargs)
-    
+
         self.embedding = embed
 
     def init_model(self):
@@ -284,7 +310,6 @@ class EmbedModel(BaseModel):
         )
 
     def forward(self, seq, embed):
-
         x = self.embedding(embed)
         x = self.trunk(seq, x)
 
@@ -294,12 +319,14 @@ class EmbedModel(BaseModel):
         return x
 
     def training_step(self, batch, batch_idx):
-        X_seq, X_embed, indicator, density, read_depth = (
+        X_seq, X_embed, indicator, density, bg, read_depth, weight = (
             batch["seq"],
             batch["embed"],
             batch["indicator"],
             batch["density"],
+            batch["bg"],
             batch["read_depth"],
+            batch["weight"],
         )
 
         y = self(X_seq, X_embed).squeeze()
@@ -307,14 +334,19 @@ class EmbedModel(BaseModel):
         if self.regression:
             # Transform normalized density to counts
             # The model ouputs the log counts
-            pred_counts = (torch.exp(y) / 1e6 * read_depth) + 1e-6
-            target_counts = (density / 1e6 * read_depth) + 1e-6
+            ps = torch.tensor(1e-6)
+            pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
+            target_counts = density / 1e6 * read_depth
 
-            loss = poisson_loss(pred_counts, target_counts)
+            loss = poisson_loss(pred_counts + ps, target_counts + ps, reduction="none")
+
         else:
             loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                y, indicator.float(), pos_weight=torch.tensor(self.pos_weight)
+                y, indicator.float(), reduction="none"
             )
+        
+        loss *= weight
+        loss = loss.mean()
 
         self.log(
             "loss", loss, on_step=True, on_epoch=False, sync_dist=True, prog_bar=True
@@ -323,14 +355,15 @@ class EmbedModel(BaseModel):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        """
-        """
-        X_seq, X_embed, indicator, density, read_depth = (
+        """ """
+        X_seq, X_embed, indicator, density, bg, read_depth, weight = (
             batch["seq"],
             batch["embed"],
             batch["indicator"],
             batch["density"],
+            batch["bg"],
             batch["read_depth"],
+            batch["weight"],
         )
 
         y = self(X_seq, X_embed).squeeze()
@@ -338,18 +371,24 @@ class EmbedModel(BaseModel):
         if self.regression:
             # Transform normalized density to counts
             # The model ouputs the log counts
-            pred_counts = (torch.exp(y) / 1e6 * read_depth) + 1e-6
-            target_counts = (density / 1e6 * read_depth) + 1e-6
+            ps = torch.tensor(1e-6)
+            pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
+            target_counts = density / 1e6 * read_depth
 
-            loss = poisson_loss(pred_counts, target_counts)
+            loss = poisson_loss(pred_counts + ps, target_counts + ps, reduction="none")
 
-            self.valid_metrics.update(pred_counts.log(), target_counts.log())
+            self.valid_metrics.update(
+                (pred_counts + 1).log(), (target_counts + 1).log()
+            )
 
         else:
             loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                y, indicator.float(), pos_weight=torch.tensor(self.pos_weight)
+                y, indicator.float(), reduction="none"
             )
             self.valid_metrics.update(torch.sigmoid(y), indicator.int())
+
+        loss *= weight
+        loss = loss.mean()
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
@@ -378,7 +417,6 @@ class VariantEmbedModel(EmbedModel):
         )
 
     def forward(self, seq_ref, seq_alt, embed):
-
         x = self.embedding(embed)
         ref_features = self.trunk(seq_ref, x)
         alt_features = self.trunk(seq_alt, x)
@@ -391,19 +429,22 @@ class VariantEmbedModel(EmbedModel):
         return x
 
     def training_step(self, batch, batch_idx):
-        X_seq_ref, X_seq_alt, X_embed, ref_counts, total_counts, bad_score = (
+        X_seq_ref, X_seq_alt, X_embed, ref_counts, total_counts, bad_score, weight = (
             batch["seq_ref"],
             batch["seq_alt"],
             batch["embed"],
             batch["ref_counts"],
             batch["total_counts"],
             batch["bad_score"],
+            batch["weight"],
         )
 
         y = self(X_seq_ref, X_seq_alt, X_embed).squeeze()
 
-        #loss = binomial_mixture_loss(y, ref_counts, total_counts, bad_score)
-        loss = binomial_mixture_normed_loss(y, ref_counts, total_counts, bad_score)
+        loss = binomial_mixture_normed_loss(y, ref_counts, total_counts, bad_score, reduction="none")
+
+        loss *= weight
+        loss = loss.mean()
 
         self.log(
             "loss", loss, on_step=True, on_epoch=False, sync_dist=True, prog_bar=True
@@ -412,7 +453,7 @@ class VariantEmbedModel(EmbedModel):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        X_seq_ref, X_seq_alt, X_embed, ref_counts, total_counts, bad_score, lfc = (
+        X_seq_ref, X_seq_alt, X_embed, ref_counts, total_counts, bad_score, lfc, weight = (
             batch["seq_ref"],
             batch["seq_alt"],
             batch["embed"],
@@ -420,12 +461,15 @@ class VariantEmbedModel(EmbedModel):
             batch["total_counts"],
             batch["bad_score"],
             batch["lfc"],
+            batch["weight"],
         )
 
         y = self(X_seq_ref, X_seq_alt, X_embed).squeeze()
 
-        #loss = binomial_mixture_loss(y, ref_counts, total_counts, bad_score)
-        loss = binomial_mixture_normed_loss(y, ref_counts, total_counts, bad_score)
+        loss = binomial_mixture_normed_loss(y, ref_counts, total_counts, bad_score, reduction="none")
+        
+        loss *= weight
+        loss = loss.mean()
 
         self.valid_metrics.update(y, lfc)
 
@@ -433,9 +477,10 @@ class VariantEmbedModel(EmbedModel):
 
         return loss
 
+
 class VariantEmbedModelWrapper(VariantEmbedModel):
-    """Wrapper class for VariantModel to perform only inference
-    """
+    """Wrapper class for VariantModel to perform only inference"""
+
     def __init__(self, model):
         super(VariantEmbedModelWrapper, self).__init__(model.trunk, model.embedding)
 
@@ -448,8 +493,7 @@ class VariantEmbedModelWrapper(VariantEmbedModel):
         self.trunk_alt = copy.deepcopy(self.trunk)
 
     def forward(self, seq_ref, seq_alt, embed):
-        """
-        """
+        """ """
         ref_features = self.trunk_ref(seq_ref, self.embedding_ref(embed))
         alt_features = self.trunk_alt(seq_alt, self.embedding_alt(embed.clone()))
 
@@ -459,12 +503,14 @@ class VariantEmbedModelWrapper(VariantEmbedModel):
         x = self.forward_final(x)
 
         return x
-    
+
     @torch.no_grad()
     def predict(self, dataset, batch_size=32, device="gpu"):
         y_hat = []
 
-        dataloader = torch.data.Dataloader(dataset, batch_size=batch_size, shuffle=False)
+        dataloader = torch.data.Dataloader(
+            dataset, batch_size=batch_size, shuffle=False
+        )
 
         for _, batch in enumerate(dataloader):
             seq_ref = batch["seq_ref"].to(device)
@@ -475,5 +521,3 @@ class VariantEmbedModelWrapper(VariantEmbedModel):
             y_hat.append(preds.cpu())
 
         return torch.cat(y_hat, dim=0)
-
-    

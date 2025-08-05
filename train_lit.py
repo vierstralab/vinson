@@ -1,4 +1,5 @@
 import sys, os
+from glob import glob
 
 from argparse import ArgumentParser
 
@@ -7,76 +8,176 @@ from torch.utils.data import DataLoader
 
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger
+from lightning.pytorch import Callback
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
-from vinson.dataset import SequenceEmbeddingDataset
-
+from vinson.dataset import SeqEmbedDataset
 from vinson.model import (
     CellEmbedding,
     BassetTrunkEmbed,
     EmbedModel,
 )
 
+
+class SeqEmbedDataModule(L.LightningDataModule):
+    def __init__(
+        self,
+        train_samples_files,
+        train_samples_negative_files,
+        val_samples_file,
+        val_samples_negative_file,
+        embeddings_file,
+        read_depth_file,
+        fasta_file,
+        train_dataset_kwargs={},
+        val_dataset_kwargs={},
+        dataloader_kwargs={},
+    ):
+        super(SeqEmbedDataModule, self).__init__()
+
+        self.embeddings_file = embeddings_file
+        self.read_depth_file = read_depth_file
+        self.fasta_file = fasta_file
+
+        assert len(train_samples_files) == len(train_samples_negative_files), (
+            "Train samples and negative samples files have same length!"
+        )
+
+        self.train_samples_files = train_samples_files
+        self.train_samples_negative_files = train_samples_negative_files
+
+        self.val_samples_file = val_samples_file
+        self.val_samples_negative_file = val_samples_negative_file
+
+        self.train_dataset_kwargs = train_dataset_kwargs
+        self.val_dataset_kwargs = val_dataset_kwargs
+        self.dataloader_kwargs = dataloader_kwargs
+
+        self.train = None
+        self.val = None
+
+        self.curr_file = 0
+
+    def setup(self, stage):
+        self.update_train_dataset(epoch=0)
+
+        self.val = SeqEmbedDataset(
+            self.val_samples_file,
+            self.embeddings_file,
+            self.read_depth_file,
+            self.fasta_file,
+            negative_samples_file=self.val_samples_negative_file,
+            **self.val_dataset_kwargs,
+        )
+
+    def train_dataloader(self):
+        return DataLoader(self.train, shuffle=True, **self.dataloader_kwargs)
+
+    def val_dataloader(self):
+        return DataLoader(self.val, shuffle=False, **self.dataloader_kwargs)
+
+    def update_train_dataset(self, epoch=0):
+        i = epoch % len(self.train_samples_files)
+
+        if i == self.curr_file and self.train:
+            return False
+
+        self.train = SeqEmbedDataset(
+            self.train_samples_files[i],
+            self.embeddings_file,
+            self.read_depth_file,
+            self.fasta_file,
+            negative_samples_file=self.train_samples_negative_files[i],
+            **self.train_dataset_kwargs,
+        )
+        self.curr_file = i
+
+        return True
+
+    def update_validation_dataset(self):
+        self.val.reset_random_state()
+
+
+class IterateDatatsetCallback(Callback):
+    def __init__(self, datamodule):
+        self.datamodule = datamodule
+
+    def on_train_epoch_start(self, trainer, _):
+        # Update or reload your training dataset here
+        updated = self.datamodule.update_train_dataset(epoch=trainer.current_epoch)
+        # Replace the dataloader if needed
+        if updated:
+            trainer.train_dataloader = self.datamodule.train_dataloader()
+
+    def on_validation_epoch_start(self, trainer, _):
+        # Reset the validation random state so it samples same negatives each time
+        self.datamodule.update_validation_dataset()
+        # Replace the dataloader if needed
+        trainer.val_dataloader = self.datamodule.val_dataloader()
+
+
 def main(args):
+    """  """
     embeddings_file = "/home/jvierstra/proj/vinson/data/embeddings.tsv"
     read_depth_file = "/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/JUL10/continious_annotation/total_cutcounts.tsv"
     fasta_file = "/net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa"
-
-    samples_genotype_file = "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/output/meta+sample_ids.tsv"
+    sample_genotype_file = "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/output/meta+sample_ids.tsv"
     genotype_file = "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/output/all_variants_stats.bed.gz"
 
-    train_dataset = SequenceEmbeddingDataset(
-        args.train_file,
-        embeddings_file,
-        read_depth_file,
-        fasta_file,
-        sample_genotype_file=samples_genotype_file,
+    train_samples_files = glob(args.train_samples_files_pattern)
+    train_samples_negatives_files = glob(args.train_samples_neg_files_pattern)
+
+    val_samples_file = args.val_samples_file
+    val_samples_negatives_file = args.val_samples_neg_file
+
+    dataset_kwargs = dict(
+        sample_genotype_file=sample_genotype_file,
         genotype_file=genotype_file,
-        reverse_complement=True,
-        jitter=5,
-        noise=0.1,
+        negative_samples_rate=1,
+        negative_samples_weight=args.negative_weight,
+        clip_density=2.5,
+        min_bg=0.15,
     )
 
-    valid_dataset = SequenceEmbeddingDataset(
-        args.val_file,
-        embeddings_file,
-        read_depth_file,
-        fasta_file,
-        sample_genotype_file=samples_genotype_file,
-        genotype_file=genotype_file,
-        reverse_complement=False,
-        jitter=0,
-        noise=0,
+    train_dataset_kwargs = dict(
+        reverse_complement=True, jitter=args.jitter, noise=args.noise
     )
 
-    train_dataloader = DataLoader(
-        train_dataset,
-        batch_size=128,
-        shuffle=True,
-        num_workers=8,
+    val_dataset_kwargs = dict(reverse_complement=False, jitter=0, noise=0, seed=0)
+
+    dataloader_kwargs = dict(
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
         pin_memory=True,
         drop_last=True,
     )
 
-    valid_dataloader = DataLoader(
-        valid_dataset,
-        batch_size=128,
-        shuffle=False,
-        num_workers=8,
-        pin_memory=True,
-        drop_last=True,
+    # DataModule to handle datasets updates and dataloader instatiation
+    datamodule = SeqEmbedDataModule(
+        train_samples_files,
+        train_samples_negatives_files,
+        val_samples_file,
+        val_samples_negatives_file,
+        embeddings_file,
+        read_depth_file,
+        fasta_file,
+        {**train_dataset_kwargs, **dataset_kwargs},
+        {**val_dataset_kwargs, **dataset_kwargs},
+        dataloader_kwargs,
     )
 
-    embed = CellEmbedding(n_inputs=637, n_layers=1)
+    # Create model
+    embed = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
     trunk = BassetTrunkEmbed(embed.n_outputs)
     model = EmbedModel(trunk, embed, regression=args.regression)
 
+    # Initialize model
     model.init_model()
 
     logger = CSVLogger(os.path.join(args.outdir, "logs"))
 
     callbacks = [
-        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.001, patience=50),
+        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.001, patience=10),
         ModelCheckpoint(
             monitor="val_loss",
             mode="min",
@@ -85,38 +186,120 @@ def main(args):
                 args.outdir,
                 "checkpoints",
             ),
-            save_top_k=-1,
+            save_top_k=3,
             save_last="link",
         ),
+        IterateDatatsetCallback(datamodule),
     ]
 
     trainer = L.Trainer(
         logger=logger,
         callbacks=callbacks,
         max_epochs=100,
-        accelerator="gpu",
-        strategy="ddp",
+        accelerator=args.accelerator,
+        strategy=args.strategy,
         num_nodes=args.nodes,
         devices=args.devices,
         log_every_n_steps=100,
-        val_check_interval=0.25,
-        gradient_clip_val=1.0
+        val_check_interval=args.val_check_interval,
+        gradient_clip_val=1.0,
     )
 
-    trainer.fit(model, train_dataloader, valid_dataloader)
+    trainer.fit(model, datamodule=datamodule)
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
 
-    parser.add_argument("--nodes", type=int, default=1)
-    parser.add_argument("--devices", type=int, default=4)
-    parser.add_argument("--outdir", type=str, default=".")
-    parser.add_argument("--regression", action="store_true", default=False)
-    parser.add_argument("train_file", help="training dataset in hdf5 format")
-    parser.add_argument("val_file", help="validation dataset in hdf5 format")
+    parser.add_argument(
+        "--nodes", type=int, default=1, help="Number of nodes for distributed training."
+    )
+    parser.add_argument(
+        "--devices", type=int, default=4, help="Number of devices (GPUs/CPUs) per node."
+    )
+    parser.add_argument(
+        "--outdir",
+        type=str,
+        default=".",
+        help="Output directory for logs and checkpoints.",
+    )
+    parser.add_argument(
+        "--regression",
+        action="store_true",
+        default=False,
+        help="Use regression mode instead of classification.",
+    )
+    parser.add_argument(
+        "--jitter",
+        type=int,
+        default=5,
+        help="Maximum number of bases to randomly shift the region for augmentation.",
+    )
+    parser.add_argument(
+        "--noise",
+        type=float,
+        default=0.1,
+        help="Standard deviation of Gaussian noise added to embeddings.",
+    )
+    parser.add_argument(
+        "--negative_weight",
+        type=float,
+        default=2.5,
+        help="Loss weight assigned to negative samples.",
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=128,
+        help="Batch size for training and validation.",
+    )
+    parser.add_argument(
+        "--lr", type=float, default=0.0005, help="Learning rate (not implemented yet)."
+    )
+    parser.add_argument(
+        "--val_check_interval",
+        type=float,
+        default=0.2,
+        help="Fraction of an epoch between validation checks.",
+    )
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=8,
+        help="Number of worker processes for data loading.",
+    )
+    parser.add_argument(
+        "--accelerator",
+        type=str,
+        default="gpu",
+        help="Type of accelerator to use (e.g., 'gpu', 'cpu').",
+    )
+    parser.add_argument(
+        "--strategy",
+        type=str,
+        default="auto",
+        help="Distributed training strategy (e.g., 'ddp', 'auto').",
+    )
+    parser.add_argument(
+        "train_samples_files_pattern",
+        type=str,
+        help="Glob pattern for training sample files.",
+    )
+    parser.add_argument(
+        "train_samples_neg_files_pattern",
+        type=str,
+        help="Glob pattern for training negative sample files.",
+    )
+    parser.add_argument(
+        "val_samples_file", type=str, help="Path to validation sample file."
+    )
+    parser.add_argument(
+        "val_samples_neg_file",
+        type=str,
+        help="Path to validation negative sample file.",
+    )
 
-    args = parser.parse_args()  
+    args = parser.parse_args()
 
     try:
         os.mkdir(args.outdir)

@@ -4,12 +4,10 @@ import numpy as np
 from genome_tools import GenomicInterval as genomic_interval
 import pandas as pd
 import argparse
-from vinson.dataset import SequenceEmbeddingDataset
-from vinson.model import (
-    BassetTrunkEmbed,
-    CellEmbedding,
-    EmbedModel,
-)
+from vinson.dataset import SeqEmbedDataset
+from vinson.loss import poisson_loss
+from vinson.model import BassetTrunkEmbed, CellEmbedding, EmbedModel
+
 
 #inputs
 parser = argparse.ArgumentParser(description="Run prediction with Vinson model.")
@@ -19,7 +17,21 @@ parser.add_argument("--read-depths", required=True, help="Path to total cut coun
 parser.add_argument("--fasta", required=True, help="Path to FASTA file")
 parser.add_argument("--checkpoint", required=True, help="Path to model checkpoint")
 parser.add_argument("--output", required=True, help="Path to output TSV file")
+parser.add_argument("--negatives", required=True, help="Path to BED.GZ file containing negative regions")
+
+#optional for personalized genomes
+parser.add_argument(
+    "--sample-genotype-file",
+    default=None,
+    help="Path to TSV file mapping samples to genotype information"
+)
+parser.add_argument(
+    "--genotype-file",
+    default=None,
+    help="Path to BED.GZ file containing genotype variant stats"
+)
 args = parser.parse_args()
+
 
 eval_samples_file = args.eval_samples
 embeddings_file = args.embeddings
@@ -27,25 +39,39 @@ read_depth_file = args.read_depths
 fasta_file = args.fasta
 model_ckpt = args.checkpoint
 output_file = args.output
+negative_samples_file = args.negatives
 
-#dataset
-dataset = SequenceEmbeddingDataset(
-    eval_samples_file,
+
+# General dataset params
+dataset_kwargs = dict(
+    negative_samples_rate=1,
+    reverse_complement=False,
+    jitter=0,
+    noise=0,
+    seed=0,
+)
+
+# Add personalized genome info only if specified
+if args.sample_genotype_file is not None and args.genotype_file is not None:
+    dataset_kwargs["sample_genotype_file"] = args.sample_genotype_file
+    dataset_kwargs["genotype_file"] = args.genotype_file
+
+dataset = SeqEmbedDataset(
+    samples_file,
     embeddings_file,
     read_depth_file,
     fasta_file,
-    reverse_complement=True,
-    jitter=0,
-    noise=0,
+    negative_samples_file=negative_samples_file,
+    **dataset_kwargs,
 )
 
 dataloader = DataLoader(
     dataset,
     batch_size=128,
-    shuffle=False,  # important: preserve order
+    shuffle=True,
     num_workers=1,
     pin_memory=True,
-    drop_last=False,
+    drop_last=True,
 )
 
 #load model
