@@ -11,9 +11,12 @@ from torchmetrics.classification import (
 from torchmetrics.regression import PearsonCorrCoef
 
 from vinson.loss import (
+    mse_loss,
     poisson_loss,
     binomial_mixture_normed_loss,
 )
+
+from vinson.lr import CosineAnnealingWarmupRestarts
 
 import copy
 
@@ -148,12 +151,12 @@ class BaseModel(L.LightningModule):
         # FC layers
         self.fc1 = torch.nn.LazyLinear(out_features=1024)
         self.bn1 = torch.nn.BatchNorm1d(num_features=1024, momentum=0.1)
-        self.dropout1 = torch.nn.Dropout(p=0.1)
+        self.dropout1 = torch.nn.Dropout(p=0.3)
         self.relu1 = torch.nn.ReLU()
 
         self.fc2 = torch.nn.LazyLinear(out_features=1024)
         self.bn2 = torch.nn.BatchNorm1d(num_features=1024, momentum=0.1)
-        self.dropout2 = torch.nn.Dropout(p=0.1)
+        self.dropout2 = torch.nn.Dropout(p=0.3)
         self.relu2 = torch.nn.ReLU()
 
         self.final = torch.nn.LazyLinear(out_features=1)
@@ -293,27 +296,37 @@ class BaseModel(L.LightningModule):
         """ """
         optimizer = torch.optim.AdamW(self.parameters(), lr=0.0005)
 
-        # TODO: make these values settable in the command line
-        linear_lr_batches = 10_000
-        cosine_annealing_lr_batches = 5_000
+        # # TODO: make these values settable in the command line
+        # linear_lr_batches = 10_000
+        # cosine_annealing_lr_batches = 5_000
 
-        scheduler_linear = torch.optim.lr_scheduler.LinearLR(
-            optimizer,
-            start_factor=1e-4,
-            end_factor=1.0,
-            total_iters=linear_lr_batches,
-            last_epoch=-1,
-        )
-        scheduler_cosine_lr = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=cosine_annealing_lr_batches, eta_min=5e-6, last_epoch=-1
-        )
+        # scheduler_linear = torch.optim.lr_scheduler.LinearLR(
+        #     optimizer,
+        #     start_factor=1e-4,
+        #     end_factor=1.0,
+        #     total_iters=linear_lr_batches,
+        #     last_epoch=-1,
+        # )
+        # scheduler_cosine_lr = torch.optim.lr_scheduler.CosineAnnealingLR(
+        #     optimizer, T_max=cosine_annealing_lr_batches, eta_min=5e-6, last_epoch=-1
+        # )
 
-        scheduler = torch.optim.lr_scheduler.SequentialLR(
+        # scheduler = torch.optim.lr_scheduler.SequentialLR(
+        #     optimizer,
+        #     [scheduler_linear, scheduler_cosine_lr],
+        #     milestones=[linear_lr_batches],
+        #     last_epoch=-1,
+        # )
+
+        scheduler = CosineAnnealingWarmupRestarts(
             optimizer,
-            [scheduler_linear, scheduler_cosine_lr],
-            milestones=[linear_lr_batches],
-            last_epoch=-1,
-        )
+            max_lr=0.0005,
+            min_lr=0.000005,
+            warmup_steps=5_000,
+            first_cycle_steps=45_000,
+            cycle_mult=1,
+            gamma=0.90,
+            last_epoch=-1)
 
         return {
             "optimizer": optimizer,
@@ -370,6 +383,7 @@ class EmbedModel(BaseModel):
             target_counts = density / 1e6 * read_depth
 
             loss = poisson_loss(pred_counts + ps, target_counts + ps, reduction="none")
+            # loss = mse_loss(pred_counts + ps, target_counts + ps, reduction="none")
 
         else:
             loss = torch.nn.functional.binary_cross_entropy_with_logits(
@@ -407,6 +421,7 @@ class EmbedModel(BaseModel):
             target_counts = density / 1e6 * read_depth
 
             loss = poisson_loss(pred_counts + ps, target_counts + ps, reduction="none")
+            # loss = mse_loss(pred_counts + ps, target_counts + ps, reduction="none")
 
             self.valid_metrics.update(
                 (pred_counts + 1).log(), (target_counts + 1).log()
@@ -429,6 +444,9 @@ class EmbedModel(BaseModel):
 class VariantEmbedModel(EmbedModel):
     def __init__(self, *args, **kwargs):
         super(VariantEmbedModel, self).__init__(*args, **kwargs)
+
+        # self.dropout1.p = 0.3
+        # self.dropout2.p = 0.3
 
     def init_metrics(self):
         self.train_metrics = MetricCollection(
@@ -520,6 +538,24 @@ class VariantEmbedModel(EmbedModel):
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
         return loss
+    
+    def configure_optimizers(self):
+        """ """
+        optimizer = torch.optim.AdamW(self.parameters(), lr=0.00005)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,
+                                                               mode='min',
+                                                               factor=0.2,
+                                                               patience=3,
+                                                               min_lr=1e-6,
+                                                               verbose=True)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_loss",
+                "frequency": 1,
+            },
+        }
 
 
 class VariantEmbedModelWrapper(VariantEmbedModel):

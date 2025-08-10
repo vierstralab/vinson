@@ -140,7 +140,7 @@ class SeqEmbedDataset(BaseDataset):
         sample_genotype_file=None,
         genotype_file=None,
         clip_density=5,
-        min_bg=0.15,
+        min_bg=0.05,
         reverse_complement=False,
         jitter=0,
         noise=0,

@@ -96,7 +96,7 @@ def main(args):
     logger = CSVLogger(os.path.join(args.outdir, "logs"))
 
     callbacks = [
-        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.0005, patience=50),
+        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.001, patience=10),
         ModelCheckpoint(
             monitor="val_loss",
             mode="min",

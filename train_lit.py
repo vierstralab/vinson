@@ -114,7 +114,7 @@ def main(args):
         negative_samples_rate=1,
         negative_samples_weight=args.negative_weight,
         clip_density=args.clip_density,
-        min_bg=0.15,
+        min_bg=0.1,
     )
 
     train_dataset_kwargs = dict(
@@ -184,7 +184,10 @@ def main(args):
         reload_dataloaders_every_n_epochs=1,
     )
 
-    trainer.fit(model, datamodule=datamodule)
+    if args.checkpoint:
+        trainer.fit(model, datamodule=datamodule, ckpt_path=args.checkpoint)
+    else:
+        trainer.fit(model, datamodule=datamodule)
 
 
 if __name__ == "__main__":
@@ -264,6 +267,12 @@ if __name__ == "__main__":
         type=str,
         default="auto",
         help="Distributed training strategy (e.g., 'ddp', 'auto').",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=str,
+        help="Path to checkpoint.",
+        default=None
     )
     parser.add_argument(
         "train_samples_files_pattern",

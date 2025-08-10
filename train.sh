@@ -28,9 +28,10 @@ srun python /home/jvierstra/proj/vinson/train_lit.py \
      --strategy ddp \
      --num_workers 8 \
      --batch_size 64 \
-     --negative_weight 2.5 \
-     --clip_density 2.5 \
-     --outdir /home/jvierstra/proj/vinson/models/data_AUG3 \
+     --negative_weight 2 \
+     --clip_density 4 \
+     --outdir /home/jvierstra/proj/vinson/models/data_AUG3_with_warmup_and_decay_restart \
+     --checkpoint /home/jvierstra/proj/vinson/models/data_AUG3_with_warmup_and_decay/checkpoints/epoch=5-step=2106188-val_loss=21.51.ckpt \
      "$TRAIN_SAMPLES_FILES_PATTERN" \
      "$TRAIN_SAMPLES_NEG_FILES_PATTERN" \
      $VAL_SAMPLES_FILE \

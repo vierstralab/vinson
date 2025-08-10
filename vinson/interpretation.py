@@ -37,7 +37,6 @@ def dinucleotide_shuffle(X, **kwargs):
     X_ = force_strict_ohe(X)
     return dinuc_shuffle(X_, **kwargs)
 
-
 def apply_product(func, model, X, product_func=lambda x: (x[0], list(zip(*x[1:]))), order=None, batch_size=32, device='cuda', 
     additional_func_kwargs={}, verbose=False, **kwargs):
     """Apply a function on the cartesian product between X and each args.
