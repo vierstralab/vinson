@@ -127,7 +127,27 @@ def get_iupac_char_from_alleles(alleles):
 
 
 def intervals_to_one_hot(intervals, seqlen, fasta_extr):
-    """ """
+    """
+    Convert genomic intervals to one-hot encoded DNA sequences.
+
+    For each interval, extracts the sequence from the reference genome using the provided
+    FastaExtractor, centers the interval, and one-hot encodes the sequence.
+
+    Parameters
+    ----------
+    intervals : Iterable[GenomicInterval] or GenomicInterval
+        List of GenomicInterval objects or a single GenomicInterval.
+    seqlen : int
+        Length of the sequence window to extract and encode.
+    fasta_extr : FastaExtractor
+        Extractor for reference genome sequences.
+
+    Returns
+    -------
+    np.ndarray
+        Array of shape (N, 4, seqlen), where N is the number of intervals, containing
+        one-hot encoded DNA sequences.
+    """
     ohe = []
 
     if not isinstance(intervals, Iterable):
@@ -141,7 +161,28 @@ def intervals_to_one_hot(intervals, seqlen, fasta_extr):
     return np.stack(ohe)
 
 def variants_to_one_hot(variants, seqlen, fasta_extr):
-    """ """
+    """
+    Convert variant objects to one-hot encoded reference and alternate allele sequences.
+
+    For each variant, extracts the reference sequence from the genome, creates the alternate
+    sequence by substituting the alternate allele, and one-hot encodes both.
+
+    Parameters
+    ----------
+    variants : Iterable or object
+        List of variant objects or a single variant object. Each variant must have
+        'chrom', 'start', and 'alt' attributes.
+    seqlen : int
+        Length of the sequence window to extract and encode.
+    fasta_extr : FastaExtractor
+        Extractor for reference genome sequences.
+
+    Returns
+    -------
+    np.ndarray
+        Array of shape (2*N, 4, seqlen), where N is the number of variants, containing
+        one-hot encoded reference and alternate allele sequences for each variant.
+    """
     mid = seqlen // 2
     ohe = []
 

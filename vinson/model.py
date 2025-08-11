@@ -1,4 +1,5 @@
 import torch
+import copy
 
 import lightning as L
 
@@ -11,14 +12,11 @@ from torchmetrics.classification import (
 from torchmetrics.regression import PearsonCorrCoef
 
 from vinson.loss import (
-    mse_loss,
     poisson_loss,
     binomial_mixture_normed_loss,
 )
 
 from vinson.lr import CosineAnnealingWarmupRestarts
-
-import copy
 
 
 class _Exp(torch.nn.Module):
@@ -294,30 +292,10 @@ class BaseModel(L.LightningModule):
 
     def configure_optimizers(self):
         """ """
+        # TODO: make the learning rate settable in the command line
         optimizer = torch.optim.AdamW(self.parameters(), lr=0.0005)
 
-        # # TODO: make these values settable in the command line
-        # linear_lr_batches = 10_000
-        # cosine_annealing_lr_batches = 5_000
-
-        # scheduler_linear = torch.optim.lr_scheduler.LinearLR(
-        #     optimizer,
-        #     start_factor=1e-4,
-        #     end_factor=1.0,
-        #     total_iters=linear_lr_batches,
-        #     last_epoch=-1,
-        # )
-        # scheduler_cosine_lr = torch.optim.lr_scheduler.CosineAnnealingLR(
-        #     optimizer, T_max=cosine_annealing_lr_batches, eta_min=5e-6, last_epoch=-1
-        # )
-
-        # scheduler = torch.optim.lr_scheduler.SequentialLR(
-        #     optimizer,
-        #     [scheduler_linear, scheduler_cosine_lr],
-        #     milestones=[linear_lr_batches],
-        #     last_epoch=-1,
-        # )
-
+        # TODO: make these values settable in the command line
         scheduler = CosineAnnealingWarmupRestarts(
             optimizer,
             max_lr=0.0005,
@@ -445,9 +423,6 @@ class VariantEmbedModel(EmbedModel):
     def __init__(self, *args, **kwargs):
         super(VariantEmbedModel, self).__init__(*args, **kwargs)
 
-        # self.dropout1.p = 0.3
-        # self.dropout2.p = 0.3
-
     def init_metrics(self):
         self.train_metrics = MetricCollection(
             {
@@ -541,7 +516,10 @@ class VariantEmbedModel(EmbedModel):
     
     def configure_optimizers(self):
         """ """
+        # TODO: make the learning rate settable in the command line
         optimizer = torch.optim.AdamW(self.parameters(), lr=0.00005)
+        
+        # TODO: make these values settable in the command line
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,
                                                                mode='min',
                                                                factor=0.2,
@@ -584,20 +562,3 @@ class VariantEmbedModelWrapper(VariantEmbedModel):
 
         return x
 
-    @torch.no_grad()
-    def predict(self, dataset, batch_size=32, device="gpu"):
-        y_hat = []
-
-        dataloader = torch.data.Dataloader(
-            dataset, batch_size=batch_size, shuffle=False
-        )
-
-        for _, batch in enumerate(dataloader):
-            seq_ref = batch["seq_ref"].to(device)
-            seq_alt = batch["seq_alt"].to(device)
-            embed = batch["embed"].to(device)
-
-            preds = self(seq_ref, seq_alt, embed)
-            y_hat.append(preds.cpu())
-
-        return torch.cat(y_hat, dim=0)
