@@ -16,8 +16,6 @@ from vinson.loss import (
     binomial_mixture_normed_loss,
 )
 
-from vinson.lr import CosineAnnealingWarmupRestarts
-
 
 class _Exp(torch.nn.Module):
     def __init__(self):
@@ -139,14 +137,23 @@ class BassetTrunkEmbed(BassetTrunk):
 
 
 class BaseModel(L.LightningModule):
-    def __init__(self, trunk, seqlen=1344, regression=False):
+    def __init__(
+        self,
+        trunk_model,
+        seqlen=1344,
+        regression=False,
+        optimizer=None,
+        lr_scheduler=None,
+        optimizer_kwargs=dict(),
+        lr_scheduler_kwargs=dict(),
+    ):
         super(BaseModel, self).__init__()
 
-        self.trunk = trunk
+        self.trunk = trunk_model
         self.seqlen = seqlen
         self.regression = regression
 
-        # FC layers
+        # Fully-connected layers
         self.fc1 = torch.nn.LazyLinear(out_features=1024)
         self.bn1 = torch.nn.BatchNorm1d(num_features=1024, momentum=0.1)
         self.dropout1 = torch.nn.Dropout(p=0.3)
@@ -160,7 +167,14 @@ class BaseModel(L.LightningModule):
         self.final = torch.nn.LazyLinear(out_features=1)
         self.exp = _Exp()
 
-        # init metrics
+        # Optimizer
+        self.optimizer = optimizer if optimizer is not None else torch.optim.AdamW
+        self.optimizer_kwargs = optimizer_kwargs
+        # LR scheduler
+        self.lr_scheduler = lr_scheduler
+        self.lr_scheduler_kwargs = lr_scheduler_kwargs
+
+        # Init metrics
         self.init_metrics()
 
     def init_metrics(self):
@@ -217,7 +231,7 @@ class BaseModel(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         X_seq, indicator, density, bg, read_depth, weight = (
-            batch["seq"],
+            batch["ohe_seq"],
             batch["indicator"],
             batch["density"],
             batch["bg"],
@@ -252,7 +266,7 @@ class BaseModel(L.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         X_seq, indicator, density, bg, read_depth, weight = (
-            batch["seq"],
+            batch["ohe_seq"],
             batch["indicator"],
             batch["density"],
             batch["bg"],
@@ -292,26 +306,22 @@ class BaseModel(L.LightningModule):
 
     def configure_optimizers(self):
         """ """
-        # TODO: make the learning rate settable in the command line
-        optimizer = torch.optim.AdamW(self.parameters(), lr=0.0005)
 
-        # TODO: make these values settable in the command line
-        scheduler = CosineAnnealingWarmupRestarts(
-            optimizer,
-            max_lr=0.0005,
-            min_lr=0.000005,
-            warmup_steps=5_000,
-            first_cycle_steps=45_000,
-            cycle_mult=1,
-            gamma=0.90,
-            last_epoch=-1)
+        optimizer = self.optimizer(self.parameters(), **self.optimizer_kwargs)
+
+        if self.lr_scheduler is None:
+            return optimizer
+
+        scheduler = self.lr_scheduler(optimizer, **self.lr_scheduler_kwargs)
 
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
+                "monitor": "val_loss",
                 "interval": "step",
                 "frequency": 1,
+                "name": "lr",
             },
         }
 
@@ -342,7 +352,7 @@ class EmbedModel(BaseModel):
 
     def training_step(self, batch, batch_idx):
         X_seq, X_embed, indicator, density, bg, read_depth, weight = (
-            batch["seq"],
+            batch["ohe_seq"],
             batch["embed"],
             batch["indicator"],
             batch["density"],
@@ -380,7 +390,7 @@ class EmbedModel(BaseModel):
     def validation_step(self, batch, batch_idx):
         """ """
         X_seq, X_embed, indicator, density, bg, read_depth, weight = (
-            batch["seq"],
+            batch["ohe_seq"],
             batch["embed"],
             batch["indicator"],
             batch["density"],
@@ -453,9 +463,9 @@ class VariantEmbedModel(EmbedModel):
         return x
 
     def training_step(self, batch, batch_idx):
-        X_seq_ref, X_seq_alt, X_embed, ref_counts, total_counts, bad_score, weight = (
-            batch["seq_ref"],
-            batch["seq_alt"],
+        X_seq_hap1, X_seq_hap2, X_embed, ref_counts, total_counts, bad_score, weight = (
+            batch["ohe_seq_hap1"],
+            batch["ohe_seq_hap2"],
             batch["embed"],
             batch["ref_counts"],
             batch["total_counts"],
@@ -463,7 +473,7 @@ class VariantEmbedModel(EmbedModel):
             batch["weight"],
         )
 
-        y = self(X_seq_ref, X_seq_alt, X_embed).squeeze()
+        y = self(X_seq_hap1, X_seq_hap2, X_embed).squeeze()
 
         loss = binomial_mixture_normed_loss(
             y, ref_counts, total_counts, bad_score, reduction="none"
@@ -480,8 +490,8 @@ class VariantEmbedModel(EmbedModel):
 
     def validation_step(self, batch, batch_idx):
         (
-            X_seq_ref,
-            X_seq_alt,
+            X_seq_hap1,
+            X_seq_hap2,
             X_embed,
             ref_counts,
             total_counts,
@@ -489,8 +499,8 @@ class VariantEmbedModel(EmbedModel):
             lfc,
             weight,
         ) = (
-            batch["seq_ref"],
-            batch["seq_alt"],
+            batch["ohe_seq_hap1"],
+            batch["ohe_seq_hap2"],
             batch["embed"],
             batch["ref_counts"],
             batch["total_counts"],
@@ -498,8 +508,7 @@ class VariantEmbedModel(EmbedModel):
             batch["lfc"],
             batch["weight"],
         )
-
-        y = self(X_seq_ref, X_seq_alt, X_embed).squeeze()
+        y = self(X_seq_hap1, X_seq_hap2, X_embed).squeeze()
 
         loss = binomial_mixture_normed_loss(
             y, ref_counts, total_counts, bad_score, reduction="none"
@@ -514,27 +523,6 @@ class VariantEmbedModel(EmbedModel):
 
         return loss
     
-    def configure_optimizers(self):
-        """ """
-        # TODO: make the learning rate settable in the command line
-        optimizer = torch.optim.AdamW(self.parameters(), lr=0.00005)
-        
-        # TODO: make these values settable in the command line
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,
-                                                               mode='min',
-                                                               factor=0.2,
-                                                               patience=3,
-                                                               min_lr=1e-6,
-                                                               verbose=True)
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "monitor": "val_loss",
-                "frequency": 1,
-            },
-        }
-
 
 class VariantEmbedModelWrapper(VariantEmbedModel):
     """Wrapper class for VariantModel to perform only inference"""
@@ -561,4 +549,3 @@ class VariantEmbedModelWrapper(VariantEmbedModel):
         x = self.forward_final(x)
 
         return x
-

@@ -1,3 +1,5 @@
+import torch
+
 import numpy as np
 import numba
 
@@ -74,7 +76,7 @@ def one_hot_encode(sequence, dtype=np.float32):
     return one_hot_encoding.T
 
 
-def force_strict_ohe(X):
+def force_strict_ohe(x):
     """
     Ensure input tensor is strictly one-hot encoded along the nucleotide axis.
 
@@ -92,13 +94,13 @@ def force_strict_ohe(X):
     torch.Tensor
         Output tensor of the same shape as X, with strict one-hot encoding at every position.
     """
-    X_ = X.clone()
-    seq_idx, pos = torch.where(torch.max(X, dim=1)[0] < 1.0)
+    x_ = x.clone()
+    seq_idx, pos = torch.where(torch.max(x, dim=1)[0] < 1.0)
     for i, j in zip(seq_idx, pos):
-        base = np.random.choice(4, p=X[i, :, j])
-        X_[i, :, j] = torch.zeros(4)
-        X_[i, base, j] = 1.0
-    return X_
+        base = np.random.choice(4, p=x[i, :, j])
+        x_[i, :, j] = torch.zeros(4)
+        x_[i, base, j] = 1.0
+    return x_
 
 def get_iupac_char_from_alleles(alleles):
     """Returns the IUPAC character from a list of possible
@@ -126,7 +128,7 @@ def get_iupac_char_from_alleles(alleles):
     return IUPAC_DNA[i]
 
 
-def intervals_to_one_hot(intervals, seqlen, fasta_extr):
+def intervals_to_ohe(intervals, seqlen, fasta_extr):
     """
     Convert genomic intervals to one-hot encoded DNA sequences.
 
@@ -160,7 +162,7 @@ def intervals_to_one_hot(intervals, seqlen, fasta_extr):
     
     return np.stack(ohe)
 
-def variants_to_one_hot(variants, seqlen, fasta_extr):
+def variants_to_ohe(variants, seqlen, fasta_extr):
     """
     Convert variant objects to one-hot encoded reference and alternate allele sequences.
 

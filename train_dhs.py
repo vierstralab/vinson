@@ -23,6 +23,8 @@ from vinson.model import (
     EmbedModel,
 )
 
+from vinson.lr import CosineAnnealingWarmupRestarts
+
 
 class SeqEmbedDataModule(L.LightningDataModule):
     def __init__(
@@ -94,8 +96,9 @@ class SeqEmbedDataModule(L.LightningDataModule):
         # Create new dataloader
         return DataLoader(self.val, shuffle=False, **self.dataloader_kwargs)
 
+
 def main(args):
-    """  """
+    """ """
     embeddings_file = "/home/jvierstra/proj/vinson/data/embeddings.tsv"
     read_depth_file = "/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/JUL10/continious_annotation/total_cutcounts.tsv"
     fasta_file = "/net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa"
@@ -111,10 +114,10 @@ def main(args):
     dataset_kwargs = dict(
         sample_genotype_file=sample_genotype_file,
         genotype_file=genotype_file,
-        negative_samples_rate=1,
+        negative_samples_rate=args.negative_samples_rate,
         negative_samples_weight=args.negative_weight,
         clip_density=args.clip_density,
-        min_bg=0.1,
+        min_bg=args.min_bg,
     )
 
     train_dataset_kwargs = dict(
@@ -144,10 +147,34 @@ def main(args):
         dataloader_kwargs,
     )
 
-    # Create model
-    embed = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
-    trunk = BassetTrunkEmbed(embed.n_outputs)
-    model = EmbedModel(trunk, embed, regression=args.regression)
+    # Optimizer & LR scheduler
+    optimizer = torch.optim.AdamW
+    lr_scheduler = CosineAnnealingWarmupRestarts
+
+    # TODO: Make these parameters settable via CLI
+    lr_scheduler_kwargs = dict(
+        max_lr=args.lr_max,
+        min_lr=args.lr_min,
+        warmup_steps=args.lr_warmup_steps,
+        first_cycle_steps=args.lr_cycle_steps,
+        cycle_mult=1,
+        gamma=args.lr_decay,
+        last_epoch=-1,
+    )
+
+    # Create trunk model
+    embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
+    trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
+
+    # Create lightning module
+    model = EmbedModel(
+        trunk_model,
+        embed_model,
+        regression=args.regression,
+        optimizer=optimizer,
+        lr_scheduler=lr_scheduler,
+        lr_scheduler_kwargs=lr_scheduler_kwargs,
+    )
 
     # Initialize model
     model.init_model()
@@ -155,7 +182,7 @@ def main(args):
     logger = CSVLogger(os.path.join(args.outdir, "logs"))
 
     callbacks = [
-        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.001, patience=10),
+        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.005, patience=10),
         ModelCheckpoint(
             monitor="val_loss",
             mode="min",
@@ -170,6 +197,7 @@ def main(args):
         LearningRateMonitor(),
     ]
 
+    # Lightning trainer
     trainer = L.Trainer(
         logger=logger,
         callbacks=callbacks,
@@ -226,24 +254,46 @@ if __name__ == "__main__":
     parser.add_argument(
         "--negative_weight",
         type=float,
-        default=2.5,
+        default=1,
         help="Loss weight assigned to negative samples.",
+    )
+    parser.add_argument(
+        "--negative_samples_rate",
+        type=int,
+        default=1,
+        help="Number of negatives to sample per positive.",
     )
     parser.add_argument(
         "--clip_density",
         type=float,
-        default=2.5,
+        default=5,
         help="Clip densities to this value.",
+    )
+    parser.add_argument(
+        "--min_bg",
+        type=float,
+        default=0.1,
+        help="Minimum background level.",
     )
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=128,
+        default=64,
         help="Batch size for training and validation.",
     )
     parser.add_argument(
-        "--lr", type=float, default=0.0005, help="Learning rate (not implemented yet)."
+        "--lr_max", type=float, default=0.0005, help="Maximum learning rate."
     )
+    parser.add_argument(
+        "--lr_min", type=float, default=0.000005, help="Minumum learning rate."
+    )
+    parser.add_argument(
+        "--lr_warmup_steps", type=int, default=5_0000, help="LR warmup steps."
+    )
+    parser.add_argument(
+        "--lr_cycle_steps", type=int, default=50_0000, help="LR cosine period (steps)."
+    )
+    parser.add_argument("--lr_decay", type=float, default=0.9, help="LR decay rate.")
     parser.add_argument(
         "--val_check_interval",
         type=float,
@@ -269,10 +319,7 @@ if __name__ == "__main__":
         help="Distributed training strategy (e.g., 'ddp', 'auto').",
     )
     parser.add_argument(
-        "--checkpoint",
-        type=str,
-        help="Path to checkpoint.",
-        default=None
+        "--checkpoint", type=str, help="Path to checkpoint.", default=None
     )
     parser.add_argument(
         "train_samples_files_pattern",

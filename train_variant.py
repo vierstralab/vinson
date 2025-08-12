@@ -31,6 +31,7 @@ def main(args):
         args.train_file,
         embeddings_file,
         fasta_file,
+        flip_alleles=False,
         reverse_complement=True,
         jitter=args.jitter,
         noise=args.noise,
@@ -40,6 +41,7 @@ def main(args):
         args.val_file,
         embeddings_file,
         fasta_file,
+        flip_alleles=False,
         reverse_complement=False,
         jitter=0,
         noise=0,
@@ -64,10 +66,29 @@ def main(args):
         **dataloader_kwargs,
     )
 
+    # Optimizer & LR scheduler
+    optimizer = torch.optim.AdamW
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau
+
+    # TODO: Make these parameters settable via CLI
+    optimizer_kwargs = dict(lr=0.0005)
+    lr_scheduler_kwargs = dict(
+        mode="min", factor=0.5, patience=3, min_lr=5e-6,
+    )
+
     # Create model
-    embed = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
-    trunk = BassetTrunkEmbed(embed.n_outputs)
-    model = VariantEmbedModel(trunk, embed)
+    embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
+    trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
+    
+    # Create lightning module
+    model = VariantEmbedModel(
+        trunk_model,
+        embed_model,
+        optimizer=optimizer,
+        optimizer_kwargs=optimizer_kwargs,
+        lr_scheduler=lr_scheduler,
+        lr_scheduler_kwargs=lr_scheduler_kwargs,
+    )
 
     # Initialize model
     model.init_model()

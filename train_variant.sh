@@ -9,7 +9,7 @@
 module load cuda-toolkit/nccl_2.27.5-1
 conda activate tf-2.13.0
 
-export NCCL_DEBUG=INFO
+# export NCCL_DEBUG=INFO
 export NCCL_SOCKET_FAMILY=AF_INET
 export MASTER_ADDR=127.0.0.1
 export NCCL_P2P_DISABLE=1
@@ -19,7 +19,7 @@ TRUNK_WEIGHTS="/home/jvierstra/proj/vinson/models/data_AUG3_with_warmup_and_deca
 TRAIN_SAMPLES_FILE="/home/jvierstra/proj/vinson/data/dnase-cavs.v4.train.var-split.h5"
 VAL_SAMPLES_FILE="/home/jvierstra/proj/vinson/data/dnase-cavs.v4.val.var-split.h5"
 
-srun python /home/jvierstra/proj/vinson/train_variant_lit.py \
+srun python /home/jvierstra/proj/vinson/train_variant.py \
     --nodes 1 --devices 4 \
     --accelerator gpu \
     --strategy ddp \
