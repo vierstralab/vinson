@@ -37,17 +37,28 @@ def dinucleotide_shuffle(X, **kwargs):
     X_ = force_strict_ohe(X)
     return dinuc_shuffle(X_, **kwargs)
 
-def apply_product(func, model, X, product_func=lambda x: (x[0], list(zip(*x[1:]))), order=None, batch_size=32, device='cuda', 
-    additional_func_kwargs={}, verbose=False, **kwargs):
+
+def apply_product(
+    func,
+    model,
+    X,
+    product_func=lambda x: (x[0], list(zip(*x[1:]))),
+    order=None,
+    batch_size=32,
+    device="cuda",
+    additional_func_kwargs={},
+    verbose=False,
+    **kwargs,
+):
     """Apply a function on the cartesian product between X and each args.
 
     This function will take the provided function and apply it in a batched
-    manner across the cartesian product of `X` and each of the arguments 
+    manner across the cartesian product of `X` and each of the arguments
     provided in `args`. Because this is a cartesian product, the number of
     examples that need to be processed will quickly grow with respect to the
     number of arguments being passed in. Each of the tensors in `args` must
     be one input to `model`, in the order that they are specified by the
-    forward function. 
+    forward function.
 
     This function can accept in any other function -- be it predictions,
     attributions, or marginalizations. If the provided function itself has
@@ -76,11 +87,11 @@ def apply_product(func, model, X, product_func=lambda x: (x[0], list(zip(*x[1:])
     device: str or torch.device
         The device to move the model and batches to when making predictions. If
         set to 'cuda' without a GPU, this function will crash and must be set
-        to 'cpu'. Default is 'cuda'. 
+        to 'cpu'. Default is 'cuda'.
 
     additional_func_kwargs: dict, optional
         Additional named arguments to pass into the function when it is called.
-        This is provided as an alternate path to route arguments into the 
+        This is provided as an alternate path to route arguments into the
         function in case they overlap, name-wise, with those in this function,
         or if you want to be absolutely sure that the arguments are making
         their way into the function. Default is {}.
@@ -107,15 +118,15 @@ def apply_product(func, model, X, product_func=lambda x: (x[0], list(zip(*x[1:])
     model = model.to(device).eval()
 
     n_inputs = len(X)
-    
+
     prod_args = product_func(X)
-    
+
     if not order:
         order = list(range(n_inputs))
 
     y, args_ = [], [[] for _ in range(n_inputs)]
 
-    for x in tqdm(itertools.product(*prod_args), disable=not verbose):        
+    for x in tqdm(itertools.product(*prod_args), disable=not verbose):
         # Flatten args
         _args = ()
         for arg in x:
@@ -127,21 +138,37 @@ def apply_product(func, model, X, product_func=lambda x: (x[0], list(zip(*x[1:])
         [args_[order[i]].append(a) for i, a in enumerate(_args)]
 
         if len(args_[0]) == batch_size:
-            y_ = _apply(func, model, args_[0], args=args_[1:], batch_size=batch_size, 
-                device=device, verbose=verbose, 
-                additional_func_kwargs=additional_func_kwargs, **kwargs)
+            y_ = _apply(
+                func,
+                model,
+                args_[0],
+                args=args_[1:],
+                batch_size=batch_size,
+                device=device,
+                verbose=verbose,
+                additional_func_kwargs=additional_func_kwargs,
+                **kwargs,
+            )
             y.append(y_)
 
             args_ = [[] for _ in range(n_inputs)]
         else:
             if len(args_[0]) > 0:
-                y_ = _apply(func, model, args_[0], args=args_[1:], batch_size=batch_size, 
-                    device=device, verbose=verbose,
-                    additional_func_kwargs=additional_func_kwargs, **kwargs)
+                y_ = _apply(
+                    func,
+                    model,
+                    args_[0],
+                    args=args_[1:],
+                    batch_size=batch_size,
+                    device=device,
+                    verbose=verbose,
+                    additional_func_kwargs=additional_func_kwargs,
+                    **kwargs,
+                )
                 y.append(y_)
 
     Xal = [len(args) for args in prod_args]
-    
+
     # If there is only a single output, just concatenate the tensors
     if isinstance(y[0], torch.Tensor):
         yl = y[0].shape[1:]

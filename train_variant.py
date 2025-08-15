@@ -26,12 +26,18 @@ def main(args):
     """ """
     embeddings_file = "/home/jvierstra/proj/vinson/data/embeddings.tsv"
     fasta_file = "/net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa"
+    sample_genotype_file = (
+        "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/output/meta+sample_ids.tsv"
+    )
+    genotype_file = "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/phasing/output/all_phased.bed.gz"
 
     train_dataset = VariantEmbedDataset(
         args.train_file,
         embeddings_file,
         fasta_file,
-        flip_alleles=False,
+        sample_genotype_file=sample_genotype_file,
+        genotype_file=genotype_file,
+        flip_alleles=True,
         reverse_complement=True,
         jitter=args.jitter,
         noise=args.noise,
@@ -41,6 +47,8 @@ def main(args):
         args.val_file,
         embeddings_file,
         fasta_file,
+        sample_genotype_file=sample_genotype_file,
+        genotype_file=genotype_file,
         flip_alleles=False,
         reverse_complement=False,
         jitter=0,
@@ -71,9 +79,9 @@ def main(args):
     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau
 
     # TODO: Make these parameters settable via CLI
-    optimizer_kwargs = dict(lr=0.0005)
+    optimizer_kwargs = dict(lr=0.0001)
     lr_scheduler_kwargs = dict(
-        mode="min", factor=0.5, patience=3, min_lr=5e-6,
+        mode="min", factor=0.1, patience=3, min_lr=1e-6, verbose=True
     )
 
     # Create model
@@ -189,7 +197,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--val_check_interval",
         type=float,
-        default=0.5,
+        default=1.0,
         help="Fraction of an epoch between validation checks.",
     )
     parser.add_argument(

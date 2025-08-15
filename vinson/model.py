@@ -319,7 +319,7 @@ class BaseModel(L.LightningModule):
             "lr_scheduler": {
                 "scheduler": scheduler,
                 "monitor": "val_loss",
-                "interval": "step",
+                "interval": "epoch",
                 "frequency": 1,
                 "name": "lr",
             },
@@ -508,6 +508,7 @@ class VariantEmbedModel(EmbedModel):
             batch["lfc"],
             batch["weight"],
         )
+
         y = self(X_seq_hap1, X_seq_hap2, X_embed).squeeze()
 
         loss = binomial_mixture_normed_loss(

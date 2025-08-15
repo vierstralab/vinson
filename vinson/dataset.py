@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 import h5py
+from collections import namedtuple
+
 
 import torch
 from torch.utils.data import Dataset
@@ -296,19 +298,30 @@ class SeqEmbedDataset(BaseDataset):
         """
         seq = self.fasta_extr[interval]
 
-        # Get individual ID
-        indiv_id = self.sample_to_genotype_df.loc[sample_id].indiv_id
+        # Check if sample_id has a genotype
+        if sample_id not in self.sample_to_genotype_df.index:
+            logging.info(
+                f"{sample_id} not found in samples to genotype file. ({str(interval)})"
+            )
+            # Return the original sequence
+            return 0, seq
 
-        # Return if not individual ID corresponding to sample ID
+        # Get individual ID
+        indiv_id = self.sample_to_genotype_df.loc[sample_id, "indiv_id"]
+
+        # Check if not NaN
         if pd.isna(indiv_id):
             logging.info(
-                f"No INDIV_ID associated with sample {sample_id}. ({str(interval)}/{sample_id}/{indiv_id})"
+                f"No INDIV_ID for {sample_id} samples to genotype file (indiv_id = NaN). ({str(interval)})"
             )
+            # Return the original sequence
             return 0, seq
 
         # Extract variants pertaining to individual
         variants = self.genotype_extr[interval]
-        variants = variants[variants.indiv_id.str.contains(indiv_id)].set_index("start")
+        variants = variants[variants["indiv_id"].str.contains(indiv_id)].set_index(
+            ["chr", "start", "ref", "alt"]
+        )
 
         logger.debug(
             f"Found {len(variants)} variants in sample {sample_id} from individual {indiv_id}"
@@ -316,20 +329,20 @@ class SeqEmbedDataset(BaseDataset):
 
         for v in variants.itertuples():
             # Variant position is the dataframe index
-            pos = v.Index
-            rel_pos = pos - interval.start
+            _chr, _pos, _ref, _alt = v.Index
+            rel_pos = _pos - interval.start
 
             # If heterozygous, get IUPAC base character
             if (v.gt[0] == "1" and v.gt[2] == "0") or (
                 v.gt[0] == "0" and v.gt[2] == "1"
             ):
-                base = get_iupac_char_from_alleles((v.ref, v.alt))
+                base = get_iupac_char_from_alleles((_ref, _alt))
             # If homozygous alternate
             elif v.gt[0] == "1" and v.gt[2] == "1":
-                base = v.alt
+                base = _alt
             # Else homozygous reference
             else:
-                base = v.ref
+                base = _ref
 
             seq = seq[:rel_pos] + base + seq[rel_pos + 1 :]
 
@@ -365,7 +378,7 @@ class SeqEmbedDataset(BaseDataset):
         # pysam is not thread-safe
         if not self.fasta_extr:
             self.fasta_extr = FastaExtractor(self.fasta_file)
-        
+
         # tabix is not thread-safe
         if self.sample_from_negatives and not self.negative_samples_extr:
             self.negative_samples_extr = TabixExtractor(self.negative_samples_file)
@@ -496,6 +509,8 @@ class SeqEmbedDataset(BaseDataset):
             self.negative_samples_extr.close()
 
 
+Variant = namedtuple("Variant", ["chr", "pos", "ref", "alt"])
+
 class VariantEmbedDataset(BaseDataset):
     """
     PyTorch Dataset for extracting reference and alternate allele sequences and
@@ -598,7 +613,7 @@ class VariantEmbedDataset(BaseDataset):
             )
             self.include_genotypes = False
 
-    def get_phased_sequences(self, interval, sample_id, query_pos):
+    def get_phased_sequences(self, interval, sample_id, reference):
         """
         Retrieve phased haplotype sequences for a given interval and sample, injecting
         phased and unphased variants as appropriate.
@@ -622,79 +637,89 @@ class VariantEmbedDataset(BaseDataset):
             Haplotype 2 DNA sequence.
         """
         seq_hap1 = self.fasta_extr[interval]
-        seq_hap2 = seq_hap1.copy()
+        seq_hap2 = str(seq_hap1)
 
-        indiv_id = self.sample_to_genotype_df.loc[sample_id].indiv_id
+        # Check if sample in has a genotype
+        if sample_id not in self.sample_to_genotype_df.index:
+            raise ValueError(f"Sample {sample_id} not in samples to genotype file!")
 
-        # Throw error if no individual ID corresponds to sample ID
+        # Get individual ID from sample ID
+        indiv_id = self.sample_to_genotype_df.loc[sample_id, "indiv_id"]
+
+        # Check if not NaN
         if pd.isna(indiv_id):
             raise ValueError(
-                "No INDIV_ID associated with sample "
-                f"{sample_id} ({str(interval)}/{sample_id}/{indiv_id}/{query_pos})"
+                f"No INDIV_ID for {sample_id} samples to genotype file (indiv_id = NaN). ({str(interval)})"
             )
 
         # Extract variants pertaining to individual
         variants = self.genotype_extr[interval]
-        variants = variants[variants.indiv_id.str.contains(indiv_id)].set_index("start")
+        variants = variants[variants["indiv_id"].str.contains(indiv_id)].set_index(
+            ["chr", "start", "ref", "alt"]
+        )
 
-        # Reference variant
         try:
-            query_phase_block = variants.loc[query_pos].phase_block
-            query_gt = variants.loc[query_pos].gt
+            # Look for query variant
+            ref_variant = variants.loc[reference]
         except KeyError:
             raise ValueError(
-                "Query variant not found in genotyping file " 
-                f"({str(interval)}/{sample_id}/{indiv_id}/{query_pos})"
+                "Query variant not found in genotyping file "
+                f"({str(interval)}/{sample_id}/{indiv_id}/{reference.pos})"
             )
 
-        logger.debug(
+        logger.info(
             f"Found {len(variants)} variants in sample {sample_id} from individual {indiv_id} in {interval}"
         )
 
         for v in variants.itertuples():
             # Variant position is the dataframe index
-            pos = v.Index
-            rel_pos = pos - interval.start
-
-            # If variant is in the same phase block as ref variant, add it to
-            # correct haplotype. This also adds the phased reference variant.
-            if v.phase_block == query_phase_block and not pd.isna(query_phase_block):
+            _chr, _pos, _ref, _alt = v.Index
+            rel_pos = _pos - interval.start
+            # Phased variants, including reference
+            if v.phase_block == ref_variant.phase_block and not pd.isna(
+                ref_variant.phase_block
+            ):
                 if v.gt == "1|0":
-                    seq_hap1 = seq_hap1[:rel_pos] + v.alt + seq_hap1[rel_pos + 1 :]
+                    seq_hap1 = seq_hap1[:rel_pos] + _alt + seq_hap1[rel_pos + 1 :]
                 elif v.gt == "0|1":
-                    seq_hap2 = seq_hap2[:rel_pos] + v.alt + seq_hap2[rel_pos + 1 :]
+                    seq_hap2 = seq_hap2[:rel_pos] + _alt + seq_hap2[rel_pos + 1 :]
                 else:
                     raise ValueError(
-                        f"Phased genotype {v.gt} not recognized! ({v.chr}:{pos}:{indiv_id})"
+                        f"Phased genotype {v.gt} not recognized! ({_chr}:{_pos}:{indiv_id})"
                     )
-            # If the variant is the reference variant it is not phased, add
-            # it to hap2 sequence
-            elif pos == query_pos and pd.isna(query_phase_block):
-                seq_hap2 = seq_hap2[:rel_pos] + v.alt + seq_hap2[rel_pos + 1 :]
-            # Add back the rest of the variants, they are unphased with reference variants
-            # so we have no idea which haplotype they are on. In this case, for all het
-            # variants we just add the degenerate IUPAC character to both
-            # haplotypes.
-            else:
+            # The unphased reference
+            elif v.Index == reference:
+                seq_hap2 = seq_hap2[:rel_pos] + _alt + seq_hap2[rel_pos + 1 :]
+            # Unphased additional variants that are not at the same 
+            # position as the referencee
+            elif _pos != reference.pos:
                 # If heterozygous, get IUPAC base character
                 if (v.gt[0] == "1" and v.gt[2] == "0") or (
                     v.gt[0] == "0" and v.gt[2] == "1"
                 ):
-                    base = get_iupac_char_from_alleles((v.ref, v.alt))
+                    base = get_iupac_char_from_alleles((_ref, _alt))
                 # If homozygous alternate
                 elif v.gt[0] == "1" and v.gt[2] == "1":
-                    base = v.alt
+                    base = _alt
                 # Else homozygous reference
                 else:
-                    base = v.ref
+                    base = _ref
+
                 seq_hap1 = seq_hap1[:rel_pos] + base + seq_hap1[rel_pos + 1 :]
                 seq_hap2 = seq_hap2[:rel_pos] + base + seq_hap2[rel_pos + 1 :]
+            else:
+                pass
 
         # The hap1 sequence should have the reference allele for
         # variant. This would only occur for phased variants, hence
         # the "1|0" genotype.
-        if query_gt == "1|0":
+        if ref_variant["gt"] == "1|0":
             seq_hap1, seq_hap2 = seq_hap2, seq_hap1
+
+        # Check the sequences
+        rel_pos = reference[1] - interval.start
+        if (seq_hap1[rel_pos] != reference[2]) or (seq_hap2[rel_pos] != reference[3]):
+            raise ValueError("Expected ref & alt alleles not found in correct position in sequences!", reference, variants)
 
         return (len(variants), seq_hap1, seq_hap2)
 
@@ -739,7 +764,18 @@ class VariantEmbedDataset(BaseDataset):
         if self.include_genotypes and not self.genotype_extr:
             self.genotype_extr = TabixExtractor(
                 self.genotype_file,
-                na_values={"phase_block:": "."},
+                skiprows=1,
+                columns=[
+                    "chr",
+                    "start",
+                    "end",
+                    "ref",
+                    "alt",
+                    "indiv_id",
+                    "gt",
+                    "phase_block",
+                ],
+                na_values={"phase_block": "."},
             )
 
         chrom, pos, ref, alt, ref_counts, total_counts, bad, lfc, sample_id = (
@@ -766,10 +802,7 @@ class VariantEmbedDataset(BaseDataset):
         # Inject genotypes if genotype files provided
         if self.include_genotypes:
             _, dna_seq_hap1, dna_seq_hap2 = self.get_phased_sequences(
-                interval, sample_id, pos
-            )
-            assert dna_seq_hap1[rel_pos] == ref and dna_seq_hap2[rel_pos] == alt, (
-                "Expected ref & alt alleles not found in correct position in sequences!"
+                interval, sample_id, Variant(chrom, pos, ref, alt)
             )
         else:
             dna_seq_hap1 = self.fasta_extr[interval]
@@ -814,6 +847,8 @@ class VariantEmbedDataset(BaseDataset):
             "lfc": lfc * np.log(2),
             "sample_id": sample_id,
             "weight": 1.0,
+            "chrom": chrom,
+            "pos": pos,
         }
 
     def __del__(self):

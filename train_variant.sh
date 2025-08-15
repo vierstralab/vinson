@@ -15,7 +15,7 @@ export MASTER_ADDR=127.0.0.1
 export NCCL_P2P_DISABLE=1
 
 
-TRUNK_WEIGHTS="/home/jvierstra/proj/vinson/models/data_AUG3_with_warmup_and_decay/checkpoints/epoch=5-step=2106188-val_loss=21.51.ckpt"
+TRUNK_WEIGHTS="/home/jvierstra/proj/vinson/models/data_AUG3_with_warmup_and_decay_v2/checkpoints/last.ckpt"
 TRAIN_SAMPLES_FILE="/home/jvierstra/proj/vinson/data/dnase-cavs.v4.train.var-split.h5"
 VAL_SAMPLES_FILE="/home/jvierstra/proj/vinson/data/dnase-cavs.v4.val.var-split.h5"
 
@@ -26,7 +26,7 @@ srun python /home/jvierstra/proj/vinson/train_variant.py \
     --num_workers 4 \
     --batch_size 32 \
     --trunk_weights $TRUNK_WEIGHTS \
-    --outdir /home/jvierstra/proj/vinson/models/variant_data_AUG3_with_warmup_and_decay_var_split_v3 \
+    --outdir /home/jvierstra/proj/vinson/models/variant_data_AUG3_with_warmup_and_decay_v2 \
     $TRAIN_SAMPLES_FILE \
     $VAL_SAMPLES_FILE
 

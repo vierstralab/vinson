@@ -288,10 +288,10 @@ if __name__ == "__main__":
         "--lr_min", type=float, default=0.000005, help="Minumum learning rate."
     )
     parser.add_argument(
-        "--lr_warmup_steps", type=int, default=5_0000, help="LR warmup steps."
+        "--lr_warmup_steps", type=int, default=5_000, help="LR warmup steps."
     )
     parser.add_argument(
-        "--lr_cycle_steps", type=int, default=50_0000, help="LR cosine period (steps)."
+        "--lr_cycle_steps", type=int, default=50_000, help="LR cosine period (steps)."
     )
     parser.add_argument("--lr_decay", type=float, default=0.9, help="LR decay rate.")
     parser.add_argument(
