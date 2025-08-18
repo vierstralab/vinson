@@ -17,7 +17,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class BaseDataset(Dataset):
+class BaseSequenceDataset(Dataset):
     """
     Base PyTorch Dataset for genomic sequence and embedding data.
 
@@ -144,7 +144,7 @@ class BaseDataset(Dataset):
         return x
 
 
-class SeqEmbedDataset(BaseDataset):
+class SequenceEmbedDataset(BaseSequenceDataset):
     """
     PyTorch Dataset for extracting sequence and cell-type embeddings, with optional
     genotype injection, negative sampling, and read depth normalization.
@@ -226,7 +226,7 @@ class SeqEmbedDataset(BaseDataset):
         noise=0,
         seed=None,
     ):
-        super(SeqEmbedDataset, self).__init__(
+        super(SequenceEmbedDataset, self).__init__(
             samples_file,
             embeddings_file,
             fasta_file,
@@ -511,7 +511,7 @@ class SeqEmbedDataset(BaseDataset):
 
 Variant = namedtuple("Variant", ["chr", "pos", "ref", "alt"])
 
-class VariantEmbedDataset(BaseDataset):
+class VariantEmbedDataset(BaseSequenceDataset):
     """
     PyTorch Dataset for extracting reference and alternate allele sequences and
     cell-type embeddings for variant effect prediction.
@@ -636,8 +636,8 @@ class VariantEmbedDataset(BaseDataset):
         str
             Haplotype 2 DNA sequence.
         """
-        seq_hap1 = self.fasta_extr[interval]
-        seq_hap2 = str(seq_hap1)
+        seq_ref = self.fasta_extr[interval]
+        seq_alt = str(seq_ref)
 
         # Check if sample in has a genotype
         if sample_id not in self.sample_to_genotype_df.index:
@@ -680,16 +680,16 @@ class VariantEmbedDataset(BaseDataset):
                 ref_variant.phase_block
             ):
                 if v.gt == "1|0":
-                    seq_hap1 = seq_hap1[:rel_pos] + _alt + seq_hap1[rel_pos + 1 :]
+                    seq_ref = seq_ref[:rel_pos] + _alt + seq_ref[rel_pos + 1 :]
                 elif v.gt == "0|1":
-                    seq_hap2 = seq_hap2[:rel_pos] + _alt + seq_hap2[rel_pos + 1 :]
+                    seq_alt = seq_alt[:rel_pos] + _alt + seq_alt[rel_pos + 1 :]
                 else:
                     raise ValueError(
                         f"Phased genotype {v.gt} not recognized! ({_chr}:{_pos}:{indiv_id})"
                     )
             # The unphased reference
             elif v.Index == reference:
-                seq_hap2 = seq_hap2[:rel_pos] + _alt + seq_hap2[rel_pos + 1 :]
+                seq_alt = seq_alt[:rel_pos] + _alt + seq_alt[rel_pos + 1 :]
             # Unphased additional variants that are not at the same 
             # position as the referencee
             elif _pos != reference.pos:
@@ -705,23 +705,23 @@ class VariantEmbedDataset(BaseDataset):
                 else:
                     base = _ref
 
-                seq_hap1 = seq_hap1[:rel_pos] + base + seq_hap1[rel_pos + 1 :]
-                seq_hap2 = seq_hap2[:rel_pos] + base + seq_hap2[rel_pos + 1 :]
+                seq_ref = seq_ref[:rel_pos] + base + seq_ref[rel_pos + 1 :]
+                seq_alt = seq_alt[:rel_pos] + base + seq_alt[rel_pos + 1 :]
             else:
                 pass
 
-        # The hap1 sequence should have the reference allele for
+        # The ref sequence should have the reference allele for
         # variant. This would only occur for phased variants, hence
         # the "1|0" genotype.
         if ref_variant["gt"] == "1|0":
-            seq_hap1, seq_hap2 = seq_hap2, seq_hap1
+            seq_ref, seq_alt = seq_alt, seq_ref
 
         # Check the sequences
         rel_pos = reference[1] - interval.start
-        if (seq_hap1[rel_pos] != reference[2]) or (seq_hap2[rel_pos] != reference[3]):
+        if (seq_ref[rel_pos] != reference[2]) or (seq_alt[rel_pos] != reference[3]):
             raise ValueError("Expected ref & alt alleles not found in correct position in sequences!", reference, variants)
 
-        return (len(variants), seq_hap1, seq_hap2)
+        return (len(variants), seq_ref, seq_alt)
 
     def __getitem__(self, i):
         """
@@ -801,17 +801,17 @@ class VariantEmbedDataset(BaseDataset):
 
         # Inject genotypes if genotype files provided
         if self.include_genotypes:
-            _, dna_seq_hap1, dna_seq_hap2 = self.get_phased_sequences(
+            _, dna_seq_ref, dna_seq_alt = self.get_phased_sequences(
                 interval, sample_id, Variant(chrom, pos, ref, alt)
             )
         else:
-            dna_seq_hap1 = self.fasta_extr[interval]
-            dna_seq_hap2 = dna_seq_hap1[:rel_pos] + alt + dna_seq_hap1[rel_pos + 1 :]
+            dna_seq_ref = self.fasta_extr[interval]
+            dna_seq_alt = dna_seq_ref[:rel_pos] + alt + dna_seq_ref[rel_pos + 1 :]
 
         try:
-            ohe_seq_hap1, ohe_seq_hap2 = (
+            ohe_seq_ref, ohe_seq_alt = (
                 one_hot_encode(seq, dtype=np.float32)
-                for seq in [dna_seq_hap1, dna_seq_hap2]
+                for seq in [dna_seq_ref, dna_seq_alt]
             )
         except ValueError as e:
             logger.error(
@@ -821,13 +821,13 @@ class VariantEmbedDataset(BaseDataset):
 
         # Random reverse complementation
         if self.reverse_complement and self.random_state.choice(2) == 1:
-            ohe_seq_hap1 = np.flip(ohe_seq_hap1, [0, 1])
-            ohe_seq_hap2 = np.flip(ohe_seq_hap2, [0, 1])
+            ohe_seq_ref = np.flip(ohe_seq_ref, [0, 1])
+            ohe_seq_alt = np.flip(ohe_seq_alt, [0, 1])
 
         # Flip reference and alternative alleles in input
         # for additional regularization
         if self.flip_alleles and self.random_state.choice(2) == 1:
-            ohe_seq_hap1, ohe_seq_hap2 = ohe_seq_hap2, ohe_seq_hap1
+            ohe_seq_ref, ohe_seq_alt = ohe_seq_alt, ohe_seq_ref
             ref_counts = total_counts - ref_counts
             lfc = -1 * lfc
 
@@ -838,8 +838,8 @@ class VariantEmbedDataset(BaseDataset):
         # haplotype 1 vs. haplotype 2. We call it "ref" vs. "alt" because the
         # variant effect is always measured against the reference genome allele.
         return {
-            "ohe_seq_hap1": ohe_seq_hap1.copy(),
-            "ohe_seq_hap2": ohe_seq_hap2.copy(),
+            "ohe_seq_ref": ohe_seq_ref.copy(),
+            "ohe_seq_alt": ohe_seq_alt.copy(),
             "embed": embed.copy(),
             "ref_counts": np.float32(ref_counts),
             "total_counts": np.float32(total_counts),

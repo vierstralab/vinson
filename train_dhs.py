@@ -9,15 +9,14 @@ from torch.utils.data import DataLoader
 
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger
-from lightning.pytorch import Callback
 from lightning.pytorch.callbacks import (
     EarlyStopping,
     ModelCheckpoint,
     LearningRateMonitor,
 )
 
-from vinson.dataset import SeqEmbedDataset
-from vinson.model import (
+from vinson.datasets.sequence import SequenceEmbedDataset
+from vinson.models.sequence import (
     CellEmbedding,
     BassetTrunkEmbed,
     EmbedModel,
@@ -66,7 +65,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.train_file_cycler = cycle(range(len(self.train_samples_files)))
 
     def setup(self, stage):
-        self.val = SeqEmbedDataset(
+        self.val = SequenceEmbedDataset(
             self.val_samples_file,
             self.embeddings_file,
             self.read_depth_file,
@@ -79,7 +78,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         # Cycle to next file index
         i = next(self.train_file_cycler)
         # Create new dataset
-        self.train = SeqEmbedDataset(
+        self.train = SequenceEmbedDataset(
             self.train_samples_files[i],
             self.embeddings_file,
             self.read_depth_file,

@@ -16,15 +16,6 @@ from vinson.loss import (
     binomial_mixture_normed_loss,
 )
 
-
-class _Exp(torch.nn.Module):
-    def __init__(self):
-        super(_Exp, self).__init__()
-
-    def forward(self, X):
-        return torch.exp(X)
-
-
 class CellEmbedding(torch.nn.Module):
     """
     This a simple multilayer perceptron to encode cell states from an embedding
@@ -43,9 +34,9 @@ class CellEmbedding(torch.nn.Module):
         self.irelu = torch.nn.ReLU()
 
         self.fcs = torch.nn.ModuleList(
-            [torch.nn.Linear(n_nodes, n_nodes) for i in range(n_layers)]
+            [torch.nn.Linear(n_nodes, n_nodes) for i in range(self.n_layers)]
         )
-        self.relus = torch.nn.ModuleList([torch.nn.ReLU() for i in range(n_layers)])
+        self.relus = torch.nn.ModuleList([torch.nn.ReLU() for i in range(self.n_layers)])
 
         self.ffc = torch.nn.Linear(n_nodes, n_outputs)
 
@@ -55,7 +46,6 @@ class CellEmbedding(torch.nn.Module):
             x = self.relus[i](self.fcs[i](x))
         x = self.ffc(x)
         return x
-
 
 class BassetTrunk(torch.nn.Module):
     def __init__(self):
@@ -136,7 +126,7 @@ class BassetTrunkEmbed(BassetTrunk):
         return x
 
 
-class BaseModel(L.LightningModule):
+class BaseSequenceModel(L.LightningModule):
     def __init__(
         self,
         trunk_model,
@@ -147,7 +137,7 @@ class BaseModel(L.LightningModule):
         optimizer_kwargs=dict(),
         lr_scheduler_kwargs=dict(),
     ):
-        super(BaseModel, self).__init__()
+        super(BaseSequenceModel, self).__init__()
 
         self.trunk = trunk_model
         self.seqlen = seqlen
@@ -165,7 +155,6 @@ class BaseModel(L.LightningModule):
         self.relu2 = torch.nn.ReLU()
 
         self.final = torch.nn.LazyLinear(out_features=1)
-        self.exp = _Exp()
 
         # Optimizer
         self.optimizer = optimizer if optimizer is not None else torch.optim.AdamW
@@ -326,7 +315,9 @@ class BaseModel(L.LightningModule):
         }
 
 
-class EmbedModel(BaseModel):
+class EmbedModel(BaseSequenceModel):
+    """Sequence with embeddings model
+    """
     def __init__(self, trunk, embed, *args, **kwargs):
         super(EmbedModel, self).__init__(trunk, *args, **kwargs)
 
@@ -338,15 +329,12 @@ class EmbedModel(BaseModel):
             torch.zeros((2, self.embedding.n_inputs)),
         )
 
-    def forward(self, seq, embed, exp=False):
+    def forward(self, seq, embed):
         x = self.embedding(embed)
         x = self.trunk(seq, x)
 
         x = self.forward_fc(x)
         x = self.forward_final(x)
-
-        if exp:
-            x = self.exp(x)
 
         return x
 
@@ -463,9 +451,9 @@ class VariantEmbedModel(EmbedModel):
         return x
 
     def training_step(self, batch, batch_idx):
-        X_seq_hap1, X_seq_hap2, X_embed, ref_counts, total_counts, bad_score, weight = (
-            batch["ohe_seq_hap1"],
-            batch["ohe_seq_hap2"],
+        X_ref, X_alt, X_embed, ref_counts, total_counts, bad_score, weight = (
+            batch["ohe_seq_ref"],
+            batch["ohe_seq_alt"],
             batch["embed"],
             batch["ref_counts"],
             batch["total_counts"],
@@ -473,7 +461,7 @@ class VariantEmbedModel(EmbedModel):
             batch["weight"],
         )
 
-        y = self(X_seq_hap1, X_seq_hap2, X_embed).squeeze()
+        y = self(X_ref, X_alt, X_embed).squeeze()
 
         loss = binomial_mixture_normed_loss(
             y, ref_counts, total_counts, bad_score, reduction="none"
@@ -490,8 +478,8 @@ class VariantEmbedModel(EmbedModel):
 
     def validation_step(self, batch, batch_idx):
         (
-            X_seq_hap1,
-            X_seq_hap2,
+            X_ref,
+            X_alt,
             X_embed,
             ref_counts,
             total_counts,
@@ -499,8 +487,8 @@ class VariantEmbedModel(EmbedModel):
             lfc,
             weight,
         ) = (
-            batch["ohe_seq_hap1"],
-            batch["ohe_seq_hap2"],
+            batch["ohe_seq_ref"],
+            batch["ohe_seq_alt"],
             batch["embed"],
             batch["ref_counts"],
             batch["total_counts"],
@@ -509,7 +497,7 @@ class VariantEmbedModel(EmbedModel):
             batch["weight"],
         )
 
-        y = self(X_seq_hap1, X_seq_hap2, X_embed).squeeze()
+        y = self(X_ref, X_alt, X_embed).squeeze()
 
         loss = binomial_mixture_normed_loss(
             y, ref_counts, total_counts, bad_score, reduction="none"
@@ -525,7 +513,7 @@ class VariantEmbedModel(EmbedModel):
         return loss
     
 
-class VariantEmbedModelWrapper(VariantEmbedModel):
+class VariantEmbedModelWrapper(torch.nn.Module):
     """Wrapper class for VariantModel to perform only inference"""
 
     def __init__(self, model):
@@ -541,12 +529,13 @@ class VariantEmbedModelWrapper(VariantEmbedModel):
 
     def forward(self, seq_ref, seq_alt, embed):
         """ """
-        ref_features = self.trunk_ref(seq_ref, self.embedding_ref(embed))
-        alt_features = self.trunk_alt(seq_alt, self.embedding_alt(embed.clone()))
+        features_ref = self.trunk_ref(seq_ref, self.embedding_ref(embed))
+        features_alt = self.trunk_alt(seq_alt, self.embedding_alt(embed.clone()))
 
-        x = torch.subtract(ref_features, alt_features)
+        x = torch.subtract(features_ref, features_alt)
 
         x = self.forward_fc(x)
         x = self.forward_final(x)
 
         return x
+

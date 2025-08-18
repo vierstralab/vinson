@@ -13,9 +13,9 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 
-from vinson.dataset import VariantEmbedDataset
+from vinson.datasets.sequence import VariantEmbedDataset
 
-from vinson.model import (
+from vinson.models.sequence import (
     CellEmbedding,
     BassetTrunkEmbed,
     VariantEmbedModel,
