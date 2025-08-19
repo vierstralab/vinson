@@ -6,6 +6,8 @@ import lightning as L
 class EmbeddingMLP(torch.nn.Module):
     def __init__(self, n_inputs, n_nodes=64, n_layers=1, dropout=0.3):
         """ """
+        super(EmbeddingMLP, self).__init__()
+
         self.n_inputs = n_inputs
         self.n_nodes = n_nodes
         self.n_layers = n_layers
@@ -19,7 +21,7 @@ class EmbeddingMLP(torch.nn.Module):
             [torch.nn.Linear(n_nodes, n_nodes) for i in range(self.n_layers)]
         )
         self.bns = torch.nn.ModuleList(
-            [torch.nn.BatchNorm(num_features=n_nodes) for i in range(self.n_layers)]
+            [torch.nn.BatchNorm1d(num_features=n_nodes) for i in range(self.n_layers)]
         )
         self.relus = torch.nn.ModuleList(
             [torch.nn.ReLU() for i in range(self.n_layers)]
@@ -46,6 +48,8 @@ class EmbeddingMLP(torch.nn.Module):
 
 class CellClassifierModel(L.LightningModule):
     def __init__(self, n_inputs, n_cell_types, **kwargs):
+        super(CellClassifierModel, self).__init__()
+        
         self.trunk = EmbeddingMLP(n_inputs, **kwargs)
         self.head = torch.nn.Linear(self.trunk.n_nodes, n_cell_types)
 
@@ -89,6 +93,8 @@ class CellClassifierModel(L.LightningModule):
 
 class CellAndDiseaseStateClassifierModel(L.LightningModule):
     def __init__(self, n_inputs, n_cell_types, n_disease_states, **kwargs):
+        super(CellAndDiseaseStateClassifierModel, self).__init__()
+        
         self.trunk = EmbeddingMLP(n_inputs, **kwargs)
         self.head_cell_type = torch.nn.Linear(self.trunk.n_nodes, n_cell_types)
         self.head_disease_state = torch.nn.Linear(self.trunk.n_nodes, n_disease_states)
@@ -101,7 +107,7 @@ class CellAndDiseaseStateClassifierModel(L.LightningModule):
         disease_state = self.head_disease_state(x)
         return cell_type, disease_state
 
-    def train_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx):
         X, y_cell_type, y_disease_state = (
             batch["embed"],
             batch["cell_type"],
