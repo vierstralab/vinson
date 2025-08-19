@@ -55,7 +55,10 @@ class CellClassifierModel(L.LightningModule):
         return self.head(self.trunk(x))
 
     def training_step(self, batch, batch_idx):
-        X, y = batch
+        X, y = (
+            batch["embed"],
+            batch["cell_type"],
+        )
 
         y_ = self(X)
         loss = self.loss_fn(y_, y)
@@ -67,7 +70,10 @@ class CellClassifierModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        X, y = batch
+        X, y = (
+            batch["embed"],
+            batch["cell_type"],
+        )
 
         _y = self(X)
         loss = self.loss_fn(_y, y)
@@ -80,13 +86,12 @@ class CellClassifierModel(L.LightningModule):
         optimizer = torch.optim.AdamW(self.parameters(), lr=5e-4, weight_decay=1e-5)
         return optimizer
 
+
 class CellAndDiseaseStateClassifierModel(L.LightningModule):
     def __init__(self, n_inputs, n_cell_types, n_disease_states, **kwargs):
         self.trunk = EmbeddingMLP(n_inputs, **kwargs)
         self.head_cell_type = torch.nn.Linear(self.trunk.n_nodes, n_cell_types)
-        self.head_disease_state = torch.nn.Linear(
-            self.trunk.n_nodes, n_disease_states
-        )
+        self.head_disease_state = torch.nn.Linear(self.trunk.n_nodes, n_disease_states)
 
         self.loss_fn = torch.nn.CrossEntropyLoss()
 
@@ -97,7 +102,11 @@ class CellAndDiseaseStateClassifierModel(L.LightningModule):
         return cell_type, disease_state
 
     def train_step(self, batch, batch_idx):
-        X, y_cell_type, y_disease_state = batch
+        X, y_cell_type, y_disease_state = (
+            batch["embed"],
+            batch["cell_type"],
+            batch["disease_state"],
+        )
 
         _y_cell_type, _y_disease_state = self(X)
 
@@ -117,7 +126,11 @@ class CellAndDiseaseStateClassifierModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        X, y_cell_type, y_disease_state = batch
+        X, y_cell_type, y_disease_state = (
+            batch["embed"],
+            batch["cell_type"],
+            batch["disease_state"],
+        )
 
         _y_cell_type, _y_disease_state = self(X)
 
