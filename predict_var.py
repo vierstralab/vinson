@@ -3,6 +3,10 @@ from torch.utils.data import DataLoader
 import numpy as np
 from genome_tools import GenomicInterval as genomic_interval
 import pandas as pd
+from tqdm import tqdm
+import time
+start = time.time()
+
 import argparse
 from vinson.loss import binomial_mixture_loss, binomial_mixture_nll, binomial_mixture_normed_loss
 from vinson.dataset import VariantEmbedDataset
@@ -11,11 +15,11 @@ from vinson.model import (
     BassetTrunkEmbed,  
     VariantEmbedModel, 
     VariantEmbedModelWrapper)
+
 #inputs
 parser = argparse.ArgumentParser(description="Run prediction with Vinson model.")
 parser.add_argument("--eval-samples", required=True, help="Path to evaluation samples HDF5 file")
 parser.add_argument("--embeddings", required=True, help="Path to embeddings TSV file")
-parser.add_argument("--read-depths", required=True, help="Path to total cut counts file")
 parser.add_argument("--fasta", required=True, help="Path to FASTA file")
 parser.add_argument("--checkpoint", required=True, help="Path to model checkpoint")
 parser.add_argument("--output", required=True, help="Path to output TSV file")
@@ -23,7 +27,6 @@ args = parser.parse_args()
 
 eval_samples_file = args.eval_samples
 embeddings_file = args.embeddings
-read_depth_file = args.read_depths
 fasta_file = args.fasta
 model_ckpt = args.checkpoint
 output_file = args.output
@@ -81,7 +84,7 @@ all_alt = []
 #store some sort of chr marker for dhs
 #no grad means dont have to detach everytime
 with torch.no_grad():
-    for batch in dataloader:
+    for batch in tqdm(dataloader, desc="Predicting", unit="batch"):
         chrom = batch["chrom"]            # list or tensor of chroms
         pos = batch["pos"]                # list or tensor of positions
         sample_id = batch["sample_id"]    # list of sample IDs
@@ -125,3 +128,4 @@ output_df = pd.DataFrame({
 })
 
 output_df.to_csv(output_file, sep="\t", index=False)
+print(f"Prediction completed in {time.time() - start:.2f} seconds")

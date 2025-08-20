@@ -11,9 +11,12 @@ from torchmetrics.classification import (
 from torchmetrics.regression import PearsonCorrCoef
 
 from vinson.loss import (
+    mse_loss,
     poisson_loss,
     binomial_mixture_normed_loss,
 )
+
+from vinson.lr import CosineAnnealingWarmupRestarts
 
 import copy
 
@@ -293,27 +296,37 @@ class BaseModel(L.LightningModule):
         """ """
         optimizer = torch.optim.AdamW(self.parameters(), lr=0.0005)
 
-        # TODO: make these values settable in the command line
-        linear_lr_batches = 10_000
-        cosine_annealing_lr_batches = 5_000
+        # # TODO: make these values settable in the command line
+        # linear_lr_batches = 10_000
+        # cosine_annealing_lr_batches = 5_000
 
-        scheduler_linear = torch.optim.lr_scheduler.LinearLR(
-            optimizer,
-            start_factor=1e-4,
-            end_factor=1.0,
-            total_iters=linear_lr_batches,
-            last_epoch=-1,
-        )
-        scheduler_cosine_lr = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=cosine_annealing_lr_batches, eta_min=5e-6, last_epoch=-1
-        )
+        # scheduler_linear = torch.optim.lr_scheduler.LinearLR(
+        #     optimizer,
+        #     start_factor=1e-4,
+        #     end_factor=1.0,
+        #     total_iters=linear_lr_batches,
+        #     last_epoch=-1,
+        # )
+        # scheduler_cosine_lr = torch.optim.lr_scheduler.CosineAnnealingLR(
+        #     optimizer, T_max=cosine_annealing_lr_batches, eta_min=5e-6, last_epoch=-1
+        # )
 
-        scheduler = torch.optim.lr_scheduler.SequentialLR(
+        # scheduler = torch.optim.lr_scheduler.SequentialLR(
+        #     optimizer,
+        #     [scheduler_linear, scheduler_cosine_lr],
+        #     milestones=[linear_lr_batches],
+        #     last_epoch=-1,
+        # )
+
+        scheduler = CosineAnnealingWarmupRestarts(
             optimizer,
-            [scheduler_linear, scheduler_cosine_lr],
-            milestones=[linear_lr_batches],
-            last_epoch=-1,
-        )
+            max_lr=0.0005,
+            min_lr=0.000005,
+            warmup_steps=5_000,
+            first_cycle_steps=45_000,
+            cycle_mult=1,
+            gamma=0.90,
+            last_epoch=-1)
 
         return {
             "optimizer": optimizer,
@@ -370,6 +383,7 @@ class EmbedModel(BaseModel):
             target_counts = density / 1e6 * read_depth
 
             loss = poisson_loss(pred_counts + ps, target_counts + ps, reduction="none")
+            # loss = mse_loss(pred_counts + ps, target_counts + ps, reduction="none")
 
         else:
             loss = torch.nn.functional.binary_cross_entropy_with_logits(
@@ -407,6 +421,7 @@ class EmbedModel(BaseModel):
             target_counts = density / 1e6 * read_depth
 
             loss = poisson_loss(pred_counts + ps, target_counts + ps, reduction="none")
+            # loss = mse_loss(pred_counts + ps, target_counts + ps, reduction="none")
 
             self.valid_metrics.update(
                 (pred_counts + 1).log(), (target_counts + 1).log()
@@ -425,10 +440,17 @@ class EmbedModel(BaseModel):
 
         return loss
 
+class _Sub(torch.nn.Module):
+	def __init__(self):
+		super(_Sub, self).__init__()
+
+	def forward(self, *args):
+		return torch.subtract(*args)
 
 class VariantEmbedModel(EmbedModel):
     def __init__(self, *args, **kwargs):
         super(VariantEmbedModel, self).__init__(*args, **kwargs)
+        self.sub = _Sub()
 
     def init_metrics(self):
         self.train_metrics = MetricCollection(
@@ -452,7 +474,7 @@ class VariantEmbedModel(EmbedModel):
         ref_features = self.trunk(seq_ref, x)
         alt_features = self.trunk(seq_alt, x)
 
-        x = torch.subtract(ref_features, alt_features)
+        x = self.sub(ref_features, alt_features)
 
         x = self.forward_fc(x)
         x = self.forward_final(x)
@@ -521,7 +543,6 @@ class VariantEmbedModel(EmbedModel):
 
         return loss
 
-
 class VariantEmbedModelWrapper(VariantEmbedModel):
     """Wrapper class for VariantModel to perform only inference"""
 
@@ -541,7 +562,7 @@ class VariantEmbedModelWrapper(VariantEmbedModel):
         ref_features = self.trunk_ref(seq_ref, self.embedding_ref(embed))
         alt_features = self.trunk_alt(seq_alt, self.embedding_alt(embed.clone()))
 
-        x = torch.subtract(ref_features, alt_features)
+        x = self.sub(ref_features, alt_features)
 
         x = self.forward_fc(x)
         x = self.forward_final(x)

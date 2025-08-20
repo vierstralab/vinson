@@ -14,21 +14,24 @@ conda activate tangermeme
 
 export MASTER_ADDR=127.0.0.1
 
-EVAL_SAMPLES_FILE="/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/JUL10/continious_annotation/data_JUL10.batch2.val.h5"
+EVAL_SAMPLES_FILE="/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/AUG3/data_AUG3.val.heldout_samples.h5"
 EMBEDDINGS_FILE="/home/jvierstra/proj/vinson/data/embeddings.tsv"
 READ_DEPTH_FILE="/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/JUL10/continious_annotation/total_cutcounts.tsv"
 FASTA_FILE="/net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa"
-MODEL_CKPT="/home/jvierstra/proj/vinson/models/regression_data_JUL10.batch1_v5_poisson_genotypes_8gpus/checkpoints/last.ckpt"
-NEG_SAMPLES="/net/seq/data2/projects/sabramov/SuperIndex/hotspot3/w_babachi_new.v23/ml_prediction/JUL28_3/epoch_1/data_JUL28_3_neg.batch1.val.bed.gz"
-OUTPUT_FILE="/home/mbrannon/tmp/regression_data_JUL10.batch1_v5_poisson_genotypes_prediction.tsv"
+MODEL_CKPT="/home/jvierstra/proj/vinson/models/data_AUG3_with_warmup_and_decay/checkpoints/epoch=5-step=2106188-val_loss=21.51.ckpt"
+OUTPUT_FILE="/home/mbrannon/tmp/AUG3_with_warmup_and_decay_prediction.tsv"
+SAMPLE_GENOTYPE_FILE="/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/output/meta+sample_ids.tsv"
+GENOTYPE_FILE="/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/output/all_variants_stats.bed.gz"
+
 
 
 # Run the script
 srun python /home/mbrannon/vinson/predict.py \
     --eval-samples "$EVAL_SAMPLES_FILE" \
-    --negatives "$NEG_SAMPLES" \
     --embeddings "$EMBEDDINGS_FILE" \
     --read-depths "$READ_DEPTH_FILE" \
     --fasta "$FASTA_FILE" \
     --checkpoint "$MODEL_CKPT" \
+    --sample-genotype-file "$SAMPLE_GENOTYPE_FILE" \
+    --genotype-file "$GENOTYPE_FILE" \
     --output "$OUTPUT_FILE"

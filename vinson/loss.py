@@ -2,6 +2,15 @@ import torch
 from torch.nn.functional import softplus
 
 
+def mse_loss(input, target, reduction="mean"):
+    log_target = torch.log(target)
+    log_input = torch.log(input)
+    
+    nll = torch.square(log_target - log_input)
+
+    return nll.mean() if reduction == "mean" else nll
+
+
 def negative_binomial_loss(
     input, target, r, relative=True, method="mean", reduction="mean"
 ):

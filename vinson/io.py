@@ -4,6 +4,8 @@ import pandas as pd
 import pyBigWig as pbw 
 from genome_tools import GenomicInterval
 
+from tqdm import tqdm
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -68,13 +70,13 @@ class SamplesDensityExtractor:
             chrom, mid = x
         elif isinstance(x, GenomicInterval):
             chrom = x.chrom
-            mid = (x.end - x.start) // 2 + x.start
+            mid = (x.start + x.end) // 2
 
         values = pd.Series(
             np.nan_to_num(
                 [
                     fh.values(chrom, mid, mid + 1, numpy=True)[0]
-                    for fh in self.bw_filehandles
+                    for fh in tqdm(self.bw_filehandles)
                 ],
                 0.0,
             ),
