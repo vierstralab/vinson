@@ -13,9 +13,9 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 
-from vinson.dataset import VariantEmbedDataset
+from vinson.datasets.sequence import VariantEmbedDataset
 
-from vinson.model import (
+from vinson.models.sequence import (
     CellEmbedding,
     BassetTrunkEmbed,
     VariantEmbedModel,
@@ -26,11 +26,18 @@ def main(args):
     """ """
     embeddings_file = "/home/jvierstra/proj/vinson/data/embeddings.tsv"
     fasta_file = "/net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa"
+    sample_genotype_file = (
+        "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/output/meta+sample_ids.tsv"
+    )
+    genotype_file = "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/phasing/output/all_phased.bed.gz"
 
     train_dataset = VariantEmbedDataset(
         args.train_file,
         embeddings_file,
         fasta_file,
+        sample_genotype_file=sample_genotype_file,
+        genotype_file=genotype_file,
+        flip_alleles=True,
         reverse_complement=True,
         jitter=args.jitter,
         noise=args.noise,
@@ -40,6 +47,9 @@ def main(args):
         args.val_file,
         embeddings_file,
         fasta_file,
+        sample_genotype_file=sample_genotype_file,
+        genotype_file=genotype_file,
+        flip_alleles=False,
         reverse_complement=False,
         jitter=0,
         noise=0,
@@ -64,10 +74,29 @@ def main(args):
         **dataloader_kwargs,
     )
 
+    # Optimizer & LR scheduler
+    optimizer = torch.optim.AdamW
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau
+
+    # TODO: Make these parameters settable via CLI
+    optimizer_kwargs = dict(lr=0.0001)
+    lr_scheduler_kwargs = dict(
+        mode="min", factor=0.1, patience=3, min_lr=1e-6, verbose=True
+    )
+
     # Create model
-    embed = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
-    trunk = BassetTrunkEmbed(embed.n_outputs)
-    model = VariantEmbedModel(trunk, embed)
+    embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
+    trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
+    
+    # Create lightning module
+    model = VariantEmbedModel(
+        trunk_model,
+        embed_model,
+        optimizer=optimizer,
+        optimizer_kwargs=optimizer_kwargs,
+        lr_scheduler=lr_scheduler,
+        lr_scheduler_kwargs=lr_scheduler_kwargs,
+    )
 
     # Initialize model
     model.init_model()
@@ -96,7 +125,7 @@ def main(args):
     logger = CSVLogger(os.path.join(args.outdir, "logs"))
 
     callbacks = [
-        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.0005, patience=50),
+        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.001, patience=10),
         ModelCheckpoint(
             monitor="val_loss",
             mode="min",
@@ -168,7 +197,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--val_check_interval",
         type=float,
-        default=0.5,
+        default=1.0,
         help="Fraction of an epoch between validation checks.",
     )
     parser.add_argument(

@@ -1,4 +1,5 @@
 import torch
+import copy
 
 import lightning as L
 
@@ -15,19 +16,6 @@ from vinson.loss import (
     poisson_loss,
     binomial_mixture_normed_loss,
 )
-
-from vinson.lr import CosineAnnealingWarmupRestarts
-
-import copy
-
-
-class _Exp(torch.nn.Module):
-    def __init__(self):
-        super(_Exp, self).__init__()
-
-    def forward(self, X):
-        return torch.exp(X)
-
 
 class CellEmbedding(torch.nn.Module):
     """
@@ -47,9 +35,9 @@ class CellEmbedding(torch.nn.Module):
         self.irelu = torch.nn.ReLU()
 
         self.fcs = torch.nn.ModuleList(
-            [torch.nn.Linear(n_nodes, n_nodes) for i in range(n_layers)]
+            [torch.nn.Linear(n_nodes, n_nodes) for i in range(self.n_layers)]
         )
-        self.relus = torch.nn.ModuleList([torch.nn.ReLU() for i in range(n_layers)])
+        self.relus = torch.nn.ModuleList([torch.nn.ReLU() for i in range(self.n_layers)])
 
         self.ffc = torch.nn.Linear(n_nodes, n_outputs)
 
@@ -59,7 +47,6 @@ class CellEmbedding(torch.nn.Module):
             x = self.relus[i](self.fcs[i](x))
         x = self.ffc(x)
         return x
-
 
 class BassetTrunk(torch.nn.Module):
     def __init__(self):
@@ -140,29 +127,44 @@ class BassetTrunkEmbed(BassetTrunk):
         return x
 
 
-class BaseModel(L.LightningModule):
-    def __init__(self, trunk, seqlen=1344, regression=False):
-        super(BaseModel, self).__init__()
+class BaseSequenceModel(L.LightningModule):
+    def __init__(
+        self,
+        trunk_model,
+        seqlen=1344,
+        regression=False,
+        optimizer=None,
+        lr_scheduler=None,
+        optimizer_kwargs=dict(),
+        lr_scheduler_kwargs=dict(),
+    ):
+        super(BaseSequenceModel, self).__init__()
 
-        self.trunk = trunk
+        self.trunk = trunk_model
         self.seqlen = seqlen
         self.regression = regression
 
-        # FC layers
+        # Fully-connected layers
         self.fc1 = torch.nn.LazyLinear(out_features=1024)
         self.bn1 = torch.nn.BatchNorm1d(num_features=1024, momentum=0.1)
-        self.dropout1 = torch.nn.Dropout(p=0.1)
+        self.dropout1 = torch.nn.Dropout(p=0.3)
         self.relu1 = torch.nn.ReLU()
 
         self.fc2 = torch.nn.LazyLinear(out_features=1024)
         self.bn2 = torch.nn.BatchNorm1d(num_features=1024, momentum=0.1)
-        self.dropout2 = torch.nn.Dropout(p=0.1)
+        self.dropout2 = torch.nn.Dropout(p=0.3)
         self.relu2 = torch.nn.ReLU()
 
         self.final = torch.nn.LazyLinear(out_features=1)
-        self.exp = _Exp()
 
-        # init metrics
+        # Optimizer
+        self.optimizer = optimizer if optimizer is not None else torch.optim.AdamW
+        self.optimizer_kwargs = optimizer_kwargs
+        # LR scheduler
+        self.lr_scheduler = lr_scheduler
+        self.lr_scheduler_kwargs = lr_scheduler_kwargs
+
+        # Init metrics
         self.init_metrics()
 
     def init_metrics(self):
@@ -219,7 +221,7 @@ class BaseModel(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         X_seq, indicator, density, bg, read_depth, weight = (
-            batch["seq"],
+            batch["ohe_seq"],
             batch["indicator"],
             batch["density"],
             batch["bg"],
@@ -254,7 +256,7 @@ class BaseModel(L.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         X_seq, indicator, density, bg, read_depth, weight = (
-            batch["seq"],
+            batch["ohe_seq"],
             batch["indicator"],
             batch["density"],
             batch["bg"],
@@ -293,52 +295,28 @@ class BaseModel(L.LightningModule):
         self.valid_metrics.reset()
 
     def configure_optimizers(self):
-        """ """
-        optimizer = torch.optim.AdamW(self.parameters(), lr=0.0005)
+        optimizer = self.optimizer(self.parameters(), **self.optimizer_kwargs)
 
-        # # TODO: make these values settable in the command line
-        # linear_lr_batches = 10_000
-        # cosine_annealing_lr_batches = 5_000
+        if self.lr_scheduler is None:
+            return optimizer
 
-        # scheduler_linear = torch.optim.lr_scheduler.LinearLR(
-        #     optimizer,
-        #     start_factor=1e-4,
-        #     end_factor=1.0,
-        #     total_iters=linear_lr_batches,
-        #     last_epoch=-1,
-        # )
-        # scheduler_cosine_lr = torch.optim.lr_scheduler.CosineAnnealingLR(
-        #     optimizer, T_max=cosine_annealing_lr_batches, eta_min=5e-6, last_epoch=-1
-        # )
-
-        # scheduler = torch.optim.lr_scheduler.SequentialLR(
-        #     optimizer,
-        #     [scheduler_linear, scheduler_cosine_lr],
-        #     milestones=[linear_lr_batches],
-        #     last_epoch=-1,
-        # )
-
-        scheduler = CosineAnnealingWarmupRestarts(
-            optimizer,
-            max_lr=0.0005,
-            min_lr=0.000005,
-            warmup_steps=5_000,
-            first_cycle_steps=45_000,
-            cycle_mult=1,
-            gamma=0.90,
-            last_epoch=-1)
+        scheduler = self.lr_scheduler(optimizer, **self.lr_scheduler_kwargs)
 
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "interval": "step",
+                "monitor": "val_loss",
+                "interval": "epoch",
                 "frequency": 1,
+                "name": "lr",
             },
         }
 
 
-class EmbedModel(BaseModel):
+class EmbedModel(BaseSequenceModel):
+    """Sequence with embeddings model
+    """
     def __init__(self, trunk, embed, *args, **kwargs):
         super(EmbedModel, self).__init__(trunk, *args, **kwargs)
 
@@ -350,21 +328,18 @@ class EmbedModel(BaseModel):
             torch.zeros((2, self.embedding.n_inputs)),
         )
 
-    def forward(self, seq, embed, exp=False):
+    def forward(self, seq, embed):
         x = self.embedding(embed)
         x = self.trunk(seq, x)
 
         x = self.forward_fc(x)
         x = self.forward_final(x)
 
-        if exp:
-            x = self.exp(x)
-
         return x
 
     def training_step(self, batch, batch_idx):
         X_seq, X_embed, indicator, density, bg, read_depth, weight = (
-            batch["seq"],
+            batch["ohe_seq"],
             batch["embed"],
             batch["indicator"],
             batch["density"],
@@ -402,7 +377,7 @@ class EmbedModel(BaseModel):
     def validation_step(self, batch, batch_idx):
         """ """
         X_seq, X_embed, indicator, density, bg, read_depth, weight = (
-            batch["seq"],
+            batch["ohe_seq"],
             batch["embed"],
             batch["indicator"],
             batch["density"],
@@ -482,9 +457,9 @@ class VariantEmbedModel(EmbedModel):
         return x
 
     def training_step(self, batch, batch_idx):
-        X_seq_ref, X_seq_alt, X_embed, ref_counts, total_counts, bad_score, weight = (
-            batch["seq_ref"],
-            batch["seq_alt"],
+        X_ref, X_alt, X_embed, ref_counts, total_counts, bad_score, weight = (
+            batch["ohe_seq_ref"],
+            batch["ohe_seq_alt"],
             batch["embed"],
             batch["ref_counts"],
             batch["total_counts"],
@@ -492,7 +467,7 @@ class VariantEmbedModel(EmbedModel):
             batch["weight"],
         )
 
-        y = self(X_seq_ref, X_seq_alt, X_embed).squeeze()
+        y = self(X_ref, X_alt, X_embed).squeeze()
 
         loss = binomial_mixture_normed_loss(
             y, ref_counts, total_counts, bad_score, reduction="none"
@@ -509,8 +484,8 @@ class VariantEmbedModel(EmbedModel):
 
     def validation_step(self, batch, batch_idx):
         (
-            X_seq_ref,
-            X_seq_alt,
+            X_ref,
+            X_alt,
             X_embed,
             ref_counts,
             total_counts,
@@ -518,8 +493,8 @@ class VariantEmbedModel(EmbedModel):
             lfc,
             weight,
         ) = (
-            batch["seq_ref"],
-            batch["seq_alt"],
+            batch["ohe_seq_ref"],
+            batch["ohe_seq_alt"],
             batch["embed"],
             batch["ref_counts"],
             batch["total_counts"],
@@ -528,7 +503,7 @@ class VariantEmbedModel(EmbedModel):
             batch["weight"],
         )
 
-        y = self(X_seq_ref, X_seq_alt, X_embed).squeeze()
+        y = self(X_ref, X_alt, X_embed).squeeze()
 
         loss = binomial_mixture_normed_loss(
             y, ref_counts, total_counts, bad_score, reduction="none"
@@ -542,8 +517,9 @@ class VariantEmbedModel(EmbedModel):
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
         return loss
+    
 
-class VariantEmbedModelWrapper(VariantEmbedModel):
+class VariantEmbedModelWrapper(torch.nn.Module):
     """Wrapper class for VariantModel to perform only inference"""
 
     def __init__(self, model):
@@ -559,30 +535,13 @@ class VariantEmbedModelWrapper(VariantEmbedModel):
 
     def forward(self, seq_ref, seq_alt, embed):
         """ """
-        ref_features = self.trunk_ref(seq_ref, self.embedding_ref(embed))
-        alt_features = self.trunk_alt(seq_alt, self.embedding_alt(embed.clone()))
+        features_ref = self.trunk_ref(seq_ref, self.embedding_ref(embed))
+        features_alt = self.trunk_alt(seq_alt, self.embedding_alt(embed.clone()))
 
-        x = self.sub(ref_features, alt_features)
+        x = torch.subtract(features_ref, features_alt)
 
         x = self.forward_fc(x)
         x = self.forward_final(x)
 
         return x
 
-    @torch.no_grad()
-    def predict(self, dataset, batch_size=32, device="gpu"):
-        y_hat = []
-
-        dataloader = torch.data.Dataloader(
-            dataset, batch_size=batch_size, shuffle=False
-        )
-
-        for _, batch in enumerate(dataloader):
-            seq_ref = batch["seq_ref"].to(device)
-            seq_alt = batch["seq_alt"].to(device)
-            embed = batch["embed"].to(device)
-
-            preds = self(seq_ref, seq_alt, embed)
-            y_hat.append(preds.cpu())
-
-        return torch.cat(y_hat, dim=0)

@@ -3,6 +3,30 @@ from torch.nn.functional import softplus
 
 
 def mse_loss(input, target, reduction="mean"):
+    """
+    Compute the mean squared error (MSE) loss between the log-transformed input and target tensors.
+
+    Parameters
+    ----------
+    input : torch.Tensor
+        Predicted values (must be positive).
+    target : torch.Tensor
+        Ground truth values (must be positive).
+    reduction : str, optional
+        Specifies the reduction to apply to the output: 'mean' (default) returns a scalar tensor,
+        'none' returns a tensor of losses per element.
+
+    Returns
+    -------
+    torch.Tensor
+        The computed MSE loss. If reduction is 'mean', returns a scalar tensor;
+        otherwise, returns a tensor of losses per element.
+
+    Notes
+    -----
+    - Applies a log transformation to both input and target before computing squared error.
+    - Useful for comparing predicted and observed values on a multiplicative scale.
+    """
     log_target = torch.log(target)
     log_input = torch.log(input)
     

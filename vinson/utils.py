@@ -1,3 +1,5 @@
+import torch
+
 import numpy as np
 import numba
 
@@ -74,7 +76,7 @@ def one_hot_encode(sequence, dtype=np.float32):
     return one_hot_encoding.T
 
 
-def force_strict_ohe(X):
+def force_strict_ohe(x):
     """
     Ensure input tensor is strictly one-hot encoded along the nucleotide axis.
 
@@ -92,13 +94,13 @@ def force_strict_ohe(X):
     torch.Tensor
         Output tensor of the same shape as X, with strict one-hot encoding at every position.
     """
-    X_ = X.clone()
-    seq_idx, pos = torch.where(torch.max(X, dim=1)[0] < 1.0)
+    x_ = x.clone()
+    seq_idx, pos = torch.where(torch.max(x, dim=1)[0] < 1.0)
     for i, j in zip(seq_idx, pos):
-        base = np.random.choice(4, p=X[i, :, j])
-        X_[i, :, j] = torch.zeros(4)
-        X_[i, base, j] = 1.0
-    return X_
+        base = np.random.choice(4, p=x[i, :, j])
+        x_[i, :, j] = torch.zeros(4)
+        x_[i, base, j] = 1.0
+    return x_
 
 def get_iupac_char_from_alleles(alleles):
     """Returns the IUPAC character from a list of possible
@@ -126,8 +128,28 @@ def get_iupac_char_from_alleles(alleles):
     return IUPAC_DNA[i]
 
 
-def intervals_to_one_hot(intervals, seqlen, fasta_extr):
-    """ """
+def intervals_to_ohe(intervals, seqlen, fasta_extr):
+    """
+    Convert genomic intervals to one-hot encoded DNA sequences.
+
+    For each interval, extracts the sequence from the reference genome using the provided
+    FastaExtractor, centers the interval, and one-hot encodes the sequence.
+
+    Parameters
+    ----------
+    intervals : Iterable[GenomicInterval] or GenomicInterval
+        List of GenomicInterval objects or a single GenomicInterval.
+    seqlen : int
+        Length of the sequence window to extract and encode.
+    fasta_extr : FastaExtractor
+        Extractor for reference genome sequences.
+
+    Returns
+    -------
+    np.ndarray
+        Array of shape (N, 4, seqlen), where N is the number of intervals, containing
+        one-hot encoded DNA sequences.
+    """
     ohe = []
 
     if not isinstance(intervals, Iterable):
@@ -136,12 +158,33 @@ def intervals_to_one_hot(intervals, seqlen, fasta_extr):
     for i in intervals:
         mid = (i.start + i.end) // 2
         seq = fasta_extr[GenomicInterval(i.chrom, mid, mid).widen(seqlen//2)]
-        ohe.append(one_hot_encode(seq))
+        ohe.append(one_hot_encode(seq.upper()))
     
     return np.stack(ohe)
 
-def variants_to_one_hot(variants, seqlen, fasta_extr):
-    """ """
+def variants_to_ohe(variants, seqlen, fasta_extr):
+    """
+    Convert variant objects to one-hot encoded reference and alternate allele sequences.
+
+    For each variant, extracts the reference sequence from the genome, creates the alternate
+    sequence by substituting the alternate allele, and one-hot encodes both.
+
+    Parameters
+    ----------
+    variants : Iterable or object
+        List of variant objects or a single variant object. Each variant must have
+        'chrom', 'start', and 'alt' attributes.
+    seqlen : int
+        Length of the sequence window to extract and encode.
+    fasta_extr : FastaExtractor
+        Extractor for reference genome sequences.
+
+    Returns
+    -------
+    np.ndarray
+        Array of shape (2*N, 4, seqlen), where N is the number of variants, containing
+        one-hot encoded reference and alternate allele sequences for each variant.
+    """
     mid = seqlen // 2
     ohe = []
 

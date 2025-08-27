@@ -19,7 +19,7 @@ TRUNK_WEIGHTS="/home/jvierstra/proj/vinson/models/data_AUG3_with_warmup_and_deca
 TRAIN_SAMPLES_FILE="/home/jvierstra/proj/vinson/data/dnase-cavs.v4.train.var-split.h5"
 VAL_SAMPLES_FILE="/home/jvierstra/proj/vinson/data/dnase-cavs.v4.val.var-split.h5"
 
-srun python /home/jvierstra/proj/vinson/train_variant.py \
+srun python /home/jvierstra/proj/vinson/scripts/train_variant.py \
     --nodes 1 --devices 4 \
     --accelerator gpu \
     --strategy ddp \
