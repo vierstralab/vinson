@@ -109,8 +109,6 @@ all_embed_id = []
 all_pred_density = []
 all_actual_density = []
 
-scaler = torch.cuda.amp.GradScaler(enabled=False)  # only inference, no scaling needed, but autocast helps
-
 #store sample id
 #store some sort of chr marker for dhs
 #no grad means dont have to detach everytime
@@ -124,14 +122,6 @@ with torch.no_grad():
         chrom = batch["chrom"] 
         mid = batch["mid"]      
         embed_id = batch["sample_id"] 
-        
-        with torch.cuda.amp.autocast():
-            y_pred = model(X_seq, X_embed).squeeze()
-            pred_counts = (torch.exp(y_pred) / 1e6 * read_depth) + bg
-            target_counts = density / 1e6 * read_depth
-            bg_density = bg / read_depth * 1e6
-            pred_total_density = torch.exp(y_pred) + bg_density
-
         
         y_pred = model(X_seq, X_embed).squeeze()
         pred_counts = (torch.exp(y_pred) / 1e6 * read_depth) + bg
