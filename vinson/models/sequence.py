@@ -519,7 +519,7 @@ class VariantEmbedModel(EmbedModel):
         return loss
     
 
-class VariantEmbedModelWrapper(torch.nn.Module):
+class VariantEmbedModelWrapper(VariantEmbedModel):
     """Wrapper class for VariantModel to perform only inference"""
 
     def __init__(self, model):
