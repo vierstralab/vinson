@@ -14,6 +14,33 @@ from vinson.interpretation import dinucleotide_shuffle, force_strict_ohe
 from vinson.io import SamplesDensityExtractor
 from vinson.utils import intervals_to_ohe
 
+"""
+This script runs genome-wide predictions using a pretrained Vinson sequence +
+cell embedding model. It processes evaluation samples, applies the model, and
+outputs per-interval predicted and observed counts/densities. This is for the H5 validation, not for a specific cell type (use predict_cell.py for prediciton for each peak in cell type)
+
+Workflow:
+1. Loads evaluation samples (HDF5), embeddings, read depth file, reference FASTA,
+   and a pretrained model checkpoint.
+2. Optionally incorporates:
+   - Negative control regions (BED.GZ)
+   - Personalized genotype data (sample-to-genotype mapping + genotype stats BED.GZ)
+3. Builds a SequenceEmbedDataset and DataLoader to efficiently batch data.
+4. Runs the model in evaluation mode (no gradient computation) to predict counts
+   for each interval using sequence + embedding inputs.
+5. Normalizes predictions by sample read depth and adds background adjustment.
+6. Collects outputs including:
+   - Chromosome and midpoint of each interval
+   - Sample/embedding ID
+   - Predicted vs observed counts
+   - Predicted vs observed total density (normalized)
+7. Combines results into a dataframe and writes a TSV output file.
+
+Outputs:
+- `<output>.tsv`: per-interval table with chrom, mid, embedding_id, predicted_counts,
+  target_counts, predicted_total_density, and observed_total_density.
+"""
+
 #inputs
 parser = argparse.ArgumentParser(description="Run prediction with Vinson model.")
 parser.add_argument("--eval-samples", required=True, help="Path to evaluation samples HDF5 file")
@@ -129,10 +156,10 @@ with torch.no_grad():
         bg_density = bg / read_depth * 1e6
         pred_total_density = torch.exp(y_pred) + bg_density
         
-        all_preds.append(pred_counts)        # keep on GPU
-        all_targets.append(target_counts)
-        all_pred_density.append(pred_total_density)
-        all_actual_density.append(density)
+        all_preds.append(pred_counts.cpu())
+        all_targets.append(target_counts.cpu())
+        all_pred_density.append(pred_total_density.cpu())
+        all_actual_density.append(density.cpu())
         all_chr.extend(chrom) 
         all_mid.extend(mid)
         all_embed_id.extend(embed_id)
