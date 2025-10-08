@@ -47,11 +47,11 @@ class EmbeddingMLP(torch.nn.Module):
 
 
 class CellClassifierModel(L.LightningModule):
-    def __init__(self, n_inputs, n_cell_types, **kwargs):
+    def __init__(self, n_inputs, n_cell_categories, **kwargs):
         super(CellClassifierModel, self).__init__()
         
         self.trunk = EmbeddingMLP(n_inputs, **kwargs)
-        self.head = torch.nn.Linear(self.trunk.n_nodes, n_cell_types)
+        self.head = torch.nn.Linear(self.trunk.n_nodes, n_cell_categories)
 
         self.loss_fn = torch.nn.CrossEntropyLoss()
 
@@ -61,7 +61,7 @@ class CellClassifierModel(L.LightningModule):
     def training_step(self, batch, batch_idx):
         X, y = (
             batch["embed"],
-            batch["cell_type"],
+            batch["cell_category"],
         )
 
         y_ = self(X)
@@ -76,7 +76,7 @@ class CellClassifierModel(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         X, y = (
             batch["embed"],
-            batch["cell_type"],
+            batch["cell_category"],
         )
 
         _y = self(X)
@@ -91,40 +91,40 @@ class CellClassifierModel(L.LightningModule):
         return optimizer
 
 
-class CellAndDiseaseStateClassifierModel(L.LightningModule):
-    def __init__(self, n_inputs, n_cell_types, n_disease_states, **kwargs):
-        super(CellAndDiseaseStateClassifierModel, self).__init__()
+class CellAndPathologicalStateClassifierModel(L.LightningModule):
+    def __init__(self, n_inputs, n_cell_categories, n_pathological_states, **kwargs):
+        super(CellAndPathologicalStateClassifierModel, self).__init__()
         
         self.trunk = EmbeddingMLP(n_inputs, **kwargs)
-        self.head_cell_type = torch.nn.Linear(self.trunk.n_nodes, n_cell_types)
-        self.head_disease_state = torch.nn.Linear(self.trunk.n_nodes, n_disease_states)
+        self.head_cell_category = torch.nn.Linear(self.trunk.n_nodes, n_cell_categories)
+        self.head_pathological_state = torch.nn.Linear(self.trunk.n_nodes, n_pathological_states)
 
         self.loss_fn = torch.nn.CrossEntropyLoss()
 
     def forward(self, x):
         x = self.trunk(x)
-        cell_type = self.head_cell_type(x)
-        disease_state = self.head_disease_state(x)
-        return cell_type, disease_state
+        cell_category = self.head_cell_category(x)
+        pathological_state = self.head_pathological_state(x)
+        return cell_category, pathological_state
 
     def training_step(self, batch, batch_idx):
-        X, y_cell_type, y_disease_state = (
+        X, y_cell_category, y_pathological_state = (
             batch["embed"],
-            batch["cell_type"],
-            batch["disease_state"],
+            batch["cell_category"],
+            batch["pathological_state"],
         )
 
-        _y_cell_type, _y_disease_state = self(X)
+        _y_cell_category, _y_pathological_state = self(X)
 
-        loss_cell_type = self.loss_fn(_y_cell_type, y_cell_type)
-        loss_disease_state = self.loss_fn(_y_disease_state, y_disease_state)
-        loss = loss_cell_type + loss_disease_state
+        loss_cell_category = self.loss_fn(_y_cell_category, y_cell_category)
+        loss_pathological_state = self.loss_fn(_y_pathological_state, y_pathological_state)
+        loss = loss_cell_category + loss_pathological_state
 
         self.log(
             "loss",
             loss,
             on_step=True,
-            on_epoch=False,
+            on_epoch=True,
             sync_dist=True,
             prog_bar=True,
         )
@@ -132,22 +132,22 @@ class CellAndDiseaseStateClassifierModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        X, y_cell_type, y_disease_state = (
+        X, y_cell_category, y_pathological_state = (
             batch["embed"],
-            batch["cell_type"],
-            batch["disease_state"],
+            batch["cell_category"],
+            batch["pathological_state"],
         )
 
-        _y_cell_type, _y_disease_state = self(X)
+        _y_cell_category, _y_pathological_state = self(X)
 
-        loss_cell_type = self.loss_fn(_y_cell_type, y_cell_type)
-        loss_disease_state = self.loss_fn(_y_disease_state, y_disease_state)
-        loss = loss_cell_type + loss_disease_state
+        loss_cell_categories = self.loss_fn(_y_cell_category, y_cell_category)
+        loss_pathological_state = self.loss_fn(_y_pathological_state, y_pathological_state)
+        loss = loss_cell_categories + loss_pathological_state
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), lr=5e-4, weight_decay=1e-5)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=5e-5, weight_decay=1e-2)
         return optimizer

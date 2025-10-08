@@ -9,13 +9,18 @@ from sklearn.preprocessing import LabelEncoder
 class EncoderDataset(Dataset):
     """ """
 
-    def __init__(self, embeddings, labels, encoders={}):
+    def __init__(self, embeddings, labels, encoders={}, noise=0, seed=0):
         assert all(embeddings.index.isin(labels.index)), ""
 
         self.embeddings = embeddings
         self.labels = labels.loc[self.embeddings.index]
 
         self.encoders = encoders
+
+        self.noise = noise
+        self.seed = seed
+
+        self.random_state = np.random.RandomState(self.seed)
 
         for col in self.labels.columns:
             if col not in self.encoders:
@@ -29,6 +34,12 @@ class EncoderDataset(Dataset):
         return len(self.embeddings)
 
     def __getitem__(self, i):
-        x = {"embed": self.embeddings.iloc[i].values.astype(np.float32)}
+        """ """
+        embed = self.embeddings.iloc[i].values.astype(np.float32)
+        
+        if self.noise > 0:
+            embed  = embed  + self.random_state.normal(0, self.noise, len(embed)).astype(np.float32)
+
+        x = {"embed": embed}
         y = self._labels.iloc[i].to_dict()
         return {**x, **y}

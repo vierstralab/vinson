@@ -89,38 +89,34 @@ def negative_binomial_loss(
     return nll.mean() if reduction == "mean" else nll
 
 
-def poisson_loss(input, target, reduction="mean"):
-    """
-    Compute the Poisson negative log-likelihood (NLL) loss from normalized densities.
+class PoissonNLL(torch.nn.Module):
+    """Relative Poisson negative log-likelihood with clipped exponential"""
+    def __init__(self, exp_clip=30.0, reduction="mean", dtype=torch.float32):
+        super(PoissonNLL, self).__init__()
+        self.c = float(exp_clip)
+        self.reduction = reduction
+        self.dtype = dtype
 
-    Parameters
-    ----------
-    input : torch.Tensor
-        Predicted normalized densities (non-negative).
-    target : torch.Tensor
-        Observed normalized densities.
-    reduction : str, optional
-        Specifies the reduction to apply to the output: 'mean' or 'none' (default is 'mean').
+    def clipped_exp(self, x: torch.Tensor) -> torch.Tensor:
+        c_t = torch.as_tensor(self.c, dtype=x.dtype, device=x.device)
+        rel = torch.relu(x - c_t)  # 0 if x<=c, x-c if x>c
+        exp_bounded = torch.exp(x - rel)  # exp(x) or exp(c); never exp(large x)
+        exp_c = torch.exp(c_t)
+        return exp_bounded + exp_c * rel  # e^x (x<=c), e^c(1+x-c) (x>c)
 
-    Returns
-    -------
-    torch.Tensor
-        The computed Poisson NLL loss. If reduction is 'mean', returns a scalar tensor;
-        otherwise, returns a tensor of losses per element.
+    def forward(self, log_input, target):
+        # Predicted rate (clipped exp of log λ)
+        lam = self.clipped_exp(log_input)
 
-    Notes
-    -----
-    The loss is computed as the relative NLL from the best possible prediction.
-    This formulation allows the Poisson NLL to be both positive and negative,
-    which helps with tracking training progress.
-    """
+        # Poisson NLL centered at target (your formula)
+        nll = (lam - target) + torch.special.xlogy(target, target) - target * log_input
 
-    nll = -(target * (torch.log(input) - torch.log(target)) - input + target)
-
-    if reduction == "mean":
-        return nll.mean()
-    else:
-        return nll
+        if self.reduction == "sum":
+            return nll.sum()
+        elif self.reduction == "mean":
+            return nll.mean()
+        else:
+            return nll
 
 
 def binomial_mixture_nll(input, target, n, d, tau):
