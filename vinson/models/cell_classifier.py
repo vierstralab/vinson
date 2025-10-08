@@ -47,11 +47,19 @@ class EmbeddingMLP(torch.nn.Module):
 
 
 class CellClassifierModel(L.LightningModule):
+<<<<<<< HEAD
     def __init__(self, n_inputs, n_cell_categories, **kwargs):
         super(CellClassifierModel, self).__init__()
         
         self.trunk = EmbeddingMLP(n_inputs, **kwargs)
         self.head = torch.nn.Linear(self.trunk.n_nodes, n_cell_categories)
+=======
+    def __init__(self, n_inputs, n_cell_categoriess, **kwargs):
+        super(CellClassifierModel, self).__init__()
+        
+        self.trunk = EmbeddingMLP(n_inputs, **kwargs)
+        self.head = torch.nn.Linear(self.trunk.n_nodes, n_cell_categoriess)
+>>>>>>> fd15e77ad7d46a0a05e7d65fade18ade894625f0
 
         self.loss_fn = torch.nn.CrossEntropyLoss()
 
@@ -61,7 +69,11 @@ class CellClassifierModel(L.LightningModule):
     def training_step(self, batch, batch_idx):
         X, y = (
             batch["embed"],
+<<<<<<< HEAD
             batch["cell_category"],
+=======
+            batch["cell_categories"],
+>>>>>>> fd15e77ad7d46a0a05e7d65fade18ade894625f0
         )
 
         y_ = self(X)
@@ -91,6 +103,7 @@ class CellClassifierModel(L.LightningModule):
         return optimizer
 
 
+<<<<<<< HEAD
 class CellAndPathologicalStateClassifierModel(L.LightningModule):
     def __init__(self, n_inputs, n_cell_categories, n_pathological_states, **kwargs):
         super(CellAndPathologicalStateClassifierModel, self).__init__()
@@ -98,12 +111,22 @@ class CellAndPathologicalStateClassifierModel(L.LightningModule):
         self.trunk = EmbeddingMLP(n_inputs, **kwargs)
         self.head_cell_category = torch.nn.Linear(self.trunk.n_nodes, n_cell_categories)
         self.head_pathological_state = torch.nn.Linear(self.trunk.n_nodes, n_pathological_states)
+=======
+class CellAndDiseaseStateClassifierModel(L.LightningModule):
+    def __init__(self, n_inputs, n_cell_categories, n_disease_states, **kwargs):
+        super(CellAndDiseaseStateClassifierModel, self).__init__()
+        
+        self.trunk = EmbeddingMLP(n_inputs, **kwargs)
+        self.head_cell_category = torch.nn.Linear(self.trunk.n_nodes, n_cell_categories)
+        self.head_disease_state = torch.nn.Linear(self.trunk.n_nodes, n_disease_states)
+>>>>>>> fd15e77ad7d46a0a05e7d65fade18ade894625f0
 
         self.loss_fn = torch.nn.CrossEntropyLoss()
 
     def forward(self, x):
         x = self.trunk(x)
         cell_category = self.head_cell_category(x)
+<<<<<<< HEAD
         pathological_state = self.head_pathological_state(x)
         return cell_category, pathological_state
 
@@ -119,6 +142,23 @@ class CellAndPathologicalStateClassifierModel(L.LightningModule):
         loss_cell_category = self.loss_fn(_y_cell_category, y_cell_category)
         loss_pathological_state = self.loss_fn(_y_pathological_state, y_pathological_state)
         loss = loss_cell_category + loss_pathological_state
+=======
+        disease_state = self.head_disease_state(x)
+        return cell_category, disease_state
+
+    def training_step(self, batch, batch_idx):
+        X, y_cell_category, y_disease_state = (
+            batch["embed"],
+            batch["cell_category"],
+            batch["disease_state"],
+        )
+
+        _y_cell_category, _y_disease_state = self(X)
+
+        loss_cell_category = self.loss_fn(_y_cell_category, y_cell_category)
+        loss_disease_state = self.loss_fn(_y_disease_state, y_disease_state)
+        loss = loss_cell_category + loss_disease_state
+>>>>>>> fd15e77ad7d46a0a05e7d65fade18ade894625f0
 
         self.log(
             "loss",
@@ -132,6 +172,7 @@ class CellAndPathologicalStateClassifierModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+<<<<<<< HEAD
         X, y_cell_category, y_pathological_state = (
             batch["embed"],
             batch["cell_category"],
@@ -143,6 +184,19 @@ class CellAndPathologicalStateClassifierModel(L.LightningModule):
         loss_cell_categories = self.loss_fn(_y_cell_category, y_cell_category)
         loss_pathological_state = self.loss_fn(_y_pathological_state, y_pathological_state)
         loss = loss_cell_categories + loss_pathological_state
+=======
+        X, y_cell_category, y_disease_state = (
+            batch["embed"],
+            batch["cell_category"],
+            batch["disease_state"],
+        )
+
+        _y_cell_category, _y_disease_state = self(X)
+
+        loss_cell_categories = self.loss_fn(_y_cell_category, y_cell_category)
+        loss_disease_state = self.loss_fn(_y_disease_state, y_disease_state)
+        loss = loss_cell_categories + loss_disease_state
+>>>>>>> fd15e77ad7d46a0a05e7d65fade18ade894625f0
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
