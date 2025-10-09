@@ -38,8 +38,6 @@ class BaseSequenceDataset(Dataset):
         Maximum number of bases to randomly shift the region (default: 0).
     noise : float, optional
         Standard deviation of Gaussian noise added to embeddings (default: 0).
-    seed : int or None, optional
-        Seed for random number generator (default: None).
     seqlen : int, optional
         Length of the sequence window (default: 1344, must be even).
 
@@ -51,8 +49,6 @@ class BaseSequenceDataset(Dataset):
         DataFrame of cell-type/state embeddings.
     fasta_extr : FastaExtractor or None
         Extractor for reference genome sequences (initialized as None).
-    random_state : np.random.RandomState
-        Random number generator for reproducibility.
     seqlen : int
         Length of the sequence window.
     """
@@ -65,7 +61,6 @@ class BaseSequenceDataset(Dataset):
         reverse_complement=False,
         jitter=0,
         noise=0,
-        seed=None,
         seqlen=1344,
     ):
         self.fasta_file = fasta_file
@@ -84,9 +79,6 @@ class BaseSequenceDataset(Dataset):
 
         logger.info("Loading embeddings.")
         self.embeddings_df = pd.read_table(embeddings_file, index_col=0)
-
-        self.seed = seed
-        self.reset_random_state()
 
     def __del__(self):
         """
@@ -114,12 +106,6 @@ class BaseSequenceDataset(Dataset):
         """
         raise NotImplementedError
 
-    def reset_random_state(self):
-        """
-        Reset the random number generator using the stored seed.
-        """
-        self.random_state = np.random.RandomState(self.seed)
-
     def get_embedding_vec(self, sample_id):
         """
         Get the embedding vector a sample id
@@ -135,11 +121,11 @@ class BaseSequenceDataset(Dataset):
             The embedding vector that sample.
         """
         # Cell type/state embeddings
-        x = self.embeddings_df[sample_id].to_numpy(dtype=np.float32)
+        x = self.embeddings_df.loc[sample_id].to_numpy(dtype=np.float32)
 
         # Add a little Gaussian noise to embeddings
         if self.noise > 0:
-            x = x + self.random_state.normal(0, self.noise, len(x)).astype(np.float32)
+            x = x + np.random.normal(0, self.noise, len(x)).astype(np.float32)
 
         return x
 
@@ -155,8 +141,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         Path to HDF5 file containing sample data and labels.
     embeddings_file : str
         Path to tab-delimited file with cell-type/state embeddings.
-    read_depth_file : str
-        Path to tab-delimited file with sample read depths.
     fasta_file : str
         Path to reference genome FASTA file.
     negative_samples_file : str, optional
@@ -179,8 +163,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         Maximum number of bases to randomly shift the region (default: 0).
     noise : float, optional
         Standard deviation of Gaussian noise added to embeddings (default: 0).
-    seed : int or None, optional
-        Seed for random number generator (default: None).
 
     Attributes
     ----------
@@ -188,8 +170,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         Opened HDF5 file with sample data.
     embeddings_df : pandas.DataFrame
         DataFrame of cell-type/state embeddings.
-    read_depths : pandas.Series
-        Series of sample read depths.
     sample_to_genotype_df : pandas.DataFrame
         DataFrame of genotype metadata.
     fasta_extr : FastaExtractor
@@ -212,19 +192,17 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         self,
         samples_file,
         embeddings_file,
-        read_depth_file,
         fasta_file,
         negative_samples_file=None,
         negative_samples_rate=1,
         negative_samples_weight=1,
         sample_genotype_file=None,
         genotype_file=None,
-        clip_density=5,
+        clip_density=20,
         min_bg=0.1,
         reverse_complement=False,
         jitter=0,
         noise=0,
-        seed=None,
     ):
         super(SequenceEmbedDataset, self).__init__(
             samples_file,
@@ -233,7 +211,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             reverse_complement=reverse_complement,
             jitter=jitter,
             noise=noise,
-            seed=seed,
         )
 
         self.negative_samples_file = negative_samples_file
@@ -247,12 +224,9 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         self.clip_density = clip_density
         self.min_bg = min_bg
 
-        assert set(["chrom", "mid", "class", "density", "sample_id"]).issubset(
+        assert set(["chrom", "summit", "class", "density", "sample_id", "background", "read_depth"]).issubset(
             self.samples.keys()
         )
-
-        logger.info("Loading sample read depths.")
-        self.read_depths = pd.read_table(read_depth_file, index_col=0).iloc[:, 0]
 
         if negative_samples_file:
             logger.info("Sampling from negative examples file...")
@@ -408,12 +382,13 @@ class SequenceEmbedDataset(BaseSequenceDataset):
 
         idx = i // (self.negative_samples_rate + 1)
 
-        chrom, mid, sample_id, density, bg, indicator = (
+        chrom, mid, sample_id, density, bg, read_depth, indicator = (
             self.samples["chrom"][idx].astype(str),
-            self.samples["mid"][idx].astype(int),
+            self.samples["summit"][idx].astype(int),
             self.samples["sample_id"][idx].astype(str),
             self.samples["density"][idx].astype(np.float32),
-            self.samples["bg_mu"][idx].astype(np.float32),
+            self.samples["background"][idx].astype(np.float32),
+            self.samples["read_depth"][idx].astype(np.float32),
             1 if self.samples["class"][idx].astype(str) == "positive" else 0,
         )
 
@@ -421,15 +396,17 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             try:
                 negative_interval = GenomicInterval(chrom, mid, mid + 1)
 
+                # Use the default np.random (seed set when worker is initialized)
                 negative_sample = (
                     self.negative_samples_extr[negative_interval].sample(
-                        n=1, random_state=self.random_state
+                        n=1, random_state=None
                     )
                 ).values[0, :]
 
                 sample_id = str(negative_sample[3])
                 density = np.float32(negative_sample[4])
                 bg = np.float32(negative_sample[5])
+                read_depth = np.float32(negative_sample[6])
                 indicator = 0
 
             except ValueError:
@@ -440,7 +417,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
 
         # Jitter/shift region as necesary
         if self.jitter > 0:
-            shift = self.random_state.randint(-self.jitter, self.jitter + 1)
+            shift = np.random.randint(-self.jitter, self.jitter + 1)
             interval.shift(shift, inplace=True)
 
         # Inject genotypes if genotype files provided
@@ -459,13 +436,12 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             raise e
 
         # Reverse complete (augmentation)
-        if self.reverse_complement and self.random_state.choice(2) == 1:
+        if self.reverse_complement and np.random.choice(2) == 1:
             ohe_seq = np.flip(ohe_seq, [0, 1])
 
         # Get embeddings
         embed = self.get_embedding_vec(sample_id)
-        # Sample read depth
-        read_depth = self.read_depths.loc[sample_id]
+       
         # Adjust values as needed
         density = density if density < self.clip_density else self.clip_density
         weight = 1.0 if indicator else self.negative_samples_weight
@@ -496,11 +472,13 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         N = self.samples["chrom"].shape[0]
         return N * (self.negative_samples_rate + 1) if self.sample_from_negatives else N
 
+
+
     def __del__(self):
         """
         Clean up open file handles for genotype and negative sample extractors.
         """
-        super(SeqEmbedDataset, self).__del__()
+        super(SequenceEmbedDataset, self).__del__()
 
         if self.genotype_extr:
             self.genotype_extr.close()
@@ -569,7 +547,6 @@ class VariantEmbedDataset(BaseSequenceDataset):
         reverse_complement=True,
         jitter=0,
         noise=0,
-        seed=None,
     ):
         super(VariantEmbedDataset, self).__init__(
             samples_file,
@@ -578,7 +555,6 @@ class VariantEmbedDataset(BaseSequenceDataset):
             reverse_complement=reverse_complement,
             jitter=jitter,
             noise=noise,
-            seed=seed,
         )
 
         self.flip_alleles = flip_alleles
@@ -794,7 +770,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
         interval = variant.widen(self.seqlen // 2)
 
         if self.jitter > 0:
-            shift = self.random_state.randint(-self.jitter, self.jitter + 1)
+            shift = np.random.randint(-self.jitter, self.jitter + 1)
             interval.shift(shift, inplace=True)
 
         rel_pos = pos - interval.start
@@ -820,13 +796,13 @@ class VariantEmbedDataset(BaseSequenceDataset):
             raise e
 
         # Random reverse complementation
-        if self.reverse_complement and self.random_state.choice(2) == 1:
+        if self.reverse_complement and np.random.choice(2) == 1:
             ohe_seq_ref = np.flip(ohe_seq_ref, [0, 1])
             ohe_seq_alt = np.flip(ohe_seq_alt, [0, 1])
 
         # Flip reference and alternative alleles in input
         # for additional regularization
-        if self.flip_alleles and self.random_state.choice(2) == 1:
+        if self.flip_alleles and np.random.choice(2) == 1:
             ohe_seq_ref, ohe_seq_alt = ohe_seq_alt, ohe_seq_ref
             ref_counts = total_counts - ref_counts
             lfc = -1 * lfc

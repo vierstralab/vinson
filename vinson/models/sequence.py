@@ -12,9 +12,10 @@ from torchmetrics.classification import (
 from torchmetrics.regression import PearsonCorrCoef
 
 from vinson.loss import (
-    poisson_loss,
+    PoissonNLL,
     binomial_mixture_normed_loss,
 )
+
 
 class CellEmbedding(torch.nn.Module):
     """
@@ -36,7 +37,9 @@ class CellEmbedding(torch.nn.Module):
         self.fcs = torch.nn.ModuleList(
             [torch.nn.Linear(n_nodes, n_nodes) for i in range(self.n_layers)]
         )
-        self.relus = torch.nn.ModuleList([torch.nn.ReLU() for i in range(self.n_layers)])
+        self.relus = torch.nn.ModuleList(
+            [torch.nn.ReLU() for i in range(self.n_layers)]
+        )
 
         self.ffc = torch.nn.Linear(n_nodes, n_outputs)
 
@@ -46,6 +49,7 @@ class CellEmbedding(torch.nn.Module):
             x = self.relus[i](self.fcs[i](x))
         x = self.ffc(x)
         return x
+
 
 class BassetTrunk(torch.nn.Module):
     def __init__(self):
@@ -163,6 +167,13 @@ class BaseSequenceModel(L.LightningModule):
         self.lr_scheduler = lr_scheduler
         self.lr_scheduler_kwargs = lr_scheduler_kwargs
 
+        # Loss
+        self.loss = (
+            PoissonNLL(reduction="none")
+            if self.regression
+            else torch.nn.BCELossWithLogits(reduction="none")
+        )
+
         # Init metrics
         self.init_metrics()
 
@@ -233,16 +244,19 @@ class BaseSequenceModel(L.LightningModule):
         if self.regression:
             # Transform normalized density to counts
             # The model ouputs the log counts
-            ps = torch.tensor(1e-6)
-            pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
-            target_counts = density / 1e6 * read_depth
 
-            loss = poisson_loss(pred_counts + ps, target_counts + ps, reduction="none")
+            # pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
+            pseudocount = torch.tensor(1e-6, device=self.device)
+            
+            log_pred_counts = torch.logaddexp(
+                y - torch.tensor(1e6, device=self.device).log() + torch.log(read_depth), torch.log(bg + pseudocount)
+            )
+            target_counts = (density / 1e6 * read_depth) + pseudocount
+
+            loss = self.loss(log_pred_counts, target_counts)
 
         else:
-            loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                y, indicator.float(), reduction="none"
-            )
+            loss = self.loss(y, indicator.float())
 
         loss *= weight
         loss = loss.mean()
@@ -268,19 +282,25 @@ class BaseSequenceModel(L.LightningModule):
         if self.regression:
             # Transform normalized density to counts
             # The model ouputs the log counts
-            ps = torch.tensor(1e-6)
-            pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
-            target_counts = density / 1e6 * read_depth
 
-            loss = poisson_loss(pred_counts + ps, target_counts + ps, reduction="none")
+            # pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
+            pseudocount = torch.tensor(1e-6, device=self.device)
+
+            log_pred_counts = torch.logaddexp(
+                y - torch.tensor(1e6, device=self.device).log() + torch.log(read_depth), torch.log(bg + pseudocount)
+            )
+            target_counts = (density / 1e6 * read_depth) + pseudocount
+
+            loss = self.loss(log_pred_counts, target_counts)
 
             self.valid_metrics.update(
-                (pred_counts + 1).log(), (target_counts + 1).log()
+                torch.logaddexp(log_pred_counts, torch.tensor(1, device=self.device).log()),
+                (target_counts + 1).log(),
             )
         else:
-            loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                y, indicator.float(), reduction="none"
-            )
+            loss = self.loss(y, indicator.float())
+
+            self.valid_metrics.update(torch.sigmoid(y), indicator.int())
 
         loss *= weight
         loss = loss.mean()
@@ -308,7 +328,7 @@ class BaseSequenceModel(L.LightningModule):
             "lr_scheduler": {
                 "scheduler": scheduler,
                 "monitor": "val_loss",
-                "interval": "epoch",
+                "interval": "step",
                 "frequency": 1,
                 "name": "lr",
             },
@@ -316,12 +336,14 @@ class BaseSequenceModel(L.LightningModule):
 
 
 class EmbedModel(BaseSequenceModel):
-    """Sequence with embeddings model
-    """
+    """Sequence with embeddings model"""
+
     def __init__(self, trunk, embed, *args, **kwargs):
         super(EmbedModel, self).__init__(trunk, *args, **kwargs)
 
         self.embedding = embed
+
+        self.save_hyperparameters(ignore=["trunk", "embed"])
 
     def init_model(self):
         self(
@@ -354,17 +376,19 @@ class EmbedModel(BaseSequenceModel):
         if self.regression:
             # Transform normalized density to counts
             # The model ouputs the log counts
-            ps = torch.tensor(1e-6)
-            pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
-            target_counts = density / 1e6 * read_depth
 
-            loss = poisson_loss(pred_counts + ps, target_counts + ps, reduction="none")
-            # loss = mse_loss(pred_counts + ps, target_counts + ps, reduction="none")
+            # pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
+            pseudocount = torch.tensor(1e-6, device=self.device)
+
+            log_pred_counts = torch.logaddexp(
+                y - torch.tensor(1e6, device=self.device).log() + torch.log(read_depth), torch.log(bg + pseudocount)
+            )
+            target_counts = (density / 1e6 * read_depth) + pseudocount
+
+            loss = self.loss(log_pred_counts, target_counts)
 
         else:
-            loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                y, indicator.float(), reduction="none"
-            )
+            loss = self.loss(y, indicator.float())
 
         loss *= weight
         loss = loss.mean()
@@ -392,21 +416,24 @@ class EmbedModel(BaseSequenceModel):
         if self.regression:
             # Transform normalized density to counts
             # The model ouputs the log counts
-            ps = torch.tensor(1e-6)
-            pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
-            target_counts = density / 1e6 * read_depth
 
-            loss = poisson_loss(pred_counts + ps, target_counts + ps, reduction="none")
-            # loss = mse_loss(pred_counts + ps, target_counts + ps, reduction="none")
+            # pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
+            pseudocount = torch.tensor(1e-6, device=self.device)
+
+            log_pred_counts = torch.logaddexp(
+                y - torch.tensor(1e6, device=self.device).log() + torch.log(read_depth), torch.log(bg + pseudocount)
+            )
+            target_counts = (density / 1e6 * read_depth) + pseudocount
+
+            loss = self.loss(log_pred_counts, target_counts)
 
             self.valid_metrics.update(
-                (pred_counts + 1).log(), (target_counts + 1).log()
+                torch.logaddexp(log_pred_counts, torch.tensor(1, device=self.device).log()),
+                (target_counts + 1).log(),
             )
-
         else:
-            loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                y, indicator.float(), reduction="none"
-            )
+            loss = self.loss(y, indicator.float())
+
             self.valid_metrics.update(torch.sigmoid(y), indicator.int())
 
         loss *= weight
@@ -420,6 +447,8 @@ class EmbedModel(BaseSequenceModel):
 class VariantEmbedModel(EmbedModel):
     def __init__(self, *args, **kwargs):
         super(VariantEmbedModel, self).__init__(*args, **kwargs)
+
+        self.save_hyperparameters()
 
     def init_metrics(self):
         self.train_metrics = MetricCollection(
@@ -511,7 +540,7 @@ class VariantEmbedModel(EmbedModel):
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
         return loss
-    
+
 
 class VariantEmbedModelWrapper(VariantEmbedModel):
     """Wrapper class for VariantModel to perform only inference"""
@@ -538,4 +567,3 @@ class VariantEmbedModelWrapper(VariantEmbedModel):
         x = self.forward_final(x)
 
         return x
-
