@@ -101,6 +101,8 @@ class CellAndPathologicalStateClassifierModel(L.LightningModule):
 
         self.loss_fn = torch.nn.CrossEntropyLoss()
 
+        self.save_hyperparameters()
+        
     def forward(self, x):
         x = self.trunk(x)
         cell_category = self.head_cell_category(x)
