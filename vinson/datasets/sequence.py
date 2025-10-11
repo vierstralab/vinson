@@ -232,7 +232,9 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             logger.info("Sampling from negative examples file...")
             self.sample_from_negatives = True
         else:
+            logger.info("No negatives file. Setting negative sampling rate to 0.")
             self.sample_from_negatives = False
+            self.negative_samples_rate = 0
 
         if sample_genotype_file:
             logger.info("Loading genotype metadata.")
