@@ -75,7 +75,26 @@ class BaseSequenceDataset(Dataset):
         self.fasta_extr = None
 
         logger.info("Opening samples file.")
-        self.samples = h5py.File(samples_file, "r")
+        # self.samples = h5py.File(samples_file, "r")
+
+        with h5py.File(samples_file, "r") as f:
+            _astype = {
+                "chrom": str,
+                "summit": int,
+                "sample_id": str,
+                "density": np.float32,
+                "background": np.float32,
+                "read_depth": np.float32,
+                "class": str,
+            }
+
+            self.samples = {
+                k:v[:].astype(_astype[k]) for k,v in f.items()
+            }
+
+            self.samples["class"] = np.where(
+                self.samples["class"] == "positive", 1, 0
+            )
 
         logger.info("Loading embeddings.")
         self.embeddings_df = pd.read_table(embeddings_file, index_col=0)
@@ -84,8 +103,8 @@ class BaseSequenceDataset(Dataset):
         """
         Clean up open file handles for samples and FASTA extractor.
         """
-        if self.samples:
-            self.samples.close()
+        # if self.samples:
+        #     self.samples.close()
 
         if self.fasta_extr:
             self.fasta_extr.close()
@@ -385,13 +404,13 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         idx = i // (self.negative_samples_rate + 1)
 
         chrom, mid, sample_id, density, bg, read_depth, indicator = (
-            self.samples["chrom"][idx].astype(str),
-            self.samples["summit"][idx].astype(int),
-            self.samples["sample_id"][idx].astype(str),
-            self.samples["density"][idx].astype(np.float32),
-            self.samples["background"][idx].astype(np.float32),
-            self.samples["read_depth"][idx].astype(np.float32),
-            1 if self.samples["class"][idx].astype(str) == "positive" else 0,
+            self.samples["chrom"][idx],
+            self.samples["summit"][idx],
+            self.samples["sample_id"][idx],
+            self.samples["density"][idx],
+            self.samples["background"][idx],
+            self.samples["read_depth"][idx],
+            self.samples["class"][idx],
         )
 
         if self.sample_from_negatives and i % (self.negative_samples_rate + 1):
