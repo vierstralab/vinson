@@ -545,8 +545,8 @@ class VariantEmbedModel(EmbedModel):
 class VariantEmbedModelWrapper(VariantEmbedModel):
     """Wrapper class for VariantModel to perform only inference"""
 
-    def __init__(self, model):
-        super(VariantEmbedModelWrapper, self).__init__(model.trunk, model.embedding)
+    def __init__(self, model, **kwargs):
+        super(VariantEmbedModelWrapper, self).__init__(model.trunk, model.embedding, **kwargs)
 
         self.__dict__.update(model.__dict__)
 
