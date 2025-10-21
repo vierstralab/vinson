@@ -3,7 +3,7 @@
 #SBATCH --nodes=1             # This needs to match Trainer(num_nodes=...)
 #SBATCH --gres=gpu:8
 #SBATCH --ntasks-per-node=8   # This needs to match Trainer(devices=...)
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=500G
 #SBATCH --time 36:00:00
 
@@ -27,22 +27,22 @@ VAL_SAMPLES_NEG_FILE=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_ac
 OUTDIR=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model/OCT16/
 
 srun python /home/jvierstra/proj/vinson/train_dhs.py \
-     --regression \
-     --nodes 1 \
-     --devices 8 \
-     --accelerator gpu \
-     --strategy ddp \
-     --num_workers 8 \
-     --batch_size 32 \
-     --negative_samples_rate 2 \
-     --negative_weight 1 \
-     --clip_density 20 \
-     --min_bg 0.1 \
-     --outdir $OUTDIR \
-     --seed 42 \
-     $EMBEDDINGS_FILE \
-     $FASTA_FILE \
-     "$TRAIN_SAMPLES_FILES_PATTERN" \
-     "$TRAIN_SAMPLES_NEG_FILES_PATTERN" \
-     $VAL_SAMPLES_FILE \
-     $VAL_SAMPLES_NEG_FILE
+    --regression \
+    --nodes 1 \
+    --accelerator gpu \
+    --strategy ddp \
+    --devices 8 \
+    --num_workers 4 \
+    --batch_size 32 \
+    --negative_samples_rate 2 \
+    --negative_weight 1 \
+    --clip_density 20 \
+    --min_bg 0.1 \
+    --outdir $OUTDIR \
+    --seed 42 \
+    $EMBEDDINGS_FILE \
+    $FASTA_FILE \
+    "$TRAIN_SAMPLES_FILES_PATTERN" \
+    "$TRAIN_SAMPLES_NEG_FILES_PATTERN" \
+    $VAL_SAMPLES_FILE \
+    $VAL_SAMPLES_NEG_FILE
