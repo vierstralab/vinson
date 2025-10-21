@@ -312,17 +312,51 @@ if __name__ == "__main__":
     parser = ArgumentParser()
 
     parser.add_argument(
+        "--run_id",
+        default=None,
+        help="Unique identifier for the training run.",
+    )
+
+    parser.add_argument(
         "--nodes", type=int, default=1, help="Number of nodes for distributed training."
     )
     parser.add_argument(
         "--devices", type=int, default=4, help="Number of devices (GPUs/CPUs) per node."
     )
+
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=8,
+        help="Number of worker processes for data loading.",
+    )
+    parser.add_argument(
+        "--accelerator",
+        type=str,
+        default="gpu",
+        help="Type of accelerator to use (e.g., 'gpu', 'cpu').",
+    )
+    parser.add_argument(
+        "--strategy",
+        type=str,
+        default="auto",
+        help="Distributed training strategy (e.g., 'ddp', 'auto').",
+    )
+    parser.add_argument(
+        "--checkpoint", type=str, help="Path to checkpoint.", default=None,
+    )
+    parser.add_argument(
+        "--seed", type=int, help="Random seed", default=42,
+    )
+
     parser.add_argument(
         "--outdir",
         type=str,
         default=".",
         help="Output directory for logs and checkpoints.",
     )
+
+    # ----------------------
     parser.add_argument(
         "--regression",
         action="store_true",
@@ -390,31 +424,8 @@ if __name__ == "__main__":
         default=0.2,
         help="Fraction of an epoch between validation checks.",
     )
-    parser.add_argument(
-        "--num_workers",
-        type=int,
-        default=8,
-        help="Number of worker processes for data loading.",
-    )
-    parser.add_argument(
-        "--accelerator",
-        type=str,
-        default="gpu",
-        help="Type of accelerator to use (e.g., 'gpu', 'cpu').",
-    )
-    parser.add_argument(
-        "--strategy",
-        type=str,
-        default="auto",
-        help="Distributed training strategy (e.g., 'ddp', 'auto').",
-    )
-    parser.add_argument(
-        "--checkpoint", type=str, help="Path to checkpoint.", default=None,
-    )
-    parser.add_argument(
-        "--seed", type=int, help="Random seed", default=42,
-    )
 
+    # -------------- inputs ------------------
     parser.add_argument(
         "embeddings_file", type=str, help="Embeddings file.",
     )
