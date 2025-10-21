@@ -479,19 +479,33 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
         return loss
 
 
-class VariantEmbedModelWrapper(VariantEmbedModel):
+class VariantEmbedModelWrapper(L.LightningModule):
     """Wrapper class for VariantModel to perform only inference"""
 
-    def __init__(self, model, **kwargs):
-        super(VariantEmbedModelWrapper, self).__init__(model.trunk, model.embedding, **kwargs)
+    def __init__(self, model: "VariantEmbedModel"):
+        super().__init__()
+        self.model = model
 
-        self.__dict__.update(model.__dict__)
-
-        self.embedding_ref = copy.deepcopy(self.embedding)
-        self.embedding_alt = copy.deepcopy(self.embedding)
-
-        self.trunk_ref = copy.deepcopy(self.trunk)
-        self.trunk_alt = copy.deepcopy(self.trunk)
+        # Make independent ref/alt branches
+        self.embedding_ref = copy.deepcopy(model.embedding)
+        self.embedding_alt = copy.deepcopy(model.embedding)
+        self.trunk_ref = copy.deepcopy(model.trunk)
+        self.trunk_alt = copy.deepcopy(model.trunk)
+        for mod in [
+            self.trunk_ref, self.trunk_alt, 
+            self.embedding_ref, self.embedding_alt
+        ]:
+            mod.eval()
+            for p in mod.parameters():
+                p.requires_grad = False
+    
+    def __getattr__(self, name):
+        if name != "model":
+            try:
+                return getattr(self.model, name)
+            except AttributeError:
+                pass
+        raise AttributeError(f"{self.model} has no attribute {name}")
 
     def forward(self, seq_ref, seq_alt, embed):
         """ """
@@ -500,7 +514,7 @@ class VariantEmbedModelWrapper(VariantEmbedModel):
 
         x = torch.subtract(features_ref, features_alt)
 
-        x = self.forward_fc(x)
-        x = self.forward_final(x)
+        x = self.model.forward_fc(x)
+        x = self.model.forward_final(x)
 
         return x
