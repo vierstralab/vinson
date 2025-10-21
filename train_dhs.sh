@@ -24,7 +24,7 @@ TRAIN_SAMPLES_NEG_FILES_PATTERN=/net/seq/data2/projects/ENCODE4Plus/REGULOME/seq
 VAL_SAMPLES_FILE=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT16/epoch_1/data_OCT16_pos.batch1.val.h5
 VAL_SAMPLES_NEG_FILE=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT16/epoch_1/data_OCT16_neg.batch1.val.bed.gz
 
-OUTDIR=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model/OCT21/
+OUTDIR=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model/OCT16/
 
 srun python /home/jvierstra/proj/vinson/train_dhs.py \
      --regression \
