@@ -28,7 +28,9 @@ class EncoderDataset(Dataset):
                 _encoder.fit(self.labels[col])
                 self.encoders[col] = _encoder
 
-        self._labels = self.labels.apply(lambda x: self.encoders[x.name].transform(x)).astype(int)
+        self._labels = self.labels.apply(
+            lambda x: self.encoders[x.name].transform(x)
+        ).astype(int)
 
     def __len__(self):
         return len(self.embeddings)
