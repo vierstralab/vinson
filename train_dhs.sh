@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:8
 #SBATCH --ntasks-per-node=8   # This needs to match Trainer(devices=...)
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=512G
+#SBATCH --mem=500G
 #SBATCH --time 36:00:00
 
 # srun --partition=hpcg-test --nodes=1 --gres=gpu:2 --ntasks-per-node=2 --cpus-per-task=8 --mem=256G --pty bash
