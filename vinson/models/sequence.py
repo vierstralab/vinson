@@ -10,7 +10,7 @@ from torchmetrics.classification import (
     BinaryAUROC,
 )
 from torchmetrics.regression import PearsonCorrCoef
-
+from torch.nn import BCEWithLogitsLoss
 from vinson.loss import (
     PoissonNLL,
     binomial_mixture_normed_loss,
@@ -230,7 +230,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         self.loss = (
             PoissonNLL(reduction="none")
             if self.regression
-            else torch.nn.BCELossWithLogits(reduction="none")
+            else BCEWithLogitsLoss(reduction="none")
         )
         super().__init__(
             trunk_model,
