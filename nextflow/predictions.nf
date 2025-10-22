@@ -1,0 +1,79 @@
+process predict {
+    conda "${params.conda_path}"
+    publishDir "${params.outdir}/predictions"
+    label "gpu"
+
+    input:
+        tuple val(prefix), path(embeddings_file), path(dhs_dataset), path(checkpoint), val(model_type)
+    
+    output:
+        tuple val(prefix), path(dhs_dataset), path(name)
+    
+    script:
+    name = "${prefix}.npy"
+    """
+    python3 $moduleDir/bin/predict_DHS_model.py \
+        ${dhs_dataset} \
+        --embeddings_file ${embeddings_file} \
+        --checkpoint ${checkpoint} \
+        --fasta_file ${params.fasta_file} \
+        --sample_genotype_file ${params.sample_genotype_file} \
+        --genotype_file ${params.genotype_file} \
+        --num_workers ${task.cpus} \
+        --model_type ${model_type} \
+        --output ${name} 
+    """
+}
+
+
+process annotate_with_predictions {
+    conda "${params.conda_path}"
+    publishDir "${params.outdir}/"
+    label "ldsc"
+
+    output:
+        path predict_np
+
+    script:
+    predict_np = "${file(params.samples_file).baseName}.annotated_with_predictions.tsv"
+    """
+    python3 $moduleDir/bin/annotate_meta.py \
+        ${params.samples_file} \
+        ${params.outdir}/predictions \
+        ${predict_np}
+    """
+}
+
+process visualize_predictions {
+    tag "${prefix}"
+    conda "${params.conda_path}"
+    publishDir "${params.outdir}/nmf/${prefix}"
+    label "med_mem"
+
+    input:
+        tuple val(prefix), path(dhs_dataset), path(predict_np)
+
+    output:
+        tuple val(prefix), path("*.pdf")
+
+    script:
+    """
+    python3 $moduleDir/bin/plot_precomputed_data.py \
+        --prefix ${prefix} \
+        --dataset ${dhs_dataset} \
+        --predict-output ${predict_np} \
+        --output-dir ${params.outdir}
+        
+    """
+}
+
+workflow {
+    Channel.fromPath(params.samples_file)
+        | splitCsv(header:true, sep:'\t')
+        | map(row -> tuple(row.prefix, file(row.embeddings_file), file(row.dhs_dataset), file(row.checkpoint), row.model_type))
+        | predict
+        | visualize_predictions
+    
+    annotate_with_predictions()
+    
+}
