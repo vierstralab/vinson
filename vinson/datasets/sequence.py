@@ -614,8 +614,8 @@ class VariantEmbedDataset(BaseSequenceDataset):
         str
             Haplotype 2 DNA sequence.
         """
-        seq_ref = self.fasta_extr[interval]
-        seq_alt = str(seq_ref)
+        seq_hap1 = self.fasta_extr[interval]
+        seq_hap2 = str(seq_hap1)
 
         # Check if sample in has a genotype
         if sample_id not in self.sample_to_genotype_df.index:
@@ -654,20 +654,20 @@ class VariantEmbedDataset(BaseSequenceDataset):
             _chr, _pos, _ref, _alt = v.Index
             rel_pos = _pos - interval.start
             # Phased variants, including reference
-            if v.phase_block == ref_variant.phase_block and not pd.isna(
-                ref_variant.phase_block
-            ):
+            if v.phase_block == ref_variant.phase_block \
+                and not pd.isna(ref_variant.phase_block) \
+                and (ref_variant.phase_block != "."):
                 if v.gt == "1|0":
-                    seq_ref = seq_ref[:rel_pos] + _alt + seq_ref[rel_pos + 1 :]
+                    seq_hap1 = seq_hap1[:rel_pos] + _alt + seq_hap1[rel_pos + 1 :]
                 elif v.gt == "0|1":
-                    seq_alt = seq_alt[:rel_pos] + _alt + seq_alt[rel_pos + 1 :]
+                    seq_hap2 = seq_hap2[:rel_pos] + _alt + seq_hap2[rel_pos + 1 :]
                 else:
                     raise ValueError(
                         f"Phased genotype {v.gt} not recognized! ({_chr}:{_pos}:{indiv_id})"
                     )
             # The unphased reference
             elif v.Index == reference:
-                seq_alt = seq_alt[:rel_pos] + _alt + seq_alt[rel_pos + 1 :]
+                seq_hap2 = seq_hap2[:rel_pos] + _alt + seq_hap2[rel_pos + 1 :]
             # Unphased additional variants that are not at the same 
             # position as the referencee
             elif _pos != reference.pos:
@@ -683,23 +683,23 @@ class VariantEmbedDataset(BaseSequenceDataset):
                 else:
                     base = _ref
 
-                seq_ref = seq_ref[:rel_pos] + base + seq_ref[rel_pos + 1 :]
-                seq_alt = seq_alt[:rel_pos] + base + seq_alt[rel_pos + 1 :]
+                seq_hap1 = seq_hap1[:rel_pos] + base + seq_hap1[rel_pos + 1 :]
+                seq_hap2 = seq_hap2[:rel_pos] + base + seq_hap2[rel_pos + 1 :]
             else:
                 pass
 
-        # The ref sequence should have the reference allele for
+        # The hap1 sequence should have the reference allele for
         # variant. This would only occur for phased variants, hence
         # the "1|0" genotype.
         if ref_variant["gt"] == "1|0":
-            seq_ref, seq_alt = seq_alt, seq_ref
+            seq_hap1, seq_hap2 = seq_hap2, seq_hap1
 
         # Check the sequences
         rel_pos = reference[1] - interval.start
-        if (seq_ref[rel_pos] != reference[2]) or (seq_alt[rel_pos] != reference[3]):
+        if (seq_hap1[rel_pos] != reference[2]) or (seq_hap2[rel_pos] != reference[3]):
             raise ValueError("Expected ref & alt alleles not found in correct position in sequences!", reference, variants)
 
-        return (len(variants), seq_ref, seq_alt)
+        return (len(variants), seq_hap1, seq_hap2)
 
     def __getitem__(self, i):
         """
