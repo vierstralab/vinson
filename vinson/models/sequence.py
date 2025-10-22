@@ -354,7 +354,6 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         return loss
 
 
-
 class EmbedModel(BaseSequenceModel):
     """Sequence with embeddings model"""
 
@@ -363,7 +362,7 @@ class EmbedModel(BaseSequenceModel):
 
         self.embedding = embed
 
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["trunk", "embed"])
 
     def init_model(self):
         self(
