@@ -358,12 +358,12 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 class EmbedModel(BaseSequenceModel):
     """Sequence with embeddings model"""
 
-    def __init__(self, trunk, embed, *args, **kwargs):
+    def __init__(self, trunk: BassetTrunkEmbed, embed: CellEmbedding, *args, **kwargs):
         super().__init__(trunk, *args, **kwargs)
 
         self.embedding = embed
 
-        self.save_hyperparameters(ignore=["trunk", "embed"])
+        self.save_hyperparameters()
 
     def init_model(self):
         self(
