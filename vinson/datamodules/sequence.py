@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class SeqEmbedDataModule(L.LightningDataModule):
     def __init__(
         self,
-        adata: ad.AnnData,
+        adata_file: str,
         fasta_file,
         genotype_file=None,
         train_dataset_kwargs={},
@@ -27,7 +27,9 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.worker_init_fn = worker_init_fn
 
         self.fasta_file = fasta_file
-        self.adata = adata
+        self.adata_file = adata_file
+        self.n_epochs = self.read_adata().uns['n_epochs']
+        
         self.genotype_file = genotype_file
 
         self.train_dataset_kwargs = train_dataset_kwargs
@@ -41,10 +43,12 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.train_epoch_cycler = None
         # self.train_dl = None
     
+    def read_adata(self):
+        return ad.read_h5ad(self.adata_file)
+
     def setup(self, stage):
         # changes epochs
-        n_epochs = self.adata.uns['n_epochs']
-        self.train_epoch_cycler = islice(cycle(range(n_epochs)), self.i, None)
+        self.train_epoch_cycler = islice(cycle(range(self.n_epochs)), self.i, None)
 
         # self.iterate_train_dataset()
 
@@ -91,32 +95,33 @@ class SeqEmbedDataModule(L.LightningDataModule):
         )
 
     def get_data(self, epoch, dhs_split, sample_split='train'):
-        adata_slice = self.adata[
-            self.adata.obsm['split_data'] == sample_split,
-            self.adata.varm['split_data'] == dhs_split
+        adata = self.read_adata()
+        adata = adata[
+            adata.obsm['split_data'] == sample_split,
+            adata.varm['split_data'] == dhs_split
         ]
-        class_coo = adata_slice.layers['class'].tocoo()
+        class_coo = adata.layers['class'].tocoo()
         row_idx = class_coo.row
         col_idx = class_coo.col
 
         data = {
-            'density': adata_slice.layers['density'].tocoo().data,
-            'sample_id': adata_slice.obs_names[row_idx],
-            'background': adata_slice.layers['mean_bg_agg_cutcounts'].tocoo().data,
-            'read_depth': adata_slice.obs['nuclear_reads'].values[row_idx],
-            'chrom': adata_slice.var['#chr'].values[col_idx],
-            'summit': adata_slice.var['dhs_summit'].values[col_idx],
+            'density': adata.layers['density'].tocoo().data,
+            'sample_id': adata.obs_names[row_idx],
+            'background': adata.layers['mean_bg_agg_cutcounts'].tocoo().data,
+            'read_depth': adata.obs['nuclear_reads'].values[row_idx],
+            'chrom': adata.var['#chr'].values[col_idx],
+            'summit': adata.var['dhs_summit'].values[col_idx],
             'class': class_coo.data,
         }
-        if 'indiv_id' in adata_slice.obsm:
+        if 'indiv_id' in adata.obsm:
             # maybe there is something more elegant
             indiv_ids = np.array(
-                [x if x != "None" else None for x in adata_slice.obsm['indiv_id']]
+                [x if x != "None" else None for x in adata.obsm['indiv_id']]
             )
             data['indiv_id'] = indiv_ids[row_idx]
         logger.info(f"Finished extracting data for epoch {epoch}, dhs_split: {dhs_split}, sample_split: {sample_split}")
 
-        embeddings_df = self.adata.obsm['motif_embeddings']
+        embeddings_df = adata.obsm['motif_embeddings']
         return data, embeddings_df
 
     # def iterate_train_dataset(self):

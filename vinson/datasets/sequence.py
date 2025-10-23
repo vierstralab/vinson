@@ -1,10 +1,7 @@
 import numpy as np
 import pandas as pd
-import h5py
 from collections import namedtuple
 
-
-import torch
 from torch.utils.data import Dataset
 
 from genome_tools import GenomicInterval
@@ -196,7 +193,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         embeddings_df: pd.DataFrame,
         fasta_file: str,
         genotype_file: str = None,
-        negative_samples_weight: float = 1.0,
+        negatives_weight: float = 1.0,
         clip_density=20,
         min_bg=0.1,
         reverse_complement=False,
@@ -214,7 +211,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
 
         self.clip_density = clip_density
         self.min_bg = min_bg
-        self.negative_samples_weight = negative_samples_weight
+        self.negatives_weight = negatives_weight
 
         self.genotype_file = genotype_file
         self.genotype_extr: TabixExtractor = None
@@ -400,7 +397,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         # Adjust values as needed
         density = np.clip(density, None, self.clip_density)
         
-        weight = 1.0 if example_class == 1 else self.negative_samples_weight
+        weight = 1.0 if example_class == 1 else self.negatives_weight
         weight = np.float32(weight)
 
         bg = np.clip(bg, self.min_bg, None)
