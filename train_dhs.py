@@ -7,7 +7,8 @@ from argparse import ArgumentParser
 from datetime import datetime
 
 import torch
-
+import anndata as ad
+import mergedeep
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger
 from lightning.pytorch.callbacks import (
@@ -23,7 +24,7 @@ from vinson.models.sequence import (
     EmbedModel,
 )
 
-import anndata as ad
+
 from vinson.utils import generate_run_name, read_yaml_config
 
 from vinson.lr import CosineAnnealingWarmupRestarts
@@ -252,7 +253,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Setup output
-    run_name = args.run_name or generate_run_name()
+    run_name = args.run_name or "vinson" #or generate_run_name() generates unique name in each subprocess. currently done outside of script
 
     outdir = os.path.join(args.outdir, run_name)
 
@@ -264,7 +265,7 @@ if __name__ == "__main__":
     config = read_yaml_config(default_config_path)
     if args.config is not None:
         update_config = read_yaml_config(args.config)
-        config.update(update_config)
+        mergedeep.merge(config, update_config, strategy=mergedeep.Strategy.REPLACE)
 
     config['command'] = " ".join(["python"] + sys.argv)
     config['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

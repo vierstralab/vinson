@@ -22,8 +22,12 @@ GENOTYPE_FILE=/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_
 
 OUTDIR=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model/
 
+RUN_NAME="$(python -c 'from vinson.utils import generate_run_name; print(generate_run_name())')"
+
+
 # might need to change config path. path is relative to PWD now
 srun python $PWD/train_dhs.py \
+    --run_name $RUN_NAME \
     --nodes 1 \
     --accelerator gpu \
     --strategy ddp \
