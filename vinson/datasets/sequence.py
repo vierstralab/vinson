@@ -55,8 +55,8 @@ class BaseSequenceDataset(Dataset):
 
     def __init__(
         self,
-        samples_file,
-        embeddings_file,
+        data: dict,
+        embeddings_df: pd.DataFrame,
         fasta_file,
         reverse_complement=False,
         jitter=0,
@@ -64,48 +64,33 @@ class BaseSequenceDataset(Dataset):
         seqlen=1344,
     ):
         self.fasta_file = fasta_file
-        self.samples_file = samples_file
+        self.data = data
+
+        # TODO : validate data keys depending on model type
+        assert set(
+            [
+                "chrom", "summit", "class", 
+                "density", "sample_id", 
+                "background", "read_depth"
+            ]
+        ).issubset(
+            self.data.keys()
+        )
+
         self.reverse_complement = reverse_complement
         self.jitter = jitter
         self.noise = noise
+        self.embeddings_df = embeddings_df
 
         assert seqlen % 2 == 0, "Error 'seqlen' must be a even number!"
         self.seqlen = seqlen
 
-        self.fasta_extr = None
-
-        logger.info("Opening samples file.")
-        # self.samples = h5py.File(samples_file, "r")
-
-        with h5py.File(samples_file, "r") as f:
-            _astype = {
-                "chrom": str,
-                "summit": int,
-                "sample_id": str,
-                "density": np.float32,
-                "background": np.float32,
-                "read_depth": np.float32,
-                "class": str,
-            }
-
-            self.samples = {
-                k:v[:].astype(_astype[k]) for k,v in f.items()
-            }
-
-            self.samples["class"] = np.where(
-                self.samples["class"] == "positive", 1, 0
-            )
-
-        logger.info("Loading embeddings.")
-        self.embeddings_df = pd.read_table(embeddings_file, index_col=0)
+        self.fasta_extr: FastaExtractor = None
 
     def __del__(self):
         """
         Clean up open file handles for samples and FASTA extractor.
         """
-        # if self.samples:
-        #     self.samples.close()
-
         if self.fasta_extr:
             self.fasta_extr.close()
 
@@ -120,12 +105,10 @@ class BaseSequenceDataset(Dataset):
     def __len__(self):
         """
         Return the number of samples in the dataset.
-
-        Must be implemented by subclasses.
         """
-        raise NotImplementedError
+        return len(self.data['chrom'])
 
-    def get_embedding_vec(self, sample_id):
+    def get_embedding_vec(self, sample_id) -> np.ndarray:
         """
         Get the embedding vector a sample id
 
@@ -209,58 +192,35 @@ class SequenceEmbedDataset(BaseSequenceDataset):
 
     def __init__(
         self,
-        samples_file,
-        embeddings_file,
-        fasta_file,
-        negative_samples_file=None,
-        negative_samples_rate=1,
-        negative_samples_weight=1,
-        sample_genotype_file=None,
-        genotype_file=None,
+        data: dict,
+        embeddings_df: pd.DataFrame,
+        fasta_file: str,
+        genotype_file: str = None,
+        negative_samples_weight: float = 1.0,
         clip_density=20,
         min_bg=0.1,
         reverse_complement=False,
         jitter=0,
         noise=0,
     ):
-        super(SequenceEmbedDataset, self).__init__(
-            samples_file,
-            embeddings_file,
-            fasta_file,
+        super().__init__(
+            data=data,
+            embeddings_df=embeddings_df,
+            fasta_file=fasta_file,
             reverse_complement=reverse_complement,
             jitter=jitter,
             noise=noise,
         )
 
-        self.negative_samples_file = negative_samples_file
-        self.negative_samples_rate = negative_samples_rate
-        self.negative_samples_weight = negative_samples_weight
-        self.negative_samples_extr = None
-
-        self.genotype_file = genotype_file
-        self.genotype_extr = None
-
         self.clip_density = clip_density
         self.min_bg = min_bg
+        self.negative_samples_weight = negative_samples_weight
 
-        assert set(["chrom", "summit", "class", "density", "sample_id", "background", "read_depth"]).issubset(
-            self.samples.keys()
-        )
+        self.genotype_file = genotype_file
+        self.genotype_extr: TabixExtractor = None
+        if genotype_file is not None:
+            assert 'indiv_id' in data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
 
-        if negative_samples_file:
-            logger.info("Sampling from negative examples file...")
-            self.sample_from_negatives = True
-        else:
-            logger.info("No negatives file. Setting negative sampling rate to 0.")
-            self.sample_from_negatives = False
-            self.negative_samples_rate = 0
-
-        if sample_genotype_file:
-            logger.info("Loading genotype metadata.")
-            self.sample_to_genotype_df = pd.read_table(
-                sample_genotype_file, index_col=0
-            )
-            # TODO: check if genotype file is available and readable
             self.include_genotypes = True
         else:
             logger.info(
@@ -268,7 +228,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             )
             self.include_genotypes = False
 
-    def get_sample_sequence(self, interval, sample_id):
+    def get_sample_sequence(self, interval, sample_id, indiv_id=None):
         """
         Retrieve the DNA sequence for a given interval and sample, injecting sample-specific
         genotypes if available.
@@ -294,27 +254,20 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         seq = self.fasta_extr[interval]
 
         # Check if sample_id has a genotype
-        if sample_id not in self.sample_to_genotype_df.index:
-            logging.info(
-                f"{sample_id} not found in samples to genotype file. ({str(interval)})"
-            )
-            # Return the original sequence
-            return 0, seq
-
-        # Get individual ID
-        indiv_id = self.sample_to_genotype_df.loc[sample_id, "indiv_id"]
-
-        # Check if not NaN
         if pd.isna(indiv_id):
             logging.info(
-                f"No INDIV_ID for {sample_id} samples to genotype file (indiv_id = NaN). ({str(interval)})"
+                f"INDIV_ID for {sample_id} not provided. ({str(interval)})"
             )
             # Return the original sequence
             return 0, seq
 
         # Extract variants pertaining to individual
         variants = self.genotype_extr[interval]
-        variants = variants[variants["indiv_id"].str.contains(indiv_id)].set_index(
+        
+        assert 'INDIV' in indiv_id, "INDIV_ID format incorrect."
+
+        # FIX formatting issue (.bed.gz suffix) 
+        variants = variants[variants["indiv_id"] == f"{indiv_id}.bed.gz"].set_index(
             ["chr", "start", "ref", "alt"]
         )
 
@@ -328,6 +281,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             rel_pos = _pos - interval.start
 
             # If heterozygous, get IUPAC base character
+            # make parsing function more robust
             if (v.gt[0] == "1" and v.gt[2] == "0") or (
                 v.gt[0] == "0" and v.gt[2] == "1"
             ):
@@ -342,6 +296,36 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             seq = seq[:rel_pos] + base + seq[rel_pos + 1 :]
 
         return len(variants), seq
+
+
+    def _init_fileread(self):
+        # pysam is not thread-safe
+        if not self.fasta_extr:
+            self.fasta_extr = FastaExtractor(self.fasta_file)
+
+        # tabix is not thread-safe
+        if self.include_genotypes and not self.genotype_extr:
+            self.genotype_extr = TabixExtractor(
+                self.genotype_file,
+                columns=[
+                    "chr",
+                    "start",
+                    "end",
+                    "rs_id",
+                    "ref",
+                    "alt",
+                    "af_ref",
+                    "af_alt",
+                    "gt",
+                    "_0",
+                    "_1",
+                    "_2",
+                    "_3",
+                    "indiv_id",
+                ],
+                na_values=".",
+            )
+
 
     def __getitem__(self, i):
         """
@@ -370,71 +354,20 @@ class SequenceEmbedDataset(BaseSequenceDataset):
                 - 'mid': int, midpoint coordinate
                 - 'sample_id': str, sample identifier
         """
-        # pysam is not thread-safe
-        if not self.fasta_extr:
-            self.fasta_extr = FastaExtractor(self.fasta_file)
-
-        # tabix is not thread-safe
-        if self.sample_from_negatives and not self.negative_samples_extr:
-            self.negative_samples_extr = TabixExtractor(self.negative_samples_file)
-
-        # TODO: move this to "get_indiv_sequence" function?
-        if self.include_genotypes and not self.genotype_extr:
-            self.genotype_extr = TabixExtractor(
-                self.genotype_file,
-                columns=[
-                    "chr",
-                    "start",
-                    "end",
-                    "rs_id",
-                    "ref",
-                    "alt",
-                    "af_ref",
-                    "af_alt",
-                    "gt",
-                    "_0",
-                    "_1",
-                    "_2",
-                    "_3",
-                    "indiv_id",
-                ],
-                na_values=".",
-            )
-
-        idx = i // (self.negative_samples_rate + 1)
-
-        chrom, mid, sample_id, density, bg, read_depth, indicator = (
-            self.samples["chrom"][idx],
-            self.samples["summit"][idx],
-            self.samples["sample_id"][idx],
-            self.samples["density"][idx],
-            self.samples["background"][idx],
-            self.samples["read_depth"][idx],
-            self.samples["class"][idx],
+        self._init_fileread()
+        chrom, summit, sample_id, density, bg, read_depth, example_class = (
+            self.data["chrom"][i],
+            self.data["summit"][i],
+            self.data["sample_id"][i],
+            self.data["density"][i],
+            self.data["background"][i],
+            self.data["read_depth"][i],
+            self.data["class"][i],
         )
-
-        if self.sample_from_negatives and i % (self.negative_samples_rate + 1):
-            try:
-                negative_interval = GenomicInterval(chrom, mid, mid + 1)
-
-                # Use the default np.random (seed set when worker is initialized)
-                negative_sample = (
-                    self.negative_samples_extr[negative_interval].sample(
-                        n=1, random_state=None
-                    )
-                ).values[0, :]
-
-                sample_id = str(negative_sample[3])
-                density = np.float32(negative_sample[4])
-                bg = np.float32(negative_sample[5])
-                read_depth = np.float32(negative_sample[6])
-                indicator = 0
-
-            except ValueError:
-                pass
+        assert example_class in [-1, 1], "Class must be -1 or 1."
 
         # Define region
-        interval = GenomicInterval(chrom, mid, mid).widen(self.seqlen // 2)
+        interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
 
         # Jitter/shift region as necesary
         if self.jitter > 0:
@@ -443,7 +376,8 @@ class SequenceEmbedDataset(BaseSequenceDataset):
 
         # Inject genotypes if genotype files provided
         if self.include_genotypes:
-            _, dna_seq = self.get_sample_sequence(interval, sample_id)
+            indiv_id = self.data['indiv_id'][i]
+            _, dna_seq = self.get_sample_sequence(interval, sample_id, indiv_id)
         else:
             dna_seq = self.fasta_extr[interval]
 
@@ -452,7 +386,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             ohe_seq = one_hot_encode(dna_seq, dtype=np.float32)
         except ValueError as e:
             logger.error(
-                f"Error converting DNA to one-hot encoding ({chrom}:{mid} -- {sample_id})"
+                f"Error converting DNA to one-hot encoding ({chrom}:{summit} -- {sample_id})"
             )
             raise e
 
@@ -464,48 +398,36 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         embed = self.get_embedding_vec(sample_id)
        
         # Adjust values as needed
-        density = density if density < self.clip_density else self.clip_density
-        weight = 1.0 if indicator else self.negative_samples_weight
-        bg = np.nanmax([bg, self.min_bg])
+        density = np.clip(density, None, self.clip_density)
+        
+        weight = 1.0 if example_class == 1 else self.negative_samples_weight
+        weight = np.float32(weight)
+
+        bg = np.clip(bg, self.min_bg, None)
 
         return {
             "ohe_seq": ohe_seq.copy(),
             "embed": embed.copy(),
-            "indicator": indicator,
-            "density": np.float32(density),
-            "bg": np.float32(bg),
-            "read_depth": np.float32(read_depth),
-            "weight": np.float32(weight),
+            "class": example_class,
+            "density": density,
+            "bg": bg,
+            "read_depth": read_depth,
+            "weight": weight,
             "chrom": chrom,
-            "mid": mid,
+            "summit": summit,
             "sample_id": sample_id,
         }
-
-    def __len__(self):
-        """
-        Return the number of samples in the dataset, accounting for negative sampling.
-
-        Returns
-        -------
-        int
-            Number of samples (including negatives if enabled).
-        """
-        N = self.samples["chrom"].shape[0]
-        return N * (self.negative_samples_rate + 1) if self.sample_from_negatives else N
-
 
 
     def __del__(self):
         """
         Clean up open file handles for genotype and negative sample extractors.
         """
-        super(SequenceEmbedDataset, self).__del__()
+        super().__del__()
 
         if self.genotype_extr:
             self.genotype_extr.close()
 
-        if self.negative_samples_extr:
-            self.negative_samples_extr.close()
 
 
 Variant = namedtuple("Variant", ["chr", "pos", "ref", "alt"])

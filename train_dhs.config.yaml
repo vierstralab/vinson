@@ -1,0 +1,26 @@
+model_type: regression
+train_augmentation_kwargs:
+  reverse_complement: true
+  jitter: 5
+  noise: 0.01
+validation_augmentation_kwargs:
+  reverse_complement: false
+  jitter: 0
+  noise: 0
+hparams:
+  batch_size: 64
+  lr_scheduler_kwargs:
+    max_lr: 0.0005
+    min_lr: 5.0e-05
+    warmup_steps: 5000
+    first_cycle_steps: 50000
+    cycle_mult: 1
+    gamma: 0.9
+    last_epoch: -1
+data_params:
+  clip_density: 20
+  min_bg: 0.1
+  negative_weight: 1
+logging_params:
+  val_check_interval: 0.2
+  logger_type: csv

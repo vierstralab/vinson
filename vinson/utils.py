@@ -6,6 +6,8 @@ import numba
 from genome_tools import GenomicInterval
 
 from collections.abc import Iterable
+from funkybob import RandomNameGenerator
+import yaml
 
 IUPAC_DNA = "XACMGRSVTWYHKDBN"
 
@@ -200,3 +202,13 @@ def variants_to_ohe(variants, seqlen, fasta_extr):
         ohe.append(one_hot_encode(seq_alt))
 
     return np.stack(ohe)
+
+
+def generate_run_name() -> str:
+    name = next(iter(RandomNameGenerator()))
+    return name
+
+def read_yaml_config(path) -> dict:
+    with open(path, 'r') as f:
+        config = yaml.safe_load(f)
+    return config
