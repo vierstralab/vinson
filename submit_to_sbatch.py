@@ -11,12 +11,13 @@ TEMPLATE_PATH = SCRIPT_DIR / "template_submit.sbatch"
 
 # run as 
 # python submit_to_sbatch.py /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT22//epoch_1.h5ad /net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa /net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, default=None, help="Run name, if not provided, a unique name will be generated")
     parser.add_argument("--gpus_per_node", type=int, default=8)
     parser.add_argument("--cpus_per_gpu", type=int, default=4)
+    parser.add_argument("--mem", type=str, default='0')
     parser.add_argument('anndata', type=str, help='Path to anndata file')
     parser.add_argument('fasta', type=str, help='Path to fasta file')
     parser.add_argument('genotype', type=str, help='Path to genotype file')
@@ -48,8 +49,8 @@ if __name__ == "__main__":
             cfg['gpus_per_node'] = 8
             cfg['cpus_per_task'] = 10
         elif args.preset == 'hpcg04-heavy':
-            cfg['gpus_per_node'] = 10
-            cfg['cpus_per_task'] = 3
+            cfg['gpus_per_node'] = 8
+            cfg['cpus_per_task'] = 4
         elif args.preset == 'hpcg01':
             cfg['gpus_per_node'] = 4
             cfg['cpus_per_task'] = 4
