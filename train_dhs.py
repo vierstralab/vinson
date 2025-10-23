@@ -159,7 +159,7 @@ def main(
 
     model = EmbedModel(
         trunk=trunk_model,
-        embed_model=embed_model,
+        embed=embed_model,
         regression=config["model_type"] == "regression",
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
