@@ -116,8 +116,6 @@ def main(
 
     adata = ad.read_h5ad(anndata_file)
 
-    dataset_kwargs = config['data_params']
-
     train_dataset_kwargs = {
         **config['data_params'],
         **config['train_augmentation_kwargs'],

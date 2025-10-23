@@ -205,7 +205,7 @@ def variants_to_ohe(variants, seqlen, fasta_extr):
     return np.stack(ohe)
 
 
-def get_run_name() -> str:
+def generate_run_name() -> str:
     """Generate a timestamped random run name once on rank 0 and share it across ranks."""
 
     if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
