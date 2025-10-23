@@ -7,6 +7,10 @@ from torchdata.stateful_dataloader import StatefulDataLoader
 import anndata as ad
 import numpy as np
 
+# move all logging to one helper file
+import logging
+logger = logging.getLogger(__name__)
+
 
 class SeqEmbedDataModule(L.LightningDataModule):
     def __init__(
@@ -87,7 +91,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
         )
 
     def get_data(self, epoch, dhs_split, sample_split='train'):
-        # FIX epoch
         adata_slice = self.adata[
             self.adata.obsm['split_data'] == sample_split,
             self.adata.varm['split_data'] == dhs_split
@@ -111,7 +114,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
                 [x if x != "None" else None for x in adata_slice.obsm['indiv_id']]
             )
             data['indiv_id'] = indiv_ids[row_idx]
-        
+        logger.info(f"Finished extracting data for epoch {epoch}, dhs_split: {dhs_split}, sample_split: {sample_split}")
+
         embeddings_df = self.adata.obsm['motif_embeddings']
         return data, embeddings_df
 
