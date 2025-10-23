@@ -25,6 +25,7 @@ OUTDIR=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_mo
 RUN_NAME="$(python -c 'from vinson.utils import generate_run_name; print(generate_run_name())')"
 
 echo "Running $RUN_NAME"
+echo "$OUTDIR/$RUN_NAME"
 # might need to change config path. path is relative to PWD now
 srun python $PWD/train_dhs.py \
     --run_name $RUN_NAME \
