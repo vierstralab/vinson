@@ -22,6 +22,7 @@ GENOTYPE_FILE=/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_
 
 OUTDIR=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model/
 
+# might need to change config path. path is relative to PWD now
 srun python /home/jvierstra/proj/vinson/train_dhs.py \
     --nodes 1 \
     --accelerator gpu \
@@ -31,6 +32,6 @@ srun python /home/jvierstra/proj/vinson/train_dhs.py \
     --outdir $OUTDIR \
     --seed 42 \
     --genotype_file $GENOTYPE_FILE \
-    --config $PWD/train_dhs_new_cluster_config.yaml \ # might need to change this. path is relative to PWD
+    --config $PWD/train_dhs_new_cluster_config.yaml \
     $ANNDATA \
     $FASTA_FILE \
