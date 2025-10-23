@@ -4,6 +4,7 @@ import random
 import numpy as np
 import yaml
 from argparse import ArgumentParser
+import datetime
 
 import torch
 from vinson.vinson.datamodules.sequence import SeqEmbedDataModule
@@ -195,7 +196,7 @@ if __name__ == "__main__":
         help="Unique identifier for the training run. Generated if not provided.",
     )
     parser.add_argument(
-        '--config_path',
+        '--config',
         type=str,
         default=None, 
         help='Path to YAML config file (see default config for format). If provided, overrides default parameters.'
@@ -204,7 +205,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--genotype_file",
         type=str,
-        default=None, # "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz"
+        default=None,
         help="Path to Tabix indexed genotype file.",
     )
 
@@ -254,19 +255,22 @@ if __name__ == "__main__":
 
     # Setup output
     run_name = args.run_name or generate_run_name()
+
     outdir = os.path.join(args.outdir, run_name)
 
     os.makedirs(outdir, exist_ok=True)
     
     # Config processing
-    default_config_path = os.path.dirname(os.path.abspath(__file__)) + "/train_dhs.config.yaml"
+    # TODO: move to utils
+    default_config_path = os.path.dirname(os.path.abspath(__file__)) + "/default_train_dhs.config.yaml"
     config = read_yaml_config(default_config_path)
-    if args.config_path is not None:
-        update_config = read_yaml_config(args.config_path)
+    if args.config is not None:
+        update_config = read_yaml_config(args.config)
         config.update(update_config)
 
     config['command'] = " ".join(["python"] + sys.argv)
-    # TODO: move to utils
+    config['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     with open(os.path.join(outdir, "run_config.yaml"), "w") as f:
         yaml.safe_dump(config, f)
 

@@ -8,6 +8,7 @@ from genome_tools import GenomicInterval
 from collections.abc import Iterable
 from funkybob import RandomNameGenerator
 import yaml
+import datetime
 
 IUPAC_DNA = "XACMGRSVTWYHKDBN"
 
@@ -205,8 +206,9 @@ def variants_to_ohe(variants, seqlen, fasta_extr):
 
 
 def generate_run_name() -> str:
+    timestamp = datetime.now().strftime("%Y_%m_%d")
     name = next(iter(RandomNameGenerator()))
-    return name
+    return f"{timestamp}_{name}"
 
 def read_yaml_config(path) -> dict:
     with open(path, 'r') as f:

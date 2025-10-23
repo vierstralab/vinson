@@ -16,33 +16,21 @@ export NCCL_SOCKET_FAMILY=AF_INET
 export MASTER_ADDR=127.0.0.1
 export NCCL_P2P_DISABLE=1
 
-EMBEDDINGS_FILE=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/embeddings.OCT21.tsv
+ANNDATA=/net/seq/data2/projects/ENCODE4Plus/REGULOME/one_big_beautiful_index/latest.reference_anndata.zarr
 FASTA_FILE=/net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa
+$GENOTYPE_FILE="/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz"
 
-TRAIN_SAMPLES_FILES_PATTERN=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT16/epoch_1/data_OCT16_pos.batch1.train.h5
-TRAIN_SAMPLES_NEG_FILES_PATTERN=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT16/epoch_1/data_OCT16_neg.batch1.train.bed.gz
-VAL_SAMPLES_FILE=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT16/epoch_1/data_OCT16_pos.batch1.val.h5
-VAL_SAMPLES_NEG_FILE=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT16/epoch_1/data_OCT16_neg.batch1.val.bed.gz
-
-OUTDIR=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model/OCT16/
+OUTDIR=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model/
 
 srun python /home/jvierstra/proj/vinson/train_dhs.py \
-    --regression \
     --nodes 1 \
     --accelerator gpu \
     --strategy ddp \
     --devices 8 \
     --num_workers 4 \
-    --batch_size 32 \
-    --negative_samples_rate 2 \
-    --negative_weight 1 \
-    --clip_density 20 \
-    --min_bg 0.1 \
     --outdir $OUTDIR \
     --seed 42 \
-    $EMBEDDINGS_FILE \
+    --genotype_file $GENOTYPE_FILE \
+    --config $PWD/train_dhs_new_cluster_config.yaml \ # might need to change this. path is relative to PWD
+    $ANNDATA \
     $FASTA_FILE \
-    "$TRAIN_SAMPLES_FILES_PATTERN" \
-    "$TRAIN_SAMPLES_NEG_FILES_PATTERN" \
-    $VAL_SAMPLES_FILE \
-    $VAL_SAMPLES_NEG_FILE

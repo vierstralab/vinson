@@ -1,0 +1,10 @@
+model_type: regression
+hparams:
+  batch_size: 32
+data_params:
+  clip_density: 20
+  min_bg: 0.1
+  negative_weight: 1
+logging_params:
+  val_check_interval: 0.2
+  logger_type: csv
