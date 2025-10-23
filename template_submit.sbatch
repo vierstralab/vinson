@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task={cpus_per_task}
 #SBATCH --mem=0
 #SBATCH --time={time}
-#SBATCH --output={outdir}/{run_name}_%j.log
+#SBATCH --output={outdir}/{run_name}/slurm-%j.log
 
 conda activate {env_path}
 
