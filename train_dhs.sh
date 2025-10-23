@@ -16,7 +16,7 @@ export NCCL_SOCKET_FAMILY=AF_INET
 export MASTER_ADDR=127.0.0.1
 export NCCL_P2P_DISABLE=1
 
-ANNDATA=/net/seq/data2/projects/ENCODE4Plus/REGULOME/one_big_beautiful_index/latest.reference_anndata.zarr
+ANNDATA=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT22//epoch_1.h5ad
 FASTA_FILE=/net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa
 GENOTYPE_FILE=/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz
 
