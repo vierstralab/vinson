@@ -66,7 +66,7 @@ if __name__ == "__main__":
     
 
     timestamp = datetime.now().strftime("%Y_%m_%d")
-    cfg["run_name"] = f"{timestamp}_{cfg['run_name']}"
+    cfg["run_name"] = f"{timestamp}_{run_name}"
     
     # ---- render & submit ----
     with open(TEMPLATE_PATH) as f:
