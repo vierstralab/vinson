@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class SeqEmbedDataModule(L.LightningDataModule):
     def __init__(
         self,
-        anndata_file: str,
+        adata: ad.AnnData,
         fasta_file,
         genotype_file=None,
         train_dataset_kwargs={},
@@ -27,8 +27,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.worker_init_fn = worker_init_fn
 
         self.fasta_file = fasta_file
-        self.anndata_file = anndata_file
-        self.n_epochs = self.read_adata().uns['n_epochs']
+        self.adata = adata
+        self.n_epochs = self.adata.uns['n_epochs']
         
         self.genotype_file = genotype_file
 
@@ -43,8 +43,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.train_epoch_cycler = None
         # self.train_dl = None
     
-    def read_adata(self):
-        return ad.read_h5ad(self.anndata_file)
+    # def read_adata(self):
+    #     return ad.read_h5ad(self.anndata_file)
 
     def setup(self, stage):
         # changes epochs
@@ -95,10 +95,9 @@ class SeqEmbedDataModule(L.LightningDataModule):
         )
 
     def get_data(self, epoch, dhs_split, sample_split='train'):
-        adata = self.read_adata()
-        adata = adata[
-            adata.obsm['split_data'] == sample_split,
-            adata.varm['split_data'] == dhs_split
+        adata = self.adata[
+            self.adata.obsm['split_data'] == sample_split,
+            self.adata.varm['split_data'] == dhs_split
         ]
         class_coo = adata.layers['class'].tocoo()
         row_idx = class_coo.row

@@ -133,10 +133,11 @@ def main(
         pin_memory=True if accelerator == "gpu" else False,
         drop_last=True,
     )
-
+    
+    adata = ad.read_h5ad(anndata_file)
     # DataModule to handle datasets updates and dataloader instatiation
     datamodule = SeqEmbedDataModule(
-        anndata_file=anndata_file,
+        adata=adata,
         fasta_file=fasta_file,
         genotype_file=genotype_file,
         train_dataset_kwargs=train_dataset_kwargs,
