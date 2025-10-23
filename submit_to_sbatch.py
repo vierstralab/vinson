@@ -3,6 +3,7 @@ import subprocess
 from datetime import datetime
 import argparse
 from pathlib import Path
+import os
 
 # Get the absolute path of the directory where this script lives
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -65,6 +66,7 @@ if __name__ == "__main__":
     with open(TEMPLATE_PATH) as f:
         script = f.read().format(**cfg)
     outdir = cfg['outdir'] + "/" + cfg['run_name']
+    os.makedirs(outdir, exist_ok=True)
 
     script_path = f"{outdir}/submit.sh"
     with open(script_path, "w") as f:
