@@ -14,6 +14,7 @@ TEMPLATE_PATH = SCRIPT_DIR / "template_submit.sbatch"
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--run_name", type=str, default=None, help="Run name, if not provided, a unique name will be generated")
     parser.add_argument("--gpus_per_node", type=int, default=8)
     parser.add_argument("--cpus_per_gpu", type=int, default=4)
     parser.add_argument('anndata', type=str, help='Path to anndata file')
@@ -54,17 +55,23 @@ if __name__ == "__main__":
             cfg['cpus_per_task'] = 4
 
 
-    # auto-generated bits
-    cfg["run_name"] = subprocess.check_output(
-        [f"{cfg['env_path']}/bin/python", "-c", "from vinson.utils import generate_run_name; print(generate_run_name())"],
-        text=True
-    ).strip()
+    if args.run_name is None:
+        print('Generating run name...')
+        run_name = subprocess.check_output(
+            [f"{cfg['env_path']}/bin/python", "-c", "from vinson.utils import generate_run_name; print(generate_run_name())"],
+            text=True
+        ).strip()
+    else:
+        run_name = args.run_name
     
+
     timestamp = datetime.now().strftime("%Y_%m_%d")
-    cfg['run_name'] = f"{timestamp}_{cfg['run_name']}"
+    cfg["run_name"] = f"{timestamp}_{cfg['run_name']}"
+    
     # ---- render & submit ----
     with open(TEMPLATE_PATH) as f:
         script = f.read().format(**cfg)
+
     outdir = cfg['outdir'] + "/" + cfg['run_name']
     os.makedirs(outdir, exist_ok=True)
 
