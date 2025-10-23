@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class SeqEmbedDataModule(L.LightningDataModule):
     def __init__(
         self,
-        adata_file: str,
+        anndata_file: str,
         fasta_file,
         genotype_file=None,
         train_dataset_kwargs={},
@@ -27,7 +27,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.worker_init_fn = worker_init_fn
 
         self.fasta_file = fasta_file
-        self.adata_file = adata_file
+        self.anndata_file = anndata_file
         self.n_epochs = self.read_adata().uns['n_epochs']
         
         self.genotype_file = genotype_file
@@ -44,7 +44,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         # self.train_dl = None
     
     def read_adata(self):
-        return ad.read_h5ad(self.adata_file)
+        return ad.read_h5ad(self.anndata_file)
 
     def setup(self, stage):
         # changes epochs

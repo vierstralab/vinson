@@ -115,8 +115,6 @@ def main(
         checkpoint=None,
     ):
 
-    adata = ad.read_h5ad(anndata_file)
-
     train_dataset_kwargs = {
         **config['data_params'],
         **config['train_augmentation_kwargs'],
@@ -138,7 +136,7 @@ def main(
 
     # DataModule to handle datasets updates and dataloader instatiation
     datamodule = SeqEmbedDataModule(
-        adata=adata,
+        anndata_file=anndata_file,
         fasta_file=fasta_file,
         genotype_file=genotype_file,
         train_dataset_kwargs=train_dataset_kwargs,
