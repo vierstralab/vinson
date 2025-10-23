@@ -167,8 +167,6 @@ class AbstractBaseSequenceModel(L.LightningModule):
         self.train_metrics = MetricCollection({}, prefix="train_")
         self.valid_metrics = MetricCollection({}, prefix="val_")
 
-        self.init_metrics()
-
     def init_metrics(self):
         raise NotImplementedError("Subclasses of AbstractBaseSequenceModel must implement init_metrics method.")
 
@@ -240,6 +238,8 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
             if self.regression
             else BCEWithLogitsLoss(reduction="none")
         )
+        
+        self.init_metrics()
 
 
     def init_metrics(self):
