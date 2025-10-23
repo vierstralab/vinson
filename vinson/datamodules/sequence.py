@@ -102,7 +102,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         data = {
             'density': adata_slice.layers['density'].tocoo().data,
             'sample_id': adata_slice.obs_names[row_idx],
-            'background': adata_slice.layers['background'].tocoo().data,
+            'background': adata_slice.layers['mean_bg_agg_cutcounts'].tocoo().data,
             'read_depth': adata_slice.obs['nuclear_reads'].values[row_idx],
             'chrom': adata_slice.var['#chr'].values[col_idx],
             'summit': adata_slice.var['dhs_summit'].values[col_idx],
