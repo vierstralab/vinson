@@ -205,10 +205,20 @@ def variants_to_ohe(variants, seqlen, fasta_extr):
     return np.stack(ohe)
 
 
-def generate_run_name() -> str:
-    timestamp = datetime.now().strftime("%Y_%m_%d")
-    name = next(iter(RandomNameGenerator()))
-    return f"{timestamp}_{name}"
+def get_run_name() -> str:
+    """Generate a timestamped random run name once on rank 0 and share it across ranks."""
+
+    if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
+        # no DDP — just generate directly
+        timestamp = datetime.now().strftime("%Y_%m_%d")
+        name = next(iter(RandomNameGenerator()))
+        name_list = [f"{timestamp}_{name}"]
+
+    else:
+        name_list = [""]
+    if torch.distributed.is_initialized():
+        torch.distributed.broadcast_object_list(name_list, src=0)
+    return name_list[0]
 
 def read_yaml_config(path) -> dict:
     with open(path, 'r') as f:

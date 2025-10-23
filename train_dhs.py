@@ -139,7 +139,7 @@ def main(
 
     # DataModule to handle datasets updates and dataloader instatiation
     datamodule = SeqEmbedDataModule(
-        anndata=adata,
+        adata=adata,
         fasta_file=fasta_file,
         genotype_file=genotype_file,
         train_dataset_kwargs=train_dataset_kwargs,
