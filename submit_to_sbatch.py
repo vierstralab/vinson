@@ -20,7 +20,7 @@ if __name__ == "__main__":
     parser.add_argument('genotype', type=str, help='Path to genotype file')
     parser.add_argument('outdir', type=str, help='Path to output directory')
     parser.add_argument('--preset', 
-                        choice=('hpcg05-a100', 'hpcg04-heavy', 'hpcg01'), 
+                        choices=('hpcg05-a100', 'hpcg04-heavy', 'hpcg01'), 
                         default=None, 
                         help='Preset sbatch parameters for different hpcg-test nodes. Overrides gpus_per_node and cpus_per_gpu if set.')
 
