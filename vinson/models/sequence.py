@@ -225,13 +225,6 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         optimizer_kwargs=dict(),
         lr_scheduler_kwargs=dict(),
     ):
-        self.regression = regression
-
-        self.loss = (
-            PoissonNLL(reduction="none")
-            if self.regression
-            else BCEWithLogitsLoss(reduction="none")
-        )
         super().__init__(
             trunk_model,
             seqlen,
@@ -240,6 +233,14 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
             optimizer_kwargs,
             lr_scheduler_kwargs,
         )
+        self.regression = regression
+
+        self.loss = (
+            PoissonNLL(reduction="none")
+            if self.regression
+            else BCEWithLogitsLoss(reduction="none")
+        )
+
 
     def init_metrics(self):
         if self.regression:
