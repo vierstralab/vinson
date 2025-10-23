@@ -8,7 +8,7 @@ from genome_tools import GenomicInterval
 from collections.abc import Iterable
 from funkybob import RandomNameGenerator
 import yaml
-import datetime
+from datetime import datetime
 
 IUPAC_DNA = "XACMGRSVTWYHKDBN"
 

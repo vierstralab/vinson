@@ -4,7 +4,7 @@ import random
 import numpy as np
 import yaml
 from argparse import ArgumentParser
-import datetime
+from datetime import datetime
 
 import torch
 
