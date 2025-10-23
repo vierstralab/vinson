@@ -210,14 +210,13 @@ def generate_run_name() -> str:
 
     if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
         # no DDP — just generate directly
-        timestamp = datetime.now().strftime("%Y_%m_%d")
         name = next(iter(RandomNameGenerator()))
-        name_list = [f"{timestamp}_{name}"]
+        return name
     else:
-        name_list = [""]
-    if torch.distributed.is_initialized():
-        torch.distributed.broadcast_object_list(name_list, src=0)
-    return name_list[0]
+        name = [""]
+    # if torch.distributed.is_initialized():
+    #     torch.distributed.broadcast_object_list(name_list, src=0)
+    return name
 
 def read_yaml_config(path) -> dict:
     with open(path, 'r') as f:
