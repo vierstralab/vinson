@@ -160,7 +160,7 @@ def main(
     model = EmbedModel(
         trunk=trunk_model,
         embed_model=embed_model,
-        regression=config["hparams"]["model_type"] == "regression",
+        regression=config["model_type"] == "regression",
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         lr_scheduler_kwargs=lr_scheduler_kwargs,
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "anndata_file",
         type=str,
-        help="Glob pattern for training sample files.",
+        help="Input AnnData file.",
     )
 
     parser.add_argument(
@@ -253,7 +253,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Setup output
-    run_name = args.run_name or "vinson" #or generate_run_name() generates unique name in each subprocess. currently done outside of script
+    run_name = args.run_name.strip() or "vinson" #or generate_run_name() generates unique name in each subprocess. currently done outside of script
 
     outdir = os.path.join(args.outdir, run_name)
 
