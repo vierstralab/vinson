@@ -7,7 +7,6 @@ from argparse import ArgumentParser
 import datetime
 
 import torch
-from vinson.vinson.datamodules.sequence import SeqEmbedDataModule
 
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger
@@ -17,6 +16,7 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 
+from vinson.datamodules.sequence import SeqEmbedDataModule
 from vinson.models.sequence import (
     CellEmbedding,
     BassetTrunkEmbed,
