@@ -213,11 +213,9 @@ def generate_run_name() -> str:
         timestamp = datetime.now().strftime("%Y_%m_%d")
         name = next(iter(RandomNameGenerator()))
         name_list = [f"{timestamp}_{name}"]
-        print("Generated run name:", name_list[0], flush=True)
     else:
         name_list = [""]
     if torch.distributed.is_initialized():
-        print("Broadcasting:", name_list[0], flush=True)
         torch.distributed.broadcast_object_list(name_list, src=0)
     return name_list[0]
 
