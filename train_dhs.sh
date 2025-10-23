@@ -23,7 +23,7 @@ GENOTYPE_FILE=/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_
 OUTDIR=/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model/
 
 # might need to change config path. path is relative to PWD now
-srun python $PWD/vinson/train_dhs.py \
+srun python $PWD/train_dhs.py \
     --nodes 1 \
     --accelerator gpu \
     --strategy ddp \
