@@ -136,22 +136,17 @@ class SequenceEmbedDataset(BaseSequenceDataset):
 
     Parameters
     ----------
-    samples_file : str
-        Path to HDF5 file containing sample data and labels.
+    data : dict
+        Dictionary containing sample metadata and values.
     embeddings_file : str
         Path to tab-delimited file with cell-type/state embeddings.
     fasta_file : str
         Path to reference genome FASTA file.
-    negative_samples_file : str, optional
-        Path to tabix file containing negative samples for augmentation.
-    negative_samples_rate : int, optional
-        Ratio of negative to positive samples (default: 1).
-    negative_samples_weight : float, optional
-        Weight assigned to negative samples (default: 2.5).
-    sample_genotype_file : str, optional
-        Path to genotype metadata file (tab-delimited).
     genotype_file : str, optional
         Path to genotype file in tabix format.
+
+    negative_samples_weight : float, optional
+        Weight assigned to negative samples (default: 1).
     clip_density : float, optional
         Maximum allowed density value (default: 5).
     min_bg : float, optional
@@ -162,29 +157,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         Maximum number of bases to randomly shift the region (default: 0).
     noise : float, optional
         Standard deviation of Gaussian noise added to embeddings (default: 0).
-
-    Attributes
-    ----------
-    samples : h5py.File
-        Opened HDF5 file with sample data.
-    embeddings_df : pandas.DataFrame
-        DataFrame of cell-type/state embeddings.
-    sample_to_genotype_df : pandas.DataFrame
-        DataFrame of genotype metadata.
-    fasta_extr : FastaExtractor
-        Extractor for reference genome sequences.
-    genotype_extr : TabixExtractor
-        Extractor for genotype data.
-    negative_samples_extr : TabixExtractor
-        Extractor for negative samples.
-
-    Notes
-    -----
-    - Injects genotypes into reference sequence if genotype files are provided.
-    - Supports region jittering and reverse complementation for data augmentation.
-    - Supports negative sampling for training with imbalanced data.
-    - Returns a dictionary with sequence, embedding, indicator, density, background,
-      read depth, weight, chromosome, midpoint, and sample ID for each sample.
     """
 
     def __init__(
@@ -371,7 +343,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             shift = np.random.randint(-self.jitter, self.jitter + 1)
             interval.shift(shift, inplace=True)
 
-        # Inject genotypes if genotype files provided
+        # indiv_id is expected to be in self.data if genotypes are included
         if self.include_genotypes:
             indiv_id = self.data['indiv_id'][i]
             _, dna_seq = self.get_sample_sequence(interval, sample_id, indiv_id)
@@ -396,9 +368,14 @@ class SequenceEmbedDataset(BaseSequenceDataset):
        
         # Adjust values as needed
         density = np.clip(density, None, self.clip_density)
-        
-        weight = 1.0 if example_class == 1 else self.negatives_weight
-        weight = np.float32(weight)
+
+        if 'dhs_weight' in self.data:
+            weight = self.data['dhs_weight'][i]
+        else:
+            weight = np.float32(1.0)
+
+        weight_mult = 1.0 if example_class == 1 else self.negatives_weight
+        weight = weight * weight_mult
 
         bg = np.clip(bg, self.min_bg, None)
 
@@ -424,6 +401,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
 
         if self.genotype_extr:
             self.genotype_extr.close()
+
 
 
 
@@ -488,7 +466,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
         jitter=0,
         noise=0,
     ):
-        super(VariantEmbedDataset, self).__init__(
+        super().__init__(
             samples_file,
             embeddings_file,
             fasta_file,

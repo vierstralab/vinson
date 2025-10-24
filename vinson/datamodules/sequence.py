@@ -16,15 +16,24 @@ class SeqEmbedDataModule(L.LightningDataModule):
     def __init__(
         self,
         adata: ad.AnnData,
-        fasta_file,
+        fasta_file: str,
         genotype_file=None,
         train_dataset_kwargs={},
         valid_dataset_kwargs={},
         dataloader_kwargs={},
-        worker_init_fn=None
     ):
+        """
+        Initialize the SeqEmbedDataModule.
+
+        Args:
+            adata (ad.AnnData): AnnData object containing the dataset.
+            fasta_file (str): Path to the FASTA file.
+            genotype_file (str, optional): Path to the genotype file.
+            train_dataset_kwargs (dict, optional): Additional arguments for the training dataset.
+            valid_dataset_kwargs (dict, optional): Additional arguments for the validation dataset.
+            dataloader_kwargs (dict, optional): Additional arguments for train and validation dataloaders.
+        """
         super().__init__()
-        self.worker_init_fn = worker_init_fn
 
         self.fasta_file = fasta_file
         self.adata = adata
@@ -48,10 +57,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.train_epoch_cycler = cycle(self.epoch_names)
         self.validation_epoch = self.epoch_names[0]
 
-        # self.iterate_train_dataset()
-
     def train_dataloader(self):
-
         # Cycle to next file index
         self.current_train_epoch = next(self.train_epoch_cycler)
         data, embeddings_df = self.get_data(self.current_train_epoch, 'train', 'train')
@@ -64,13 +70,11 @@ class SeqEmbedDataModule(L.LightningDataModule):
             genotype_file=self.genotype_file,
             **self.train_dataset_kwargs,
         )
-
         # Create new dataloader
         return DataLoader(
             self.train_dataset,
             shuffle=True,
             **self.dataloader_kwargs,
-            worker_init_fn=self.worker_init_fn,
         )
     
     def val_dataloader(self):
@@ -88,23 +92,31 @@ class SeqEmbedDataModule(L.LightningDataModule):
             self.valid_dataset,
             shuffle=False,
             **self.dataloader_kwargs,
-            worker_init_fn=self.worker_init_fn,
         )
 
-    def get_data(self, epoch_name, dhs_split, sample_split='train'):
+    def get_data(self, name, dhs_split='train', sample_split='train'):
+        """
+        Generic method to extract data from anndata object for a given split
+
+        Args:
+            name (str): name of the epoch to extract. Gets added to layer names as `{layer}.{name}`
+            dhs_split (str): which DHS split to use (train/val/test)
+            sample_split (str): which sample split to use (train/val/test)
+
+        Returns:
+            data (dict): dictionary with extracted data
+            embeddings_df (pd.DataFrame): DataFrame with extracted embeddings
+        """
         adata = self.adata[
             self.adata.obsm['split_data'] == sample_split,
             self.adata.varm['split_data'] == dhs_split
-        ]
-        layers = {
-            "class": "class",
-            "density": "density",
-            "mean_bg_agg_cutcounts": "background"
-        }
+        ] # view 
+
+        layers = [ "class", "density", "mean_bg_agg_cutcounts" ]
 
         layer_data = {
-            dataset_name: adata.layers[f"{layer_name}.{epoch_name}"].tocoo() 
-            for layer_name, dataset_name in layers.items()
+            layer_name: adata.layers[f"{layer_name}.{name}"].tocoo()
+            for layer_name in layers
         }
 
         class_coo = layer_data["class"]
@@ -115,10 +127,16 @@ class SeqEmbedDataModule(L.LightningDataModule):
             'sample_id': adata.obs_names[row_idx],
             'chrom': adata.var['#chr'].values[col_idx],
             'summit': adata.var['dhs_summit'].values[col_idx],
+            'background': layer_data['mean_bg_agg_cutcounts'].data,
+            'class': layer_data['class'].data,
+            'density': layer_data['density'].data,
         }
-        for name, coo in layer_data.items():
-            data[name] = coo.data
+
+
         if 'indiv_id' in adata.obsm:
+            logger.debug(
+                f"Adding indiv_id from adata.obsm['indiv_id'] for {name}, dhs_split: {dhs_split}, sample_split: {sample_split}"
+            )
             # maybe come up with something more elegant
             indiv_ids = np.array(
                 [
@@ -128,8 +146,14 @@ class SeqEmbedDataModule(L.LightningDataModule):
             )
             data['indiv_id'] = indiv_ids[row_idx]
 
+        if 'dhs_weight' in adata.var:
+            logger.debug(
+                f"Adding dhs_weight from adata.var['dhs_weight'] for {name}, dhs_split: {dhs_split}, sample_split: {sample_split}"
+            )
+            data['dhs_weight'] = adata.var['dhs_weight'].values[col_idx]
+
         logger.info(
-            f"Finished extracting data for {epoch_name}, dhs_split: {dhs_split}, sample_split: {sample_split}"
+            f"Finished extracting data for {name}, dhs_split: {dhs_split}, sample_split: {sample_split}"
         )
 
         embeddings_df = adata.obsm['motif_embeddings']

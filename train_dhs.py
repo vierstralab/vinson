@@ -59,7 +59,7 @@ def set_worker_seed(worker_id):
 #         trainer.datamodule.iterate_train_dataset()
 
 
-def init_trainer(
+def init_multigpu_trainer(
         outdir,
         accelerator,
         strategy,
@@ -104,48 +104,8 @@ def init_trainer(
     return trainer
 
 
-def main(
-        config,
-        anndata_file,
-        fasta_file,
-        genotype_file,
-        trainer: L.Trainer,
-        num_workers=None,
-        accelerator="gpu",
-        checkpoint=None,
-    ):
-
-    train_dataset_kwargs = {
-        **config['data_params'],
-        **config['train_augmentation_kwargs'],
-    }
-
-    valid_dataset_kwargs = {
-        **config['data_params'],
-        **config['validation_augmentation_kwargs'],
-    }
-
-    batch_size = config['hparams']['batch_size']
-
-    dataloader_kwargs = dict(
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=True if accelerator == "gpu" else False,
-        drop_last=True,
-    )
-    
-    adata = ad.read_h5ad(anndata_file)
-    # DataModule to handle datasets updates and dataloader instatiation
-    datamodule = SeqEmbedDataModule(
-        adata=adata,
-        fasta_file=fasta_file,
-        genotype_file=genotype_file,
-        train_dataset_kwargs=train_dataset_kwargs,
-        valid_dataset_kwargs=valid_dataset_kwargs,
-        dataloader_kwargs=dataloader_kwargs,
-        worker_init_fn=set_worker_seed,
-    )
-
+def init_model(config):
+    # TODO: add model configuration to config
     # Optimizer & LR scheduler
     optimizer = torch.optim.AdamW
     lr_scheduler = CosineAnnealingWarmupRestarts
@@ -167,16 +127,58 @@ def main(
 
     # Initialize model
     model.init_model()
+    return model
 
-    if checkpoint is not None:
-        trainer.fit(model, datamodule=datamodule, ckpt_path=checkpoint)
-    else:
-        trainer.fit(model, datamodule=datamodule)
+
+def get_datamodule(
+        config,
+        anndata_file,
+        fasta_file,
+        genotype_file,
+        **dataloader_kwargs
+    ):
+    """
+    Initialize dataloaders.
+    Args:
+        config (dict): Configuration dictionary. See read_configs and default config for format.
+        anndata_file (str): Path to the AnnData file.
+        fasta_file (str): Path to the FASTA file.
+        genotype_file (str): Path to the genotype file.
+        **dataloader_kwargs: Additional arguments for dataloaders.
+    """
+    train_dataset_kwargs = {
+        **config['data_params'],
+        **config['train_augmentation_kwargs'],
+    }
+
+    valid_dataset_kwargs = {
+        **config['data_params'],
+        **config['validation_augmentation_kwargs'],
+    }
+
+    adata = ad.read_h5ad(anndata_file)
+    # DataModule to handle datasets updates and dataloader init
+    return SeqEmbedDataModule(
+        adata=adata,
+        fasta_file=fasta_file,
+        genotype_file=genotype_file,
+        train_dataset_kwargs=train_dataset_kwargs,
+        valid_dataset_kwargs=valid_dataset_kwargs,
+        dataloader_kwargs=dataloader_kwargs,
+    )
+
+
+def read_configs(default_config_path, custom_config_path=None):
+    config = read_yaml_config(default_config_path)
+    if custom_config_path is not None:
+        update_config = read_yaml_config(custom_config_path)
+        mergedeep.merge(config, update_config, strategy=mergedeep.Strategy.REPLACE)
+    config['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return config
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-
     parser.add_argument(
         "anndata_file",
         type=str,
@@ -252,22 +254,18 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Setup output
-    run_name = args.run_name.strip() or "vinson" #or generate_run_name() generates unique name in each subprocess. currently done outside of script
+    run_name = args.run_name.strip() or "vinson" #or generate_run_name() generates unique name in each subprocess. currently done outside of this script
 
     outdir = os.path.join(args.outdir, run_name)
-
     os.makedirs(outdir, exist_ok=True)
-    
-    # Config processing
-    # TODO: move to utils
-    default_config_path = os.path.dirname(os.path.abspath(__file__)) + "/default_train_dhs.config.yaml"
-    config = read_yaml_config(default_config_path)
-    if args.config is not None:
-        update_config = read_yaml_config(args.config)
-        mergedeep.merge(config, update_config, strategy=mergedeep.Strategy.REPLACE)
 
+    default_config_path = os.path.dirname(os.path.abspath(__file__)) + "/default_train_dhs.config.yaml"
+
+    config = read_configs(
+        default_config_path,
+        custom_config_path=args.config
+    )
     config['command'] = " ".join(["python"] + sys.argv)
-    config['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     with open(os.path.join(outdir, "run_config.yaml"), "w") as f:
         yaml.safe_dump(config, f)
@@ -275,8 +273,11 @@ if __name__ == "__main__":
     # Set global seed
     set_global_seed(args.seed)
 
+    # Initialize model from config
+    model = init_model(config)
+
     # Initialize trainer
-    trainer = init_trainer(
+    trainer = init_multigpu_trainer(
         outdir,
         accelerator=args.accelerator,
         strategy=args.strategy,
@@ -286,14 +287,25 @@ if __name__ == "__main__":
         val_check_interval=config["logging_params"]["val_check_interval"],
     )
 
-    # Main function
-    main(
-        config, 
+    dataloader_kwargs = dict(
+        batch_size=config['hparams']['batch_size'],
+        num_workers=args.num_workers,
+        pin_memory=True if args.accelerator == "gpu" else False,
+        drop_last=True,
+        worker_init_fn=set_worker_seed,
+    )
+
+    # Setup dataloaders
+    datamodule = get_datamodule(
+        config,
         anndata_file=args.anndata_file,
         fasta_file=args.fasta_file,
         genotype_file=args.genotype_file,
-        trainer=trainer,
-        num_workers=args.num_workers,
-        accelerator=args.accelerator,
-        checkpoint=args.checkpoint,
+        **dataloader_kwargs,
     )
+
+    checkpoint = args.checkpoint
+    if checkpoint is not None:
+        trainer.fit(model, datamodule=datamodule, ckpt_path=checkpoint)
+    else:
+        trainer.fit(model, datamodule=datamodule)
