@@ -53,11 +53,14 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
     def setup(self, stage):
         # changes epochs
-        adata = ad.read_h5ad(self.anndata_file)
+        adata = self.read_adata()
         self.epoch_names = adata.uns['epoch_names']
         self.train_epoch_cycler = cycle(self.epoch_names)
         self.validation_epoch = self.epoch_names[0]
         logger.info(f"Finished setup. Available epochs: {self.epoch_names}")
+
+    def read_adata(self):
+        return ad.read_zarr(self.anndata_file)
 
     def train_dataloader(self):
         # Cycle to next file index
@@ -109,7 +112,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             data (dict): dictionary with extracted data
             embeddings_df (pd.DataFrame): DataFrame with extracted embeddings
         """
-        full_adata = ad.read_zarr(self.anndata_file)
+        full_adata = self.read_adata()
 
         layers = [ "class", "density", "mean_bg_agg_cutcounts" ]
         for layer_name in layers:
