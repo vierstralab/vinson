@@ -113,21 +113,20 @@ class SeqEmbedDataModule(L.LightningDataModule):
             embeddings_df (pd.DataFrame): DataFrame with extracted embeddings
         """
         full_adata = self.read_adata()
+        adata = full_adata[
+            adata.obsm['split_data'] == sample_split,
+            adata.varm['split_data'] == dhs_split
+        ]
 
-        layers = [ "class", "density", "mean_bg_agg_cutcounts" ]
+        layers = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
         for layer_name in layers:
             epoch_layer_name = f"{layer_name}.{name}"
-            full_adata.layers[layer_name] = full_adata.layers[epoch_layer_name].tocoo()
+            layers[layer_name] = adata.layers[epoch_layer_name].tocoo()
             for epoch_name in self.epoch_names:
                del full_adata.layers[f"{layer_name}.{epoch_name}"]
-        
-        adata = full_adata[
-            full_adata.obsm['split_data'] == sample_split,
-            full_adata.varm['split_data'] == dhs_split
-        ] # view
 
 
-        class_coo = adata.layers["class"]
+        class_coo = layers["class"]
         row_idx, col_idx = class_coo.row, class_coo.col
 
         data = {
@@ -135,9 +134,9 @@ class SeqEmbedDataModule(L.LightningDataModule):
             'sample_id': adata.obs_names[row_idx],
             'chrom': adata.var['#chr'].values[col_idx],
             'summit': adata.var['dhs_summit'].values[col_idx],
-            'background': adata.layers['mean_bg_agg_cutcounts'].data,
-            'class': adata.layers['class'].data,
-            'density': adata.layers['density'].data,
+            'background': layers['mean_bg_agg_cutcounts'].data,
+            'class': layers['class'].data,
+            'density': layers['density'].data,
         }
 
 
