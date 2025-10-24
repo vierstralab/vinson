@@ -47,6 +47,7 @@ if __name__ == "__main__":
         genotype=args.genotype,
         outdir=args.outdir,
         config=CONFIG_PATH,
+        script_dir=SCRIPT_DIR.as_posix()
     )
 
     # Apply preset if provided
