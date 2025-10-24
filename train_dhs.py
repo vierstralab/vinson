@@ -176,6 +176,12 @@ def read_configs(default_config_path, custom_config_path=None):
     return config
 
 
+def fit_model(model, trainer: L.Trainer, datamodule: SeqEmbedDataModule, checkpoint=None):
+    if checkpoint is not None:
+        trainer.fit(model, datamodule=datamodule, ckpt_path=checkpoint)
+    else:
+        trainer.fit(model, datamodule=datamodule)
+
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument(
@@ -303,8 +309,10 @@ if __name__ == "__main__":
         **dataloader_kwargs,
     )
 
-    checkpoint = args.checkpoint
-    if checkpoint is not None:
-        trainer.fit(model, datamodule=datamodule, ckpt_path=checkpoint)
-    else:
-        trainer.fit(model, datamodule=datamodule)
+    # Start training
+    fit_model(
+        model,
+        trainer,
+        datamodule,
+        checkpoint=args.checkpoint,
+    )
