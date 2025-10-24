@@ -8,9 +8,10 @@ import os
 # Get the absolute path of the directory where this script lives
 SCRIPT_DIR = Path(__file__).resolve().parent
 TEMPLATE_PATH = SCRIPT_DIR / "template_submit.sbatch"
+CONFIG_PATH = SCRIPT_DIR / "train_dhs_new_cluster_config.yaml"
 
 # run as 
-# python submit_to_sbatch.py /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT22//epoch_1.h5ad /net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa /net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model
+# python submit_to_sbatch.py /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT22//epoch_1.h5ad /net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa /net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -28,6 +29,7 @@ if __name__ == "__main__":
         default=None, 
         help='Preset sbatch parameters for different hpcg-test nodes. Overrides nodelist, gpus_per_node and cpus_per_gpu if set.'
     )
+    
 
     args = parser.parse_args()
 
@@ -37,16 +39,17 @@ if __name__ == "__main__":
         gpus_per_node=args.gpus_per_node,
         cpus_per_task=args.cpus_per_gpu,
         nodelist=args.nodelist,
+        mem=args.mem,
         time="36:00:00",
         env_path="/home/sabramov/miniconda3/envs/pytorch",
         anndata=args.anndata,
         fasta=args.fasta,
         genotype=args.genotype,
         outdir=args.outdir,
-        config="train_dhs_new_cluster_config.yaml",
+        config=CONFIG_PATH,
     )
 
-
+    # Apply preset if provided
     if args.preset is not None:
         cfg['nodelist'] = args.preset
         if args.preset == 'hpcg05-a100':
@@ -59,7 +62,7 @@ if __name__ == "__main__":
             cfg['gpus_per_node'] = 4
             cfg['cpus_per_task'] = 4
 
-
+    # Generate run name
     if args.run_name is None:
         print('Generating run name...')
         run_name = subprocess.check_output(
@@ -68,7 +71,6 @@ if __name__ == "__main__":
         ).strip()
     else:
         run_name = args.run_name
-    
 
     timestamp = datetime.now().strftime("%Y_%m_%d")
     cfg["run_name"] = f"{timestamp}_{run_name}"
