@@ -278,13 +278,11 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         return x
 
     def _forward_from_batch(self, batch):
-        """Override this in subclasses to define how to run the model."""
         X_seq = batch["ohe_seq"]
         y = self(X_seq).squeeze()
         return y
 
     def _run_step_regression(self, y, read_depth, bg, density):
-
         pseudocount = torch.tensor(1e-6, device=self.device)
         
         log_pred_counts = torch.logaddexp(
@@ -316,7 +314,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
                 density=batch["density"]
             ), weight
         else:
-            return self._run_step_classification(y, batch["indicator"]), weight
+            return self._run_step_classification(y, batch["class"] == 1), weight
 
     def step(self, batch, batch_idx):
         (y_hat, y), weight = self._run_step(batch)

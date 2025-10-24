@@ -87,7 +87,6 @@ def init_multigpu_trainer(
         LearningRateMonitor(),
     ]
 
-    # Lightning trainer
     trainer = L.Trainer(
         logger=logger,
         callbacks=callbacks,
