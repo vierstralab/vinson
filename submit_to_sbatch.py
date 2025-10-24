@@ -17,15 +17,17 @@ if __name__ == "__main__":
     parser.add_argument("--run_name", type=str, default=None, help="Run name, if not provided, a unique name will be generated")
     parser.add_argument("--gpus_per_node", type=int, default=8)
     parser.add_argument("--cpus_per_gpu", type=int, default=4)
-    parser.add_argument("--mem", type=str, default='0')
+    parser.add_argument("--mem", type=str, default='0', help='Memory per node')
+    parser.add_argument("--nodelist", type=str, default=None, help='Names of nodes to use. Formatted according to sbatch --nodelist option.')
     parser.add_argument('anndata', type=str, help='Path to anndata file')
     parser.add_argument('fasta', type=str, help='Path to fasta file')
     parser.add_argument('genotype', type=str, help='Path to genotype file')
     parser.add_argument('outdir', type=str, help='Path to output directory')
-    parser.add_argument('--preset', 
-                        choices=('hpcg05-a100', 'hpcg04-heavy', 'hpcg01'), 
-                        default=None, 
-                        help='Preset sbatch parameters for different hpcg-test nodes. Overrides gpus_per_node and cpus_per_gpu if set.')
+    parser.add_argument(
+        '--preset', choices=('hpcg05-a100', 'hpcg04-heavy', 'hpcg01'), 
+        default=None, 
+        help='Preset sbatch parameters for different hpcg-test nodes. Overrides nodelist, gpus_per_node and cpus_per_gpu if set.'
+    )
 
     args = parser.parse_args()
 
@@ -34,6 +36,7 @@ if __name__ == "__main__":
         nodes=1,
         gpus_per_node=args.gpus_per_node,
         cpus_per_task=args.cpus_per_gpu,
+        nodelist=args.nodelist,
         time="36:00:00",
         env_path="/home/sabramov/miniconda3/envs/pytorch",
         anndata=args.anndata,
@@ -45,9 +48,10 @@ if __name__ == "__main__":
 
 
     if args.preset is not None:
+        cfg['nodelist'] = args.preset
         if args.preset == 'hpcg05-a100':
             cfg['gpus_per_node'] = 8
-            cfg['cpus_per_task'] = 10
+            cfg['cpus_per_task'] = 8
         elif args.preset == 'hpcg04-heavy':
             cfg['gpus_per_node'] = 8
             cfg['cpus_per_task'] = 4
@@ -79,7 +83,9 @@ if __name__ == "__main__":
     script_path = f"{outdir}/submit.sh"
     with open(script_path, "w") as f:
         f.write(script)
-
-    subprocess.run(["sbatch", script_path])
+    cmd = ["sbatch", script_path]
+    if cfg['nodelist'] is not None:
+        cmd.insert(1, f"--nodelist={cfg['nodelist']}")
+    subprocess.run(cmd)
     print(f"Submitted run: {cfg['run_name']}")
     print(f"Outdir: {outdir}")
