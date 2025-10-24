@@ -154,7 +154,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             logger.debug(
                 f"Adding dhs_weight from adata.var['dhs_weight'] for {name}, dhs_split: {dhs_split}, sample_split: {sample_split}"
             )
-            data['dhs_weight'] = adata.varm['dhs_weight'].values[col_idx]
+            data['dhs_weight'] = adata.varm['dhs_weight'][col_idx]
 
         logger.info(
             f"Finished extracting data for {name}, dhs_split: {dhs_split}, sample_split: {sample_split}"
