@@ -36,7 +36,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
         super().__init__()
 
         self.fasta_file = fasta_file
-        self.adata = None
         self.anndata_file = anndata_file
 
         self.genotype_file = genotype_file
@@ -45,13 +44,14 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.valid_dataset_kwargs = valid_dataset_kwargs
         self.dataloader_kwargs = dataloader_kwargs
         
+        self.adata = None
         self.current_train_epoch = self.validation_epoch = self.epoch_names = None
         self.train_dataset = self.valid_dataset = self.train_epoch_cycler = None
         # self.train_dl = None
 
     def setup(self, stage):
         # changes epochs
-        self.adata = ad.read_zarr(self.anndata_file)
+        self.adata = ad.read_h5ad(self.anndata_file)
         self.epoch_names = self.adata.uns['epoch_names']
         self.train_epoch_cycler = cycle(self.epoch_names)
         self.validation_epoch = self.epoch_names[0]
