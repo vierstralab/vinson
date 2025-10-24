@@ -155,9 +155,11 @@ def get_datamodule(
         **config['validation_augmentation_kwargs'],
     }
 
+    adata = ad.read_zarr(anndata_file)
+
     # DataModule to handle datasets updates and dataloader init
     return SeqEmbedDataModule(
-        anndata_file=anndata_file,
+        adata=adata,
         fasta_file=fasta_file,
         genotype_file=genotype_file,
         train_dataset_kwargs=train_dataset_kwargs,

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class SeqEmbedDataModule(L.LightningDataModule):
     def __init__(
         self,
-        anndata_file: str,
+        adata: ad.AnnData,
         fasta_file: str,
         genotype_file=None,
         train_dataset_kwargs={},
@@ -36,7 +36,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         super().__init__()
 
         self.fasta_file = fasta_file
-        self.anndata_file = anndata_file
+        self.adata = adata
 
         self.genotype_file = genotype_file
 
@@ -47,20 +47,17 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.current_train_epoch = self.validation_epoch = self.epoch_names = None
         self.train_dataset = self.valid_dataset = self.train_epoch_cycler = None
         # self.train_dl = None
-    
-    # def read_adata(self):
-    #     return ad.read_h5ad(self.anndata_file)
 
     def setup(self, stage):
         # changes epochs
-        adata = self.read_adata()
+        adata = self.adata # self.read_adata()
         self.epoch_names = adata.uns['epoch_names']
         self.train_epoch_cycler = cycle(self.epoch_names)
         self.validation_epoch = self.epoch_names[0]
         logger.info(f"Finished setup. Available epochs: {self.epoch_names}")
 
-    def read_adata(self):
-        return ad.read_zarr(self.anndata_file)
+    # def read_adata(self):
+    #     return ad.read_zarr(self.anndata_file)
 
     def train_dataloader(self):
         # Cycle to next file index
@@ -112,7 +109,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             data (dict): dictionary with extracted data
             embeddings_df (pd.DataFrame): DataFrame with extracted embeddings
         """
-        full_adata = self.read_adata()
+        full_adata = self.adata #self.read_adata()
         adata = full_adata[
             full_adata.obsm['split_data'] == sample_split,
             full_adata.varm['split_data'] == dhs_split
@@ -122,8 +119,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
         for layer_name in layers:
             epoch_layer_name = f"{layer_name}.{name}"
             layers[layer_name] = adata.layers[epoch_layer_name].tocoo()
-            for epoch_name in self.epoch_names:
-               del full_adata.layers[f"{layer_name}.{epoch_name}"]
+            # for epoch_name in self.epoch_names:
+            #    del full_adata.layers[f"{layer_name}.{epoch_name}"]
 
 
         class_coo = layers["class"]
