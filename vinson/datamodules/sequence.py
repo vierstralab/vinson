@@ -37,6 +37,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
         self.fasta_file = fasta_file
         self.adata = None
+        self.anndata_file = anndata_file
 
         self.genotype_file = genotype_file
 
