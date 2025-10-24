@@ -1,7 +1,7 @@
 import lightning.pytorch as L
 from torch.utils.data import DataLoader
 from vinson.datasets.sequence import SequenceEmbedDataset
-from itertools import cycle, islice
+from itertools import cycle
 from torchdata.stateful_dataloader import StatefulDataLoader
 
 import anndata as ad
@@ -28,7 +28,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
         self.fasta_file = fasta_file
         self.adata = adata
-        self.n_epochs = self.adata.uns['n_epochs']
         
         self.genotype_file = genotype_file
 
@@ -36,11 +35,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.valid_dataset_kwargs = valid_dataset_kwargs
         self.dataloader_kwargs = dataloader_kwargs
         
-        self.i = 0 # start with file 1
-        
-        self.train_dataset = None
-        self.valid_dataset = None
-        self.train_epoch_cycler = None
+        self.current_train_epoch = self.validation_epoch = self.epoch_names = None
+        self.train_dataset = self.valid_dataset = self.train_epoch_cycler = None
         # self.train_dl = None
     
     # def read_adata(self):
@@ -48,15 +44,17 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
     def setup(self, stage):
         # changes epochs
-        self.train_epoch_cycler = islice(cycle(range(self.n_epochs)), self.i, None)
+        self.epoch_names = self.adata.uns['epoch_names']
+        self.train_epoch_cycler = cycle(self.epoch_names)
+        self.validation_epoch = self.epoch_names[0]
 
         # self.iterate_train_dataset()
 
     def train_dataloader(self):
 
         # Cycle to next file index
-        self.i = next(self.train_epoch_cycler)
-        data, embeddings_df = self.get_data(self.i, 'train', 'train')
+        self.current_train_epoch = next(self.train_epoch_cycler)
+        data, embeddings_df = self.get_data(self.current_train_epoch, 'train', 'train')
 
         # Create new dataset
         self.train_dataset = SequenceEmbedDataset(
@@ -75,9 +73,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
             worker_init_fn=self.worker_init_fn,
         )
     
-
     def val_dataloader(self):
-        data, embeddings_df = self.get_data(0, 'val', 'train')
+        data, embeddings_df = self.get_data(self.validation_epoch, 'val', 'train')
 
         self.valid_dataset = SequenceEmbedDataset(
             data=data,
@@ -94,33 +91,49 @@ class SeqEmbedDataModule(L.LightningDataModule):
             worker_init_fn=self.worker_init_fn,
         )
 
-    def get_data(self, epoch, dhs_split, sample_split='train'):
+    def get_data(self, epoch_name, dhs_split, sample_split='train'):
         adata = self.adata[
             self.adata.obsm['split_data'] == sample_split,
             self.adata.varm['split_data'] == dhs_split
         ]
-        class_coo = adata.layers['class'].tocoo()
-        row_idx = class_coo.row
-        col_idx = class_coo.col
+        layers = {
+            "class": "class",
+            "density": "density",
+            "mean_bg_agg_cutcounts": "background"
+        }
+
+        layer_data = {
+            dataset_name: adata.layers[f"{layer_name}.{epoch_name}"].tocoo() 
+            for layer_name, dataset_name in layers.items()
+        }
+
+        class_coo = layer_data["class"]
+        row_idx, col_idx = class_coo.row, class_coo.col
 
         data = {
-            'density': adata.layers['density'].tocoo().data,
-            'sample_id': adata.obs_names[row_idx],
-            'background': adata.layers['mean_bg_agg_cutcounts'].tocoo().data,
             'read_depth': adata.obs['nuclear_reads'].values[row_idx],
+            'sample_id': adata.obs_names[row_idx],
             'chrom': adata.var['#chr'].values[col_idx],
             'summit': adata.var['dhs_summit'].values[col_idx],
-            'class': class_coo.data,
         }
+        for name, coo in layer_data.items():
+            data[name] = coo.data
         if 'indiv_id' in adata.obsm:
-            # maybe there is something more elegant
+            # maybe come up with something more elegant
             indiv_ids = np.array(
-                [x if x != "None" else None for x in adata.obsm['indiv_id']]
+                [
+                    x if x != "None" else None
+                    for x in adata.obsm['indiv_id']
+                ]
             )
             data['indiv_id'] = indiv_ids[row_idx]
-        logger.info(f"Finished extracting data for epoch {epoch}, dhs_split: {dhs_split}, sample_split: {sample_split}")
+
+        logger.info(
+            f"Finished extracting data for {epoch_name}, dhs_split: {dhs_split}, sample_split: {sample_split}"
+        )
 
         embeddings_df = adata.obsm['motif_embeddings']
+
         return data, embeddings_df
 
     # def iterate_train_dataset(self):

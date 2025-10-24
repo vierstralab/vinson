@@ -24,10 +24,10 @@ from vinson.models.sequence import (
     EmbedModel,
 )
 
+from vinson.lr import CosineAnnealingWarmupRestarts
+
 
 from vinson.utils import generate_run_name, read_yaml_config
-
-from vinson.lr import CosineAnnealingWarmupRestarts
 
 
 def set_global_seed(seed=42):
