@@ -115,6 +115,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             full_adata.obsm['split_data'] == sample_split,
             full_adata.varm['split_data'] == dhs_split
         ]
+        print(f"Extracting data for {name}, dhs_split: {dhs_split}, sample_split: {sample_split}", flush=True)
 
         layers = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
         for layer_name in layers:
@@ -123,6 +124,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             # for epoch_name in self.epoch_names:
             #    del full_adata.layers[f"{layer_name}.{epoch_name}"]
 
+        print(f"Finished Extracting data for {name}, dhs_split: {dhs_split}, sample_split: {sample_split}", flush=True)
 
         class_coo = layers["class"]
         row_idx, col_idx = class_coo.row, class_coo.col
