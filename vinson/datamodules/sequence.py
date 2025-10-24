@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class SeqEmbedDataModule(L.LightningDataModule):
     def __init__(
         self,
-        adata: ad.AnnData,
+        anndata_file: str,
         fasta_file: str,
         genotype_file=None,
         train_dataset_kwargs={},
@@ -36,8 +36,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
         super().__init__()
 
         self.fasta_file = fasta_file
-        self.adata = adata
-        
+        self.anndata_file = anndata_file
+
         self.genotype_file = genotype_file
 
         self.train_dataset_kwargs = train_dataset_kwargs
@@ -53,9 +53,11 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
     def setup(self, stage):
         # changes epochs
-        self.epoch_names = self.adata.uns['epoch_names']
+        adata = ad.read_h5ad(self.anndata_file)
+        self.epoch_names = adata.uns['epoch_names']
         self.train_epoch_cycler = cycle(self.epoch_names)
         self.validation_epoch = self.epoch_names[0]
+        logger.info(f"Finished setup. Available epochs: {self.epoch_names}")
 
     def train_dataloader(self):
         # Cycle to next file index
@@ -107,19 +109,22 @@ class SeqEmbedDataModule(L.LightningDataModule):
             data (dict): dictionary with extracted data
             embeddings_df (pd.DataFrame): DataFrame with extracted embeddings
         """
-        adata = self.adata[
-            self.adata.obsm['split_data'] == sample_split,
-            self.adata.varm['split_data'] == dhs_split
-        ] # view 
+        full_adata = ad.read_zarr(self.anndata_file)
 
         layers = [ "class", "density", "mean_bg_agg_cutcounts" ]
+        for layer_name in layers:
+            epoch_layer_name = f"{layer_name}.{name}"
+            full_adata.layers[layer_name] = full_adata.layers[epoch_layer_name].tocoo()
+            for epoch_name in self.epoch_names:
+               del full_adata.layers[f"{layer_name}.{epoch_name}"]
+        
+        adata = full_adata[
+            full_adata.obsm['split_data'] == sample_split,
+            full_adata.varm['split_data'] == dhs_split
+        ] # view
 
-        layer_data = {
-            layer_name: adata.layers[f"{layer_name}.{name}"].tocoo()
-            for layer_name in layers
-        }
 
-        class_coo = layer_data["class"]
+        class_coo = adata.layers["class"]
         row_idx, col_idx = class_coo.row, class_coo.col
 
         data = {
@@ -127,9 +132,9 @@ class SeqEmbedDataModule(L.LightningDataModule):
             'sample_id': adata.obs_names[row_idx],
             'chrom': adata.var['#chr'].values[col_idx],
             'summit': adata.var['dhs_summit'].values[col_idx],
-            'background': layer_data['mean_bg_agg_cutcounts'].data,
-            'class': layer_data['class'].data,
-            'density': layer_data['density'].data,
+            'background': adata.layers['mean_bg_agg_cutcounts'].data,
+            'class': adata.layers['class'].data,
+            'density': adata.layers['density'].data,
         }
 
 
