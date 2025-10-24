@@ -162,6 +162,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         logger.info(
             f"Finished extracting data for {name}, dhs_split: {dhs_split}, sample_split: {sample_split}"
         )
+        data = {k: np.ascontiguousarray(v) for k, v in data.items()}
 
         embeddings_df = adata.obsm['motif_embeddings']
 
