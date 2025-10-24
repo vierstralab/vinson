@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class SeqEmbedDataModule(L.LightningDataModule):
     def __init__(
         self,
-        adata: ad.AnnData,
+        anndata_file: str,
         fasta_file: str,
         genotype_file=None,
         train_dataset_kwargs={},
@@ -36,7 +36,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         super().__init__()
 
         self.fasta_file = fasta_file
-        self.adata = adata
+        self.adata = None
 
         self.genotype_file = genotype_file
 
@@ -50,8 +50,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
     def setup(self, stage):
         # changes epochs
-        adata = self.adata # self.read_adata()
-        self.epoch_names = adata.uns['epoch_names']
+        self.adata = ad.read_zarr(self.anndata_file)
+        self.epoch_names = self.adata.uns['epoch_names']
         self.train_epoch_cycler = cycle(self.epoch_names)
         self.validation_epoch = self.epoch_names[0]
         logger.info(f"Finished setup. Available epochs: {self.epoch_names}")
