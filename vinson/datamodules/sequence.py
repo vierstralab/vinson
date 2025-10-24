@@ -114,8 +114,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
         """
         full_adata = self.read_adata()
         adata = full_adata[
-            adata.obsm['split_data'] == sample_split,
-            adata.varm['split_data'] == dhs_split
+            full_adata.obsm['split_data'] == sample_split,
+            full_adata.varm['split_data'] == dhs_split
         ]
 
         layers = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
