@@ -151,11 +151,11 @@ class SeqEmbedDataModule(L.LightningDataModule):
             )
             data['indiv_id'] = indiv_ids[row_idx]
 
-        if 'dhs_weight' in adata.var:
+        if 'dhs_weight' in adata.varm:
             logger.debug(
                 f"Adding dhs_weight from adata.var['dhs_weight'] for {name}, dhs_split: {dhs_split}, sample_split: {sample_split}"
             )
-            data['dhs_weight'] = adata.var['dhs_weight'].values[col_idx]
+            data['dhs_weight'] = adata.varm['dhs_weight'].values[col_idx]
 
         logger.info(
             f"Finished extracting data for {name}, dhs_split: {dhs_split}, sample_split: {sample_split}"
