@@ -224,7 +224,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
 
         # Check if sample_id has a genotype
         if pd.isna(indiv_id):
-            logging.info(
+            logging.debug(
                 f"INDIV_ID for {sample_id} not provided. ({str(interval)})"
             )
             # Return the original sequence
