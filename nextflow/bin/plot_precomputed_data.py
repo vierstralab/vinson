@@ -67,25 +67,37 @@ def group_plot(g, column, type='box', order=None, ax=None, **kwargs):
     ax.set_xlim(-0.5, n - 0.5)
     return ax
 
-def plot_per_annotation_comparison(df: pd.DataFrame, annotation_data: pd.DataFrame, pred_col, target_col):
-    per_annotation_metrics = df.groupby(["extended_annotation"]).agg(
-        log_dens_lfc=('log_dens_lfc', 'median'),
-        core_annotation=('core_annotation', 'first'),
-        system=('system', 'first'),
-    ).sort_values(
-        ['system', 'log_dens_lfc']
-    )
-    fig, axes = plt.subplots(2, 1, figsize=array2inch(12 / n_total * n, 4))
+
+def plot_per_annotation_comparison(
+    per_dhs_and_annotation_metrics: pd.DataFrame,
+    pred_col: str,
+    target_col: str,
+    ylim: tuple,
+    annotation_data: pd.DataFrame,
+    zero_line_at: float = 0.0,
+):
+    annotation_data = annotation_data.set_index('name').sort_values('order')
+    order = annotation_data.index
+    palette = annotation_data['color'].to_dict()
+    n_total = per_dhs_and_annotation_metrics['extended_annotation'].nunique()
+
+    fig, axes = plt.subplots(2, 1, figsize=array2inch(12 / n_total * len(order), 4))
     for i, column in enumerate([pred_col, target_col]):
         ax = axes[i]
-        ax = group_plot(df, column, type='bar', order=annotation_data['index'], palette=annotation_data['color'], ax=ax)
-        ax.set_ylabel(column)
-        ax.axhline(0, color='grey', zorder=1e6, ls='--')
-        ax.set_ylim(-2, 2)
+        ax = group_plot(
+            per_dhs_and_annotation_metrics,
+            column,
+            type='bar',
+            order=order,
+            palette=palette,
+            ax=ax
+        )
+        ax.axhline(zero_line_at, color='grey', zorder=1e6, ls='--')
+        ax.set_ylim(*ylim)
         if i == 0:
             ax.set_xticks([])
             ax.set_xlabel('')
-    return axes
+    return fig, axes
 
 
 def get_mock_annotation_data(anndata, annotation_column='extended_annotation'):
@@ -125,7 +137,8 @@ def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.D
 
     per_dhs_and_annotation_metrics['y_hat_mean'] = per_dhs_and_annotation_metrics.groupby('dhs_id')['y_hat'].transform('mean')
     per_dhs_and_annotation_metrics['y_hat_lfc'] = per_dhs_and_annotation_metrics.eval('y_hat - y_hat_mean')
-    per_dhs_and_annotation_metrics['y_hat_delta'] = per_dhs_and_annotation_metrics.eval('exp(y_hat_lfc)')
+    # per_dhs_and_annotation_metrics['y_hat_delta'] = per_dhs_and_annotation_metrics.eval('exp(y_hat_lfc)')
+
     # per_dhs_and_annotation_metrics['log_pred_corrected_density'] = np.log(per_dhs_and_annotation_metrics['pred_corrected_density'] + pseudocount)
     # per_dhs_and_annotation_metrics['log_density'] = np.log(per_dhs_and_annotation_metrics['density'] + pseudocount)
     # per_dhs_and_annotation_metrics['log_pred_total_density'] = np.log(per_dhs_and_annotation_metrics['pred_total_density'] + pseudocount)
@@ -134,48 +147,51 @@ def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.D
     per_dhs_and_annotation_metrics['median_log_dens_lfc'] = per_dhs_and_annotation_metrics.groupby('extended_annotation')['y_hat_lfc'].transform('median')
 
     #calculate metrics by group
-    # g['log_dens'] = np.log(g['bg_corrected_density'] + 1e-1)
-    # g['log_dens_mean'] = g.groupby('dhs_id')['log_dens'].transform('mean')
-    # g['log_dens_lfc'] = g.eval('log_dens - log_dens_mean') # Just another way to plot it, instead of just density
+    per_dhs_and_annotation_metrics['log_dens'] = np.log(per_dhs_and_annotation_metrics['bg_corrected_density'] + pseudocount)
+    per_dhs_and_annotation_metrics['log_dens_mean'] = per_dhs_and_annotation_metrics.groupby('dhs_id')['log_dens'].transform('mean')
+    per_dhs_and_annotation_metrics['log_dens_lfc'] = per_dhs_and_annotation_metrics.eval('log_dens - log_dens_mean') # Just another way to plot it, instead of just density
     # g['dens_delta'] = g.eval('exp(log_dens_lfc)')
 
     # g['y_hat_mean'] = g.groupby('dhs_id')['y_hat'].transform('mean')
     # g['y_hat_lfc'] = g.eval('y_hat - y_hat_mean')
     # g['y_hat_delta'] = g.eval('exp(y_hat_lfc)')
 
-    per_annotation_metrics = per_dhs_and_annotation_metrics.groupby(["core_annotation", "extended_annotation"]).agg(
-        log_dens_lfc=('log_dens_lfc', 'median'),
-        core_annotation=('core_annotation', 'first'),
-        system=('system', 'first'),
-    ).sort_values(
-        ['system', 'log_dens_lfc']
-    )
-    per_annotation_metrics = annotation_data.set_index('name').join(
-        per_annotation_metrics
-    ).sort_values('index')
+    # per_annotation_metrics = per_dhs_and_annotation_metrics.groupby(["core_annotation", "extended_annotation"]).agg(
+    #     log_dens_lfc=('log_dens_lfc', 'median'),
+    #     core_annotation=('core_annotation', 'first'),
+    #     system=('system', 'first'),
+    # ).sort_values(
+    #     ['system', 'log_dens_lfc']
+    # )
+    # per_annotation_metrics = annotation_data.set_index('name').join(
+    #     per_annotation_metrics
+    # ).sort_values('index')
 
-    n_total = g['extended_annotation'].nunique()
-
-    axes = plot_per_annotation_comparison(
+    fig, axes = plot_per_annotation_comparison(
         per_dhs_and_annotation_metrics,
         pred_col='y_hat_lfc',
         target_col='log_dens_lfc',
-        palette=palette,
-        order=order
+        ylim=(-2, 2),
+        annotation_data=annotation_data
     )
-
+    axes[0].set_ylabel('Predicted LFC')
+    axes[0].set_title(output_prefix)
+    axes[1].set_ylabel('Observed LFC')
     plt.savefig(f'{output_prefix}_lfc.pdf', transparent=True, bbox_inches='tight')
-    plt.show()
+    plt.close(fig)
 
-    #fig, axes = plt.subplots(2, 1, figsize=array2inch(12 / n_total * n, 4))
-    axes = plot_per_annotation_comparison(
-        g,
+    fig, axes = plot_per_annotation_comparison(
+        per_dhs_and_annotation_metrics,
         pred_col='pred_corrected_density',
         target_col='bg_corrected_density',
-        palette=palette,
-        order=order
+        ylim=(0, 2),
+        annotation_data=annotation_data
     )
+    axes[0].set_ylabel('Predicted corrected density')
+    axes[0].set_title(output_prefix)
+    axes[1].set_ylabel('Observed corrected density')
     plt.savefig(f'{output_prefix}_corrected_density.pdf', transparent=True, bbox_inches='tight')
+    plt.close(fig)
 
 
 if __name__ == '__main__':
