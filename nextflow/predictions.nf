@@ -67,6 +67,7 @@ process visualize_predictions {
         --predict-output ${predict_np} \
         --output-dir ${params.outdir} \
         --adata ${params.zarr_anndata}
+        --annotation_data ${params.annotation_data}
     """
 }
 
