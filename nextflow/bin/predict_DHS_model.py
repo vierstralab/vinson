@@ -5,7 +5,6 @@ from tqdm import tqdm
 import argparse
 
 from torch.utils.data import DataLoader
-
 from vinson.utils.run import model_from_config as load_vinson_model
 from vinson.utils.run import read_configs
 from vinson.utils.run import dataset_from_h5_and_config

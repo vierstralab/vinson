@@ -7,7 +7,7 @@ process predict {
     tag "${prefix}"
 
     input:
-        tuple val(prefix), path(dhs_dataset), path(checkpoint), val(model_type)
+        tuple val(prefix), path(dhs_dataset), path(checkpoint), path(model_config), val(model_type)
     
     output:
         tuple val(prefix), path(dhs_dataset), path(name)
@@ -72,7 +72,7 @@ process visualize_predictions {
 workflow {
     Channel.fromPath(params.samples_file)
         | splitCsv(header:true, sep:'\t')
-        | map(row -> tuple(row.prefix, file(row.dhs_dataset), file(row.checkpoint), row.model_type))
+        | map(row -> tuple(row.prefix, file(row.dhs_dataset), file(row.checkpoint), file(row.model_config), row.model_type))
         | predict
         | visualize_predictions
     
