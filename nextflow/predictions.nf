@@ -1,5 +1,7 @@
+
+
 process predict {
-    conda "${params.conda_path}"
+    conda "${params.conda}"
     publishDir "${params.outdir}/predictions"
     label "gpu"
 
@@ -14,10 +16,9 @@ process predict {
     """
     python3 $moduleDir/bin/predict_DHS_model.py \
         ${dhs_dataset} \
-        --embeddings_file ${embeddings_file} \
+        ${params.zarr_anndata} \
+        ${params.fasta_file} \
         --checkpoint ${checkpoint} \
-        --fasta_file ${params.fasta_file} \
-        --sample_genotype_file ${params.sample_genotype_file} \
         --genotype_file ${params.genotype_file} \
         --num_workers ${task.cpus} \
         --model_type ${model_type} \
@@ -27,7 +28,7 @@ process predict {
 
 
 process annotate_with_predictions {
-    conda "${params.conda_path}"
+    conda "${params.conda}"
     publishDir "${params.outdir}/"
     label "ldsc"
 

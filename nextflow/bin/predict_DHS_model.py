@@ -39,7 +39,7 @@ def main():
     parser = argparse.ArgumentParser(description="Predict DHS model")
     parser.add_argument("h5_data", type=str, help="Path to DHS dataset (.h5 file)")
     parser.add_argument("anndata", type=str, help="Path to full AnnData file")
-    parser.add_argument("fasta_file", type=str)
+    parser.add_argument("fasta_file", type=str, help="Path to reference FASTA file")
     parser.add_argument("model_checkpoint", type=str, help="Path to model checkpoint")
     parser.add_argument("model_config_path", type=str, help="Path to model config YAML file")
     parser.add_argument("--genotype_file", type=str, default=None, help="Path to TABIX indexed genotype file (optional)")
