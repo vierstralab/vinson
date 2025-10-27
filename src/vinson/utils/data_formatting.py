@@ -1,9 +1,9 @@
 import numpy as np
 import anndata as ad
 import h5py
+import pandas as pd
 
-
-def extract_data_from_h5(h5_file):
+def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
     data_keys = {
         'read_depth': np.float32,
         'sample_id': np.str_,
@@ -31,7 +31,11 @@ def extract_data_from_h5(h5_file):
         for key, dtype in optional_keys.items():
             if key in f:
                 data[key] = np.ascontiguousarray(f[key][()].astype(dtype))
-    return data
+
+        # TMP FIXME
+        indiv_map = pd.read_table('/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/metadata.clustered.tsv').set_index('sample_id')['indiv_id']
+        data['indiv_id'] = pd.Series(data['sample_id']).map(indiv_map).fillna('None').values.astype(np.str_)
+    return data, ref_adata.obsm['motif_embeddings']
 
 
 def adata_to_h5_and_embeddings(adata: ad.AnnData, suffix: str):
