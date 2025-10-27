@@ -20,7 +20,14 @@ def extract_data_from_h5(h5_file):
     with h5py.File(h5_file, 'r') as f:
         data = {}
         for key, dtype in data_keys.items():
-            data[key] = np.ascontiguousarray(f[key][()].astype(dtype))
+            p = f[key][()]
+            if key == 'class':
+                # old format h5 data compatibility
+                if str(f[key][0]) in ('negative', 'positive'):
+                    p = np.where(
+                        p.astype(str) == 'positive', 1, -1
+                    )
+            data[key] = np.ascontiguousarray(p.astype(dtype))
         for key, dtype in optional_keys.items():
             if key in f:
                 data[key] = np.ascontiguousarray(f[key][()].astype(dtype))
