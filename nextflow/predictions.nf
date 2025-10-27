@@ -19,7 +19,8 @@ process predict {
         ${dhs_dataset} \
         ${params.zarr_anndata} \
         ${params.fasta_file} \
-        --checkpoint ${checkpoint} \
+        ${checkpoint} \
+        ${model_config} \
         --genotype_file ${params.genotype_file} \
         --num_workers ${task.cpus} \
         --model_type ${model_type} \
