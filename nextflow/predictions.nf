@@ -63,10 +63,10 @@ process visualize_predictions {
     """
     python3 $moduleDir/bin/plot_precomputed_data.py \
         --prefix ${prefix} \
-        --dataset ${dhs_dataset} \
-        --predict-output ${predict_np} \
-        --output-dir ${params.outdir} \
-        --adata ${params.zarr_anndata}
+        --h5_data ${dhs_dataset} \
+        --npy_prediction ${predict_np} \
+        --output ${params.outdir} \
+        --adata ${params.zarr_anndata} \
         --annotation_data ${params.annotation_data}
     """
 }
