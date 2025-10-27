@@ -66,7 +66,7 @@ def main():
     dataset = dataset_from_h5_and_config(
         config=model_config,
         h5_file=args.h5_data,
-        embeddings_df=adata.obsm['motif_embeddings'],
+        ref_adata=adata,
         fasta_file=args.fasta_file,
         genotype_file=args.genotype_file,
         **dataset_kwargs,
