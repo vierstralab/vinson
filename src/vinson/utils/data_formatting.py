@@ -6,6 +6,7 @@ import pandas as pd
 
 def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
     data_keys = {
+        'dhs_id': np.str_,
         'read_depth': np.float32,
         'sample_id': np.str_,
         'chrom': np.str_,
