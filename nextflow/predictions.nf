@@ -4,6 +4,7 @@ process predict {
     conda "${params.conda}"
     publishDir "${params.outdir}/predictions"
     label "gpu"
+    tag "${prefix}"
 
     input:
         tuple val(prefix), path(dhs_dataset), path(checkpoint), val(model_type)
@@ -33,21 +34,21 @@ process annotate_with_predictions {
     label "ldsc"
 
     output:
-        path predict_np
+        path name
 
     script:
-    predict_np = "${file(params.samples_file).baseName}.annotated_with_predictions.tsv"
+    name = "${file(params.samples_file).baseName}.annotated_with_predictions.tsv"
     """
     python3 $moduleDir/bin/annotate_meta.py \
         ${params.samples_file} \
         ${params.outdir}/predictions \
-        ${predict_np}
+        ${name}
     """
 }
 
 process visualize_predictions {
     tag "${prefix}"
-    conda "${params.conda_path}"
+    conda "${params.conda}"
     publishDir "${params.outdir}/nmf/${prefix}"
     label "med_mem"
 
