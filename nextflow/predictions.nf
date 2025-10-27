@@ -2,7 +2,7 @@
 
 process predict {
     conda "${params.conda}"
-    publishDir "${params.outdir}/predictions"
+    publishDir "${params.outdir}/predictions/${prefix}", pattern: "${name}"
     label "gpu"
     tag "${prefix}"
 
@@ -50,7 +50,7 @@ process annotate_with_predictions {
 process visualize_predictions {
     tag "${prefix}"
     conda "${params.conda}"
-    publishDir "${params.outdir}/nmf/${prefix}"
+    publishDir "${params.outdir}/predictions/${prefix}"
     label "med_mem"
 
     input:
