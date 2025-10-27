@@ -3,6 +3,7 @@ import anndata as ad
 import h5py
 import pandas as pd
 
+
 def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
     data_keys = {
         'read_depth': np.float32,
@@ -38,7 +39,7 @@ def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
     return data, ref_adata.obsm['motif_embeddings']
 
 
-def adata_to_h5_and_embeddings(adata: ad.AnnData, suffix: str):
+def extract_data_from_anndata(adata: ad.AnnData, suffix: str):
     """
     Convert AnnData object to H5 format and extract embeddings.
     Args:

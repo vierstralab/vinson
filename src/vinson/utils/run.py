@@ -2,7 +2,7 @@ from funkybob import RandomNameGenerator
 import yaml
 from datetime import datetime
 import mergedeep
-import pandas as pd
+import anndata as ad
 
 import torch
 
@@ -85,7 +85,7 @@ def model_from_config(config, checkpoint_path=None):
 def dataset_from_h5_and_config(
     config: dict,
     h5_file: str,
-    embeddings_df: pd.DataFrame,
+    ref_adata: ad.AnnData,
     fasta_file: str,
     genotype_file: str = None,
     **dataset_kwargs
@@ -103,7 +103,7 @@ def dataset_from_h5_and_config(
         **config['data_params'],
         **dataset_kwargs,
     }
-    data = extract_data_from_h5(h5_file)
+    data, embeddings_df = extract_data_from_h5(h5_file, ref_adata=ref_adata)
     dataset = SequenceEmbedDataset(
         data=data,
         embeddings_df=embeddings_df,

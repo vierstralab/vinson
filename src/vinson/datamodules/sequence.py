@@ -1,7 +1,7 @@
 import lightning.pytorch as L
 from torch.utils.data import DataLoader
 from vinson.datasets.sequence import SequenceEmbedDataset
-from vinson.utils.data_formatting import adata_to_h5_and_embeddings
+from vinson.utils.data_formatting import extract_data_from_anndata
 from itertools import cycle
 from torchdata.stateful_dataloader import StatefulDataLoader
 
@@ -120,7 +120,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             full_adata.varm['split_data'] == dhs_split
         ]
 
-        data, embeddings_df = adata_to_h5_and_embeddings(adata, suffix)
+        data, embeddings_df = extract_data_from_anndata(adata, suffix)
 
         return data, embeddings_df
 
