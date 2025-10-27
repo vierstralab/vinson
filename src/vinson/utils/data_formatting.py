@@ -23,9 +23,9 @@ def extract_data_from_h5(h5_file):
             p = f[key][()]
             if key == 'class':
                 # old format h5 data compatibility
-                if str(f[key][0]) in ('negative', 'positive'):
+                if p[0] in (b'negative', b'positive'):
                     p = np.where(
-                        p.astype(str) == 'positive', 1, -1
+                        p.astype(str) == b'positive', 1, -1
                     )
             data[key] = np.ascontiguousarray(p.astype(dtype))
         for key, dtype in optional_keys.items():
