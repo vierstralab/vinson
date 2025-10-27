@@ -233,7 +233,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         # Extract variants pertaining to individual
         variants = self.genotype_extr[interval]
         
-        assert 'INDIV' in indiv_id, "INDIV_ID format incorrect."
+        assert 'INDIV' in indiv_id, f"INDIV_ID format incorrect ({indiv_id})."
 
         # FIX formatting issue (.bed.gz suffix) 
         variants = variants[variants["indiv_id"] == f"{indiv_id}.bed.gz"].set_index(

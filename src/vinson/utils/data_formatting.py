@@ -15,7 +15,7 @@ def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
         'density': np.float32,
     }
     optional_keys = {
-        'indiv_id': np.str_,
+        'indiv_id': object,
         'dhs_weight': np.float32,
     }
     with h5py.File(h5_file, 'r') as f:
@@ -35,7 +35,7 @@ def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
 
         # TMP FIXME
         indiv_map = pd.read_table('/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/metadata.clustered.tsv').set_index('sample_id')['indiv_id']
-        data['indiv_id'] = pd.Series(data['sample_id']).map(indiv_map).fillna('None').values.astype(np.str_)
+        data['indiv_id'] = pd.Series(data['sample_id']).map(indiv_map).values
     return data, ref_adata.obsm['motif_embeddings']
 
 
