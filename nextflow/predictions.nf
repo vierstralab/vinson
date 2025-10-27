@@ -65,7 +65,7 @@ process visualize_predictions {
         --prefix ${prefix} \
         --h5_data ${dhs_dataset} \
         --npy_prediction ${predict_np} \
-        --output ${params.outdir} \
+        --output ./ \
         --adata ${params.zarr_anndata} \
         --annotation_data ${params.annotation_data}
     """
