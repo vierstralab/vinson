@@ -214,7 +214,7 @@ if __name__ == '__main__':
     else:
         annotation_plot_data = get_mock_annotation_data(adata)
 
-    eval_dataset = extract_data_from_h5(args.h5_data, adata)
+    eval_dataset, embeds = extract_data_from_h5(args.h5_data, adata) # Maybe embeds are not needed here
     eval_dataset['y_hat'] = np.load(args.npy_prediction)
     eval_dataset = pd.DataFrame(eval_dataset)
     
