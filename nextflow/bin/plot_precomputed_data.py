@@ -190,17 +190,18 @@ if __name__ == '__main__':
     parser.add_argument('--output', help='Path to save visualizations', default='./')
     args = parser.parse_args()
 
+    adata = read_zarr_backed(args.adata)
+
     output = f'{args.output}/{args.prefix}'
     if args.annotation_data is not None:
         annotation_plot_data = pd.read_table(args.annotation_data)
     else:
-        annotation_plot_data = get_mock_annotation_data(args.adata)
+        annotation_plot_data = get_mock_annotation_data(adata)
 
     eval_dataset = extract_data_from_h5(args.h5_data)
     eval_dataset['y_hat'] = np.load(args.npy_prediction)
     eval_dataset = pd.DataFrame(eval_dataset)
-
-    adata = read_zarr_backed(args.adata)
+    
     main(
         adata=adata,
         eval_dataset=eval_dataset,

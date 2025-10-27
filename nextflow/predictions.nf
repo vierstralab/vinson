@@ -65,8 +65,8 @@ process visualize_predictions {
         --prefix ${prefix} \
         --dataset ${dhs_dataset} \
         --predict-output ${predict_np} \
-        --output-dir ${params.outdir}
-        
+        --output-dir ${params.outdir} \
+        --adata ${params.zarr_anndata}
     """
 }
 
