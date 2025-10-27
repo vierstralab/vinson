@@ -82,9 +82,9 @@ def main():
     )
 
     if args.model_type == "vinson":
-        model_predict = load_vinson_model(model_config, args.checkpoint)
+        model_predict = load_vinson_model(model_config, args.model_checkpoint)
     elif args.model_type == "legnet":
-        model_predict = load_legnet_model(args.checkpoint, device)
+        model_predict = load_legnet_model(args.model_checkpoint, device)
     else:
         raise ValueError(f"Unknown model type: {args.model_type}")
     model_predict.to(device).eval()
