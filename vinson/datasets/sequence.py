@@ -349,10 +349,12 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             _, dna_seq = self.get_sample_sequence(interval, sample_id, indiv_id)
         else:
             dna_seq = self.fasta_extr[interval]
+        
 
         # One-hot encode DNA sequence
+        #added upper for mouse fasta
         try:
-            ohe_seq = one_hot_encode(dna_seq, dtype=np.float32)
+            ohe_seq = one_hot_encode(dna_seq.upper(), dtype=np.float32)
         except ValueError as e:
             logger.error(
                 f"Error converting DNA to one-hot encoding ({chrom}:{summit} -- {sample_id})"

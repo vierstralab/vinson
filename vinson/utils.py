@@ -161,7 +161,7 @@ def intervals_to_ohe(intervals, seqlen, fasta_extr):
     for i in intervals:
         mid = (i.start + i.end) // 2
         seq = fasta_extr[GenomicInterval(i.chrom, mid, mid).widen(seqlen//2)]
-        ohe.append(one_hot_encode(seq))
+        ohe.append(one_hot_encode(seq.upper()))
     
     return np.stack(ohe)
 

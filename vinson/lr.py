@@ -47,6 +47,7 @@ class CosineAnnealingWarmupRestarts(_LRScheduler):
     ...     train(...)
     ...     scheduler.step()
     """
+
     def __init__(
         self,
         optimizer: torch.optim.Optimizer,
