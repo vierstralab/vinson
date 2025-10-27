@@ -5,13 +5,17 @@ import argparse
 from pathlib import Path
 import os
 
+
+# TODO: refactor to use a common sbatch submission utility for dhs and variant models
+
+
 # Get the absolute path of the directory where this script lives
 SCRIPT_DIR = Path(__file__).resolve().parent
-TEMPLATE_PATH = SCRIPT_DIR / "template_submit.sbatch"
-CONFIG_PATH = SCRIPT_DIR / "train_dhs_new_cluster_config.yaml"
+TEMPLATE_PATH = SCRIPT_DIR / "dhs" / "template_submit.sbatch"
 
 # run as 
-# python submit_to_sbatch.py /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT22//epoch_1.h5ad /net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa /net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model 
+# python submit_to_sbatch.py /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT22//epoch_1.h5ad /net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa /net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model --config  /home/sabramov/packages/vinson/train/train_dhs_new_cluster_config.yaml
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -20,6 +24,8 @@ if __name__ == "__main__":
     parser.add_argument("--cpus_per_gpu", type=int, default=4)
     parser.add_argument("--mem", type=str, default='0', help='Memory per node')
     parser.add_argument("--nodelist", type=str, default=None, help='Names of nodes to use. Formatted according to sbatch --nodelist option.')
+    parser.add_argument("--config", type=str, default=None, help='Path to custom config file')
+    parser.add_argument("--env_path", type=str, default="/home/sabramov/miniconda3/envs/pytorch", help='Path to conda environment')
     parser.add_argument('anndata', type=str, help='Path to anndata file')
     parser.add_argument('fasta', type=str, help='Path to fasta file')
     parser.add_argument('genotype', type=str, help='Path to genotype file')
@@ -41,12 +47,12 @@ if __name__ == "__main__":
         nodelist=args.nodelist,
         mem=args.mem,
         time="36:00:00",
-        env_path="/home/sabramov/miniconda3/envs/pytorch",
+        env_path=args.env_path,
         anndata=args.anndata,
         fasta=args.fasta,
         genotype=args.genotype,
         outdir=args.outdir,
-        config=CONFIG_PATH,
+        config=f"--config {args.config}" if args.config else "",
         script_dir=SCRIPT_DIR.as_posix()
     )
 

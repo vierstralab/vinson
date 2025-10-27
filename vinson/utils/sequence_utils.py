@@ -4,11 +4,9 @@ import numpy as np
 import numba
 
 from genome_tools import GenomicInterval
-
 from collections.abc import Iterable
-from funkybob import RandomNameGenerator
-import yaml
-from datetime import datetime
+
+
 
 IUPAC_DNA = "XACMGRSVTWYHKDBN"
 
@@ -203,22 +201,3 @@ def variants_to_ohe(variants, seqlen, fasta_extr):
         ohe.append(one_hot_encode(seq_alt))
 
     return np.stack(ohe)
-
-
-def generate_run_name() -> str:
-    """Generate a timestamped random run name once on rank 0 and share it across ranks."""
-
-    if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
-        # no DDP — just generate directly
-        name = next(iter(RandomNameGenerator()))
-        return name
-    else:
-        name = [""]
-    # if torch.distributed.is_initialized():
-    #     torch.distributed.broadcast_object_list(name_list, src=0)
-    return name
-
-def read_yaml_config(path) -> dict:
-    with open(path, 'r') as f:
-        config = yaml.safe_load(f)
-    return config

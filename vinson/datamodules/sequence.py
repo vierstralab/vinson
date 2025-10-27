@@ -1,11 +1,11 @@
 import lightning.pytorch as L
 from torch.utils.data import DataLoader
 from vinson.datasets.sequence import SequenceEmbedDataset
+from vinson.utils.data_formatting import adata_to_h5_and_embeddings
 from itertools import cycle
 from torchdata.stateful_dataloader import StatefulDataLoader
 
 import anndata as ad
-import numpy as np
 
 # move all logging to one helper file
 import logging
@@ -20,7 +20,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
         genotype_file=None,
         train_dataset_kwargs={},
         valid_dataset_kwargs={},
-        dataloader_kwargs={},
+        batch_size=32,
+        **dataloader_kwargs,
     ):
         """
         Initialize the SeqEmbedDataModule.
@@ -31,7 +32,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             genotype_file (str, optional): Path to the genotype file.
             train_dataset_kwargs (dict, optional): Additional arguments for the training dataset.
             valid_dataset_kwargs (dict, optional): Additional arguments for the validation dataset.
-            dataloader_kwargs (dict, optional): Additional arguments for train and validation dataloaders.
+            dataloader_kwargs (dict, optional): Additional arguments for train and validation dataloaders. See DataLoader.__init__ for options.
         """
         super().__init__()
 
@@ -43,6 +44,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.train_dataset_kwargs = train_dataset_kwargs
         self.valid_dataset_kwargs = valid_dataset_kwargs
         self.dataloader_kwargs = dataloader_kwargs
+        self.batch_size = batch_size
         
         self.adata = None
         self.current_train_epoch = self.validation_epoch = self.epoch_names = None
@@ -76,6 +78,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         # Create new dataloader
         return DataLoader(
             self.train_dataset,
+            batch_size=self.batch_size,
             shuffle=True,
             **self.dataloader_kwargs,
         )
@@ -93,16 +96,17 @@ class SeqEmbedDataModule(L.LightningDataModule):
         # Create new dataloader
         return DataLoader(
             self.valid_dataset,
+            batch_size=self.batch_size,
             shuffle=False,
             **self.dataloader_kwargs,
         )
 
-    def get_data(self, name, dhs_split='train', sample_split='train'):
+    def get_data(self, suffix, dhs_split='train', sample_split='train'):
         """
         Generic method to extract data from anndata object for a given split
 
         Args:
-            name (str): name of the epoch to extract. Gets added to layer names as `{layer}.{name}`
+            suffix (str): suffix of the epoch to extract. Gets added to layer names as `{layer}.{suffix}`
             dhs_split (str): which DHS split to use (train/val/test)
             sample_split (str): which sample split to use (train/val/test)
 
@@ -116,52 +120,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             full_adata.varm['split_data'] == dhs_split
         ]
 
-        layers = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
-        for layer_name in layers:
-            epoch_layer_name = f"{layer_name}.{name}"
-            layers[layer_name] = adata.layers[epoch_layer_name].tocoo()
-            # for epoch_name in self.epoch_names:
-            #    del full_adata.layers[f"{layer_name}.{epoch_name}"]
-
-        class_coo = layers["class"]
-        row_idx, col_idx = class_coo.row, class_coo.col
-
-        data = {
-            'read_depth': adata.obs['nuclear_reads'].values[row_idx],
-            'sample_id': adata.obs_names[row_idx],
-            'chrom': adata.var['#chr'].values[col_idx],
-            'summit': adata.var['dhs_summit'].values[col_idx],
-            'background': layers['mean_bg_agg_cutcounts'].data,
-            'class': layers['class'].data,
-            'density': layers['density'].data,
-        }
-
-
-        if 'indiv_id' in adata.obsm:
-            logger.debug(
-                f"Adding indiv_id from adata.obsm['indiv_id'] for {name}, dhs_split: {dhs_split}, sample_split: {sample_split}"
-            )
-            # maybe come up with something more elegant
-            indiv_ids = np.array(
-                [
-                    x if x != "None" else None
-                    for x in adata.obsm['indiv_id']
-                ]
-            )
-            data['indiv_id'] = indiv_ids[row_idx]
-
-        if 'dhs_weight' in adata.varm:
-            logger.debug(
-                f"Adding dhs_weight from adata.var['dhs_weight'] for {name}, dhs_split: {dhs_split}, sample_split: {sample_split}"
-            )
-            data['dhs_weight'] = adata.varm['dhs_weight'][col_idx]
-
-        logger.info(
-            f"Finished extracting data for {name}, dhs_split: {dhs_split}, sample_split: {sample_split}"
-        )
-        data = {k: np.ascontiguousarray(v) for k, v in data.items()}
-
-        embeddings_df = adata.obsm['motif_embeddings']
+        data, embeddings_df = adata_to_h5_and_embeddings(adata, suffix)
 
         return data, embeddings_df
 

@@ -7,7 +7,7 @@ from tangermeme.predict import predict
 from tangermeme.product import apply_pairwise
 from tangermeme.deep_lift_shap import deep_lift_shap, _nonlinear
 from vinson.interpretation import dinucleotide_shuffle, force_strict_ohe
-from vinson.utils import intervals_to_ohe
+from vinson.vinson.utils.sequence_utils import intervals_to_ohe
 from vinson.models.helpers import _Exp
 from vinson.models.sequence import BassetTrunkEmbed, CellEmbedding, EmbedModel
 from genome_tools import GenomicInterval

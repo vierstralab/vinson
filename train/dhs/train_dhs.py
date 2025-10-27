@@ -2,13 +2,9 @@ import os
 import sys
 import random
 import numpy as np
-import yaml
 from argparse import ArgumentParser
-from datetime import datetime
 
 import torch
-import anndata as ad
-import mergedeep
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger
 from lightning.pytorch.callbacks import (
@@ -17,17 +13,14 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 
-from vinson.datamodules.sequence import SeqEmbedDataModule
-from vinson.models.sequence import (
-    CellEmbedding,
-    BassetTrunkEmbed,
-    EmbedModel,
+
+from vinson.utils.run import (
+    generate_run_name,
+    datamodule_from_config, 
+    read_configs,
+    model_from_config,
+    save_config
 )
-
-from vinson.lr import CosineAnnealingWarmupRestarts
-
-
-from vinson.utils import generate_run_name, read_yaml_config
 
 
 def set_global_seed(seed=42):
@@ -104,83 +97,12 @@ def init_multigpu_trainer(
     return trainer
 
 
-def init_model(config):
-    # TODO: add model configuration to config
-    # Optimizer & LR scheduler
-    optimizer = torch.optim.AdamW
-    lr_scheduler = CosineAnnealingWarmupRestarts
-
-    lr_scheduler_kwargs = config["hparams"]["lr_scheduler_kwargs"]
-
-    # Create trunk model, maybe move to config later
-    embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
-    trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
-
-    model = EmbedModel(
-        trunk=trunk_model,
-        embed=embed_model,
-        regression=config["model_type"] == "regression",
-        optimizer=optimizer,
-        lr_scheduler=lr_scheduler,
-        lr_scheduler_kwargs=lr_scheduler_kwargs,
-    )
-
-    # Initialize model
-    model.init_model()
-    return model
-
-
-def get_datamodule(
-        config,
-        anndata_file,
-        fasta_file,
-        genotype_file,
-        **dataloader_kwargs
-    ):
-    """
-    Initialize dataloaders.
-    Args:
-        config (dict): Configuration dictionary. See read_configs and default config for format.
-        anndata_file (str): Path to the AnnData file.
-        fasta_file (str): Path to the FASTA file.
-        genotype_file (str): Path to the genotype file.
-        **dataloader_kwargs: Additional arguments for dataloaders.
-    """
-    train_dataset_kwargs = {
-        **config['data_params'],
-        **config['train_augmentation_kwargs'],
-    }
-
-    valid_dataset_kwargs = {
-        **config['data_params'],
-        **config['validation_augmentation_kwargs'],
-    }
-
-    # DataModule to handle datasets updates and dataloader init
-    return SeqEmbedDataModule(
-        anndata_file=anndata_file,
-        fasta_file=fasta_file,
-        genotype_file=genotype_file,
-        train_dataset_kwargs=train_dataset_kwargs,
-        valid_dataset_kwargs=valid_dataset_kwargs,
-        dataloader_kwargs=dataloader_kwargs,
-    )
-
-
-def read_configs(default_config_path, custom_config_path=None):
-    config = read_yaml_config(default_config_path)
-    if custom_config_path is not None:
-        update_config = read_yaml_config(custom_config_path)
-        mergedeep.merge(config, update_config, strategy=mergedeep.Strategy.REPLACE)
-    config['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    return config
-
-
-def fit_model(model, trainer: L.Trainer, datamodule: SeqEmbedDataModule, checkpoint=None):
+def fit_model(model, trainer: L.Trainer, datamodule, checkpoint=None):
     if checkpoint is not None:
         trainer.fit(model, datamodule=datamodule, ckpt_path=checkpoint)
     else:
         trainer.fit(model, datamodule=datamodule)
+
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -271,15 +193,16 @@ if __name__ == "__main__":
         custom_config_path=args.config
     )
     config['command'] = " ".join(["python"] + sys.argv)
-
-    with open(os.path.join(outdir, "run_config.yaml"), "w") as f:
-        yaml.safe_dump(config, f)
+    save_config(
+        config,
+        os.path.join(outdir, "run_config.yaml"),
+    )
 
     # Set global seed
     set_global_seed(args.seed)
 
     # Initialize model from config
-    model = init_model(config)
+    model = model_from_config(config, checkpoint_path=args.checkpoint)
 
     # Initialize trainer
     trainer = init_multigpu_trainer(
@@ -293,7 +216,6 @@ if __name__ == "__main__":
     )
 
     dataloader_kwargs = dict(
-        batch_size=config['hparams']['batch_size'],
         num_workers=args.num_workers,
         pin_memory=True if args.accelerator == "gpu" else False,
         drop_last=True,
@@ -301,7 +223,7 @@ if __name__ == "__main__":
     )
 
     # Setup dataloaders
-    datamodule = get_datamodule(
+    datamodule = datamodule_from_config(
         config,
         anndata_file=args.anndata_file,
         fasta_file=args.fasta_file,

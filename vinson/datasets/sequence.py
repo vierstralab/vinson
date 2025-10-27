@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 from genome_tools import GenomicInterval
 from genome_tools.data.extractors import FastaExtractor, TabixExtractor
 
-from vinson.utils import one_hot_encode, get_iupac_char_from_alleles
+from vinson.utils.sequence_utils import one_hot_encode, get_iupac_char_from_alleles
 
 import logging
 

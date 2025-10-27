@@ -11,10 +11,9 @@ from torchmetrics.classification import (
 )
 from torchmetrics.regression import PearsonCorrCoef
 from torch.nn import BCEWithLogitsLoss
+
 from vinson.loss import (
     PoissonNLL,
-    mse_loss,
-    poisson_loss,
     binomial_mixture_normed_loss,
 )
 
@@ -413,57 +412,17 @@ class EmbedModel(BaseSequenceModel):
         return super().training_step(batch, batch_idx)
 
     def validation_step(self, batch, batch_idx):
-        """ """
-        X_seq, X_embed, indicator, density, bg, read_depth, weight = (
-            batch["ohe_seq"],
-            batch["embed"],
-            batch["indicator"],
-            batch["density"],
-            batch["bg"],
-            batch["read_depth"],
-            batch["weight"],
-        )
+       return super().validation_step(batch, batch_idx)
 
-        y = self(X_seq, X_embed).squeeze()
 
-        if self.regression:
-            # Transform normalized density to counts
-            # The model ouputs the log counts
-            ps = torch.tensor(1e-6)
-            pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
-            target_counts = density / 1e6 * read_depth
+class VariantEmbedModel(AbstractBaseSequenceModel):
+    def __init__(self, trunk, embed, *args, **kwargs):
+        super().__init__(trunk, *args, **kwargs)
+    
+        self.loss = binomial_mixture_normed_loss
+        self.embedding = embed
+        self.save_hyperparameters()
 
-            loss = poisson_loss(pred_counts + ps, target_counts + ps, reduction="none")
-            # loss = mse_loss(pred_counts + ps, target_counts + ps, reduction="none")
-
-            self.valid_metrics.update(
-                (pred_counts + 1).log(), (target_counts + 1).log()
-            )
-
-        else:
-            loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                y, indicator.float(), reduction="none"
-            )
-            self.valid_metrics.update(torch.sigmoid(y), indicator.int())
-
-        loss *= weight
-        loss = loss.mean()
-
-        self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-
-        return loss
-
-class _Sub(torch.nn.Module):
-	def __init__(self):
-		super(_Sub, self).__init__()
-
-	def forward(self, *args):
-		return torch.subtract(*args)
-
-class VariantEmbedModel(EmbedModel):
-    def __init__(self, *args, **kwargs):
-        super(VariantEmbedModel, self).__init__(*args, **kwargs)
-        self.sub = _Sub()
 
     def init_metrics(self):
         self.train_metrics = MetricCollection(
@@ -487,7 +446,7 @@ class VariantEmbedModel(EmbedModel):
         ref_features = self.trunk(seq_ref, x)
         alt_features = self.trunk(seq_alt, x)
 
-        x = self.sub(ref_features, alt_features)
+        x = torch.subtract(ref_features, alt_features)
 
         x = self.forward_fc(x)
         x = self.forward_final(x)
