@@ -11,7 +11,7 @@ import os
 
 # Get the absolute path of the directory where this script lives
 SCRIPT_DIR = Path(__file__).resolve().parent
-TEMPLATE_PATH = SCRIPT_DIR / "dhs" / "template_submit.sbatch"
+TEMPLATE_PATH = SCRIPT_DIR / "dhs" / "template_submit_dhs.sbatch"
 
 # run as 
 # python submit_to_sbatch.py /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT22//epoch_1.h5ad /net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa /net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model --config  /home/sabramov/packages/vinson/train/train_dhs_new_cluster_config.yaml
