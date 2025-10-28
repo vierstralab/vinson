@@ -26,6 +26,23 @@ def load_legnet_model(checkpoint_path, device):
     model = LegNetEmbedinCNN.load_from_checkpoint(checkpoint_path, map_location=device).eval()
     return model
 
+def load_legacy_vinson(checkpoint_path):
+    from vinson.models.sequence import BassetTrunkEmbed, CellEmbedding, EmbedModel
+    embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
+    trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
+
+    model_predict = EmbedModel(
+        trunk_model,
+        embed_model,
+        regression=True,
+    ).to(device)
+    pretrained_state_dict = torch.load(
+        checkpoint_path,
+        map_location=torch.device("cpu"),
+    )["state_dict"]
+
+    model_predict.load_state_dict(pretrained_state_dict)
+    return model_predict
 
 @torch.inference_mode()
 def load_and_predict(batch, model):    
@@ -58,10 +75,14 @@ def main():
 
     model_config = read_configs(args.model_config_path)
 
-    dataset_kwargs = dict(
-        reverse_complement=False,
-        jitter=0,
-        noise=0,
+    dataset_kwargs: dict = model_config['data_params']
+
+    dataset_kwargs.update(
+        dict(
+            reverse_complement=False,
+            jitter=0,
+            noise=0,
+        )
     )
 
     if args.model_type == "vinson_legacy":
@@ -69,7 +90,6 @@ def main():
         adata.obsm['motif_embedding'] = motif_embedding.loc[adata.obs_names].values
 
     dataset = dataset_from_h5_and_config(
-        config=model_config,
         h5_file=args.h5_data,
         ref_adata=adata,
         fasta_file=args.fasta_file,
@@ -86,10 +106,12 @@ def main():
         drop_last=False,
     )
 
-    if args.model_type == "vinson" or args.model_type == "vinson_legacy":
+    if args.model_type == "vinson":
         model_predict = load_vinson_model(model_config, args.model_checkpoint)
     elif args.model_type == "legnet":
         model_predict = load_legnet_model(args.model_checkpoint, device)
+    elif args.model_type == "vinson_legacy":
+        model_predict = load_legacy_vinson(args.model_checkpoint)
     else:
         raise ValueError(f"Unknown model type: {args.model_type}")
     model_predict.to(device).eval()

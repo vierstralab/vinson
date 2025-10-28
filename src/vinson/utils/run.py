@@ -83,7 +83,6 @@ def model_from_config(config, checkpoint_path=None):
 
 ############
 def dataset_from_h5_and_config(
-    config: dict,
     h5_file: str,
     ref_adata: ad.AnnData,
     fasta_file: str,
@@ -93,23 +92,18 @@ def dataset_from_h5_and_config(
     """
     Initialize dataset.
     Args:
-        config (dict): Configuration dictionary. See default config for format. Uses data_params section.
         h5_file (str): Path to the H5 file.
         fasta_file (str): Path to the FASTA file.
         genotype_file (str, optional): Path to the genotype file.
         **dataset_kwargs: Additional arguments for dataset.
     """
-    dataset_params = {
-        **config['data_params'],
-        **dataset_kwargs,
-    }
     data, embeddings_df = extract_data_from_h5(h5_file, ref_adata=ref_adata)
     dataset = SequenceEmbedDataset(
         data=data,
         embeddings_df=embeddings_df,
         fasta_file=fasta_file,
         genotype_file=genotype_file,
-        **dataset_params,
+        **dataset_kwargs,
     )
 
     return dataset
