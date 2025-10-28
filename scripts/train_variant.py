@@ -182,7 +182,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--noise",
         type=float,
-        default=0.1,
+        default=0.01,
         help="Standard deviation of Gaussian noise added to embeddings.",
     )
     parser.add_argument(

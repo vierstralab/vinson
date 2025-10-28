@@ -197,3 +197,10 @@ cython_debug/
 /models/
 data/
 slurm*
+
+# Ignore Nextflow log files
+nextflow/.nextflow.log*
+work/
+
+# ignore pdf plots from cell inference
+notebooks/cell_type_inference/
