@@ -3,6 +3,7 @@ import sys
 import numpy as np
 from tqdm import tqdm
 import argparse
+import pandas as pd
 
 from torch.utils.data import DataLoader
 from vinson.utils.run import model_from_config as load_vinson_model
@@ -47,7 +48,7 @@ def main():
     parser.add_argument("--num_workers", type=int, default=8)
 
     parser.add_argument(
-        "--model_type", type=str, default="vinson", choices=["vinson", "legnet"],
+        "--model_type", type=str, default="vinson", choices=["vinson", "vinson_legacy", "legnet"],
         help="Type of model to use for prediction"
     )
     parser.add_argument("--output", type=str, required=True, help="Path to save model predictions (.npy file)")
@@ -62,6 +63,10 @@ def main():
         jitter=0,
         noise=0,
     )
+
+    if args.model_type == "vinson_legacy":
+        motif_embedding = pd.read_table('/home/jvierstra/proj/vinson/data/embeddings_clustername.tsv', index_col=0).T
+        adata.obsm['motif_embedding'] = motif_embedding.loc[adata.obs_names].values
 
     dataset = dataset_from_h5_and_config(
         config=model_config,
@@ -81,7 +86,7 @@ def main():
         drop_last=False,
     )
 
-    if args.model_type == "vinson":
+    if args.model_type == "vinson" or args.model_type == "vinson_legacy":
         model_predict = load_vinson_model(model_config, args.model_checkpoint)
     elif args.model_type == "legnet":
         model_predict = load_legnet_model(args.model_checkpoint, device)
