@@ -86,6 +86,13 @@ class SeqEmbedDataModule(L.LightningDataModule):
             **self.dataloader_kwargs,
         )
     
+    def teardown(self, stage: str):
+        if stage == "validate" or stage is None:
+            self.valid_dataset = None
+        elif stage == "fit":
+            self.train_dataset = None
+        gc.collect()
+    
     def val_dataloader(self):
         data, embeddings_df = self.get_data(self.validation_epoch, 'val', 'train')
 
