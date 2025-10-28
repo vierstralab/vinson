@@ -25,6 +25,7 @@ srun python {script_dir}/dhs/train_dhs.py \
     --outdir {outdir} \
     --seed 42 \
     --genotype_file {genotype} \
-    --config {config} \
+    {config} \
+    {debug} \
     {anndata} \
     {fasta}

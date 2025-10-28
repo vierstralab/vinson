@@ -35,7 +35,7 @@ if __name__ == "__main__":
         default=None, 
         help='Preset sbatch parameters for different hpcg-test nodes. Overrides nodelist, gpus_per_node and cpus_per_gpu if set.'
     )
-    
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode.")
 
     args = parser.parse_args()
 
@@ -53,6 +53,7 @@ if __name__ == "__main__":
         genotype=args.genotype,
         outdir=args.outdir,
         config=f"--config {args.config}" if args.config else "",
+        debug="--debug" if args.debug else "",
         script_dir=SCRIPT_DIR.as_posix()
     )
 
