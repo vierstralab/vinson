@@ -60,6 +60,7 @@ def init_multigpu_trainer(
         devices,
         logger_type,
         val_check_interval,
+        **trainer_kwargs
     ):
     assert logger_type in ["csv"], "Only 'csv' logger is currently supported."
     logger = CSVLogger(os.path.join(outdir, "logs"))
@@ -92,6 +93,7 @@ def init_multigpu_trainer(
         log_every_n_steps=100,
         gradient_clip_val=1.0,
         reload_dataloaders_every_n_epochs=1,
+        **trainer_kwargs,
        # precision='16-mixed',
     )
     return trainer
@@ -177,6 +179,11 @@ if __name__ == "__main__":
         default="auto",
         help="Distributed training strategy (e.g., 'ddp', 'auto').",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug mode with max 200 * devices training steps per epoch.",
+    )
 
     args = parser.parse_args()
 
@@ -203,6 +210,10 @@ if __name__ == "__main__":
 
     # Initialize model from config
     model = model_from_config(config, checkpoint_path=args.checkpoint)
+    trainer_kwargs = {}
+
+    if args.debug:
+        trainer_kwargs['limit_train_batches'] = 200 * args.devices
 
     # Initialize trainer
     trainer = init_multigpu_trainer(
@@ -213,6 +224,7 @@ if __name__ == "__main__":
         devices=args.devices,
         logger_type=config["logging_params"]["logger_type"],
         val_check_interval=config["logging_params"]["val_check_interval"],
+        **trainer_kwargs
     )
 
     dataloader_kwargs = dict(
