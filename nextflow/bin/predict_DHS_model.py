@@ -65,7 +65,9 @@ def main():
     parser.add_argument("--num_workers", type=int, default=8)
 
     parser.add_argument(
-        "--model_type", type=str, default="vinson", choices=["vinson", "vinson_legacy", "legnet"],
+        "--model_type", 
+        type=str, default="vinson",
+        choices=["vinson", "vinson_legacy", "legnet"],
         help="Type of model to use for prediction"
     )
     parser.add_argument("--output", type=str, required=True, help="Path to save model predictions (.npy file)")
@@ -86,8 +88,9 @@ def main():
     )
 
     if args.model_type == "vinson_legacy":
+        print('legacy')
         motif_embedding = pd.read_table('/home/jvierstra/proj/vinson/data/embeddings_clustername.tsv', index_col=0)
-        adata.obsm['motif_embedding'] = motif_embedding.loc[adata.obs_names].values
+        adata.obsm['motif_embedding'] = motif_embedding.loc[adata.obs_names]
 
     dataset = dataset_from_h5_and_config(
         h5_file=args.h5_data,
