@@ -7,7 +7,10 @@ from torchdata.stateful_dataloader import StatefulDataLoader
 
 import anndata as ad
 
-# move all logging to one helper file
+import gc
+import torch
+
+# TODO: move all logging to one helper file
 import logging
 logger = logging.getLogger(__name__)
 
@@ -59,11 +62,11 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.validation_epoch = self.epoch_names[0]
         logger.info(f"Finished setup. Available epochs: {self.epoch_names}")
 
-    # def read_adata(self):
-    #     return ad.read_zarr(self.anndata_file)
-
     def train_dataloader(self):
         # Cycle to next file index
+        self.train_dataset = None
+        gc.collect()
+
         self.current_train_epoch = next(self.train_epoch_cycler)
         data, embeddings_df = self.get_data(self.current_train_epoch, 'train', 'train')
 
