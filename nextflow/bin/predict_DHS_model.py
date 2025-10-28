@@ -65,7 +65,7 @@ def main():
     )
 
     if args.model_type == "vinson_legacy":
-        motif_embedding = pd.read_table('/home/jvierstra/proj/vinson/data/embeddings_clustername.tsv', index_col=0).T
+        motif_embedding = pd.read_table('/home/jvierstra/proj/vinson/data/embeddings_clustername.tsv', index_col=0)
         adata.obsm['motif_embedding'] = motif_embedding.loc[adata.obs_names].values
 
     dataset = dataset_from_h5_and_config(
