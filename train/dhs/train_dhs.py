@@ -215,7 +215,7 @@ if __name__ == "__main__":
     if args.debug:
         trainer_kwargs['limit_train_batches'] = 200 * args.devices
         trainer_kwargs['limit_val_batches'] = 200 * args.devices
-        config["logging_params"]["val_check_interval"] = 1
+        config["logging_params"]["val_check_interval"] = 1.0
 
     # Initialize trainer
     trainer = init_multigpu_trainer(
