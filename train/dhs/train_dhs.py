@@ -215,6 +215,7 @@ if __name__ == "__main__":
         checkpoint = args.checkpoint
     # Initialize model from config
     model = model_from_config(config, checkpoint_path=checkpoint)
+    model.init_model()
     trainer_kwargs = {}
 
     if args.debug:
@@ -252,6 +253,7 @@ if __name__ == "__main__":
     )
 
     # Start training
+    model.init_model()
     fit_model(
         model,
         trainer,
