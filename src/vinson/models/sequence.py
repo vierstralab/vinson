@@ -218,6 +218,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         self,
         trunk_model,
         seqlen=1344,
+        exp=False,
         regression=False,
         optimizer=None,
         lr_scheduler=None,
@@ -233,6 +234,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
             lr_scheduler_kwargs,
         )
         self.regression = regression
+        self.exp = exp
 
         self.loss = (
             PoissonNLL(reduction="none")
@@ -267,14 +269,15 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         self(torch.zeros((2, 4, self.seqlen)))
         return self
 
-    def forward(self, seq, exp=False):
+    def forward(self, seq):
         features = self.trunk(seq)
 
         x = self.forward_fc(features)
-        x = self.forward_final(x)
-
-        if exp:
-            x = self.exp(x)
+        
+        if self.exp:
+            x = torch.log(x) # model outputs are positives >0, return log for compatibility
+        else:
+            x = self.forward_final(x) # model outputs are logits -infinity to +infinity
 
         return x
 
@@ -392,13 +395,17 @@ class EmbedModel(BaseSequenceModel):
             torch.zeros((2, 4, self.seqlen)),
             torch.zeros((2, self.embedding.n_inputs)),
         )
-
+    
     def forward(self, seq, embed):
         x = self.embedding(embed)
         x = self.trunk(seq, x)
 
         x = self.forward_fc(x)
-        x = self.forward_final(x)
+        
+        if self.exp:
+            x = torch.log(x) # model outputs are positives >0, return log for compatibility
+        else:
+            x = self.forward_final(x) # model outputs are logits -infinity to +infinity
 
         return x
 
@@ -449,7 +456,7 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
         x = torch.subtract(ref_features, alt_features)
 
         x = self.forward_fc(x)
-        x = self.forward_final(x)
+        x = self.forward_final(x) # in variant model, outputs are always logits of ES -infinity to +infinity
         return x
     
     def _forward_from_batch(self, batch):
