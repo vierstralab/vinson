@@ -138,7 +138,7 @@ class AbstractBaseSequenceModel(L.LightningModule):
         seqlen=1344,
         optimizer=None,
         lr_scheduler=None,
-        exp=False,
+        use_exp_transform=False,
         optimizer_kwargs=dict(),
         lr_scheduler_kwargs=dict(),
     ):
@@ -160,8 +160,8 @@ class AbstractBaseSequenceModel(L.LightningModule):
 
         self.final = torch.nn.LazyLinear(1)
 
-        self.exp = exp
-        if exp:
+        self.exp = use_exp_transform
+        if use_exp_transform:
             self.relu_final = torch.nn.ReLU()
 
         # Optimizer setup
