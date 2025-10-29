@@ -408,7 +408,14 @@ class EmbedModel(BaseSequenceModel):
         x = self.embedding(embed)
         x = self.trunk(seq, x)
 
-        x = super().forward(x)
+        x = self.forward_fc(x)
+        
+        # FIXME move to func
+        if self.exp:
+            x = torch.log(x + torch.tensor(1e-6, device=self.device)) # model outputs are positives >0, return log for compatibility
+        
+        x = self.forward_final(x) # model outputs are logits -infinity to +infinity
+
         return x
 
     def _forward_from_batch(self, batch):
