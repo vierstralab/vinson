@@ -218,7 +218,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         self,
         trunk_model,
         seqlen=1344,
-        exp=False,
+        use_exp_transform=False,
         regression=False,
         optimizer=None,
         lr_scheduler=None,
@@ -234,7 +234,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
             lr_scheduler_kwargs,
         )
         self.regression = regression
-        self.exp = exp
+        self.exp = use_exp_transform
 
         self.loss = (
             PoissonNLL(reduction="none")

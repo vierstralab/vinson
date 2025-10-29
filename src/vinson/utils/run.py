@@ -75,6 +75,7 @@ def model_from_config(config, checkpoint_path=None):
         optimizer=optimizer,
         lr_scheduler=lr_scheduler,
         lr_scheduler_kwargs=lr_scheduler_kwargs,
+        **config["model_kwargs"]
     )
 
     # Initialize model
