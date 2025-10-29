@@ -233,6 +233,7 @@ if __name__ == "__main__":
         pin_memory=True if args.accelerator == "gpu" else False,
         drop_last=True,
         worker_init_fn=set_worker_seed,
+        persistent_workers=False
     )
 
     # Setup dataloaders
