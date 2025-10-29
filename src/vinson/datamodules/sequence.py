@@ -51,7 +51,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         
         self.adata = None
         self.current_train_epoch = self.validation_epoch = self.epoch_names = None
-        self.train_dataset = self.valid_dataset = self.train_epoch_cycler = None
+        self.train_epoch_cycler = None
         # self.train_dl = None
 
     def setup(self, stage):
@@ -62,51 +62,54 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.validation_epoch = self.epoch_names[0]
         logger.info(f"Finished setup. Available epochs: {self.epoch_names}")
 
-    def train_dataloader(self):
-        print('Loading new training dataloader for epoch:', self.current_train_epoch)
-        # Cycle to next file index
-        self.train_dataset = None
-        gc.collect()
-
-        self.current_train_epoch = next(self.train_epoch_cycler)
+    def train_dataset(self):
         data, embeddings_df = self.get_data(self.current_train_epoch, 'train', 'train')
 
         # Create new dataset
-        self.train_dataset = SequenceEmbedDataset(
+        train_dataset = SequenceEmbedDataset(
             data=data,
             embeddings_df=embeddings_df,
             fasta_file=self.fasta_file,
             genotype_file=self.genotype_file,
             **self.train_dataset_kwargs,
         )
-        # Create new dataloader
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            **self.dataloader_kwargs,
-        )
-    
-    def teardown(self, stage: str):
-        if stage == "validate" or stage is None:
-            self.valid_dataset = None
-        elif stage == "fit":
-            self.train_dataset = None
-        gc.collect()
-    
-    def val_dataloader(self):
+        return train_dataset
+
+    def validation_dataset(self):
         data, embeddings_df = self.get_data(self.validation_epoch, 'val', 'train')
 
-        self.valid_dataset = SequenceEmbedDataset(
+        valid_dataset = SequenceEmbedDataset(
             data=data,
             embeddings_df=embeddings_df,
             fasta_file=self.fasta_file,
             genotype_file=self.genotype_file,
             **self.valid_dataset_kwargs,
         )
+        return valid_dataset
+
+    def train_dataloader(self):
+        self.current_train_epoch = next(self.train_epoch_cycler)
+        print('Loading new training dataloader for epoch:', self.current_train_epoch)
+        # Cycle to next file index
+
+        self.current_train_epoch = next(self.train_epoch_cycler)
+        train_dataset = self.train_dataset()
         # Create new dataloader
         return DataLoader(
-            self.valid_dataset,
+            train_dataset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            **self.dataloader_kwargs,
+        )
+    
+    def teardown(self, stage: str):
+        del self.adata
+        gc.collect()
+    
+    def val_dataloader(self):
+        valid_dataset = self.validation_dataset()
+        return DataLoader(
+            valid_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             **self.dataloader_kwargs,
