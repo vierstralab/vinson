@@ -138,6 +138,7 @@ class AbstractBaseSequenceModel(L.LightningModule):
         seqlen=1344,
         optimizer=None,
         lr_scheduler=None,
+        exp=False,
         optimizer_kwargs=dict(),
         lr_scheduler_kwargs=dict(),
     ):
@@ -158,6 +159,10 @@ class AbstractBaseSequenceModel(L.LightningModule):
         self.relu2 = torch.nn.ReLU()
 
         self.final = torch.nn.LazyLinear(1)
+
+        self.exp = exp
+        if exp:
+            self.relu_final = torch.nn.ReLU()
 
         # Optimizer setup
         self.optimizer = optimizer or torch.optim.AdamW
@@ -185,7 +190,10 @@ class AbstractBaseSequenceModel(L.LightningModule):
         return x
 
     def forward_final(self, x):
-        return self.final(x)
+        x = self.final(x)
+        if self.exp:
+            x = self.relu_final(x)
+        return x
 
     def on_validation_epoch_end(self):
         self.log_dict(self.valid_metrics.compute(), sync_dist=True)
@@ -218,7 +226,6 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         self,
         trunk_model,
         seqlen=1344,
-        use_exp_transform=False,
         regression=False,
         optimizer=None,
         lr_scheduler=None,
@@ -234,7 +241,6 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
             lr_scheduler_kwargs,
         )
         self.regression = regression
-        self.exp = use_exp_transform
 
         self.loss = (
             PoissonNLL(reduction="none")
@@ -275,7 +281,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         x = self.forward_fc(features)
         
         if self.exp:
-            x = torch.log(x) # model outputs are positives >0, return log for compatibility
+            x = torch.log(x + torch.tensor(1e-6, device=self.device)) # model outputs are positives >0, return log for compatibility
         else:
             x = self.forward_final(x) # model outputs are logits -infinity to +infinity
 
@@ -403,7 +409,7 @@ class EmbedModel(BaseSequenceModel):
         x = self.forward_fc(x)
         
         if self.exp:
-            x = torch.log(x) # model outputs are positives >0, return log for compatibility
+            x = torch.log(x + torch.tensor(1e-6, device=self.device)) # model outputs are positives >0, return log for compatibility
         else:
             x = self.forward_final(x) # model outputs are logits -infinity to +infinity
 
