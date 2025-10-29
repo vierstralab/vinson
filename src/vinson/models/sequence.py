@@ -284,8 +284,8 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         
         if self.exp:
             x = torch.log(x + torch.tensor(1e-6, device=self.device)) # model outputs are positives >0, return log for compatibility
-        else:
-            x = self.forward_final(x) # model outputs are logits -infinity to +infinity
+
+        x = self.forward_final(x) # model outputs are logits -infinity to +infinity
 
         return x
 
@@ -403,19 +403,7 @@ class EmbedModel(BaseSequenceModel):
             torch.zeros((2, 4, self.seqlen)),
             torch.zeros((2, self.embedding.n_inputs)),
         )
-    
-    def forward(self, seq, embed):
-        x = self.embedding(embed)
-        x = self.trunk(seq, x)
-
-        x = self.forward_fc(x)
-        
-        if self.exp:
-            x = torch.log(x + torch.tensor(1e-6, device=self.device)) # model outputs are positives >0, return log for compatibility
-        else:
-            x = self.forward_final(x) # model outputs are logits -infinity to +infinity
-
-        return x
+        return self
 
     def _forward_from_batch(self, batch):
         X_seq = batch["ohe_seq"]
