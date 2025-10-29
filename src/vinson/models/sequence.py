@@ -234,12 +234,12 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         lr_scheduler_kwargs=dict(),
     ):
         super().__init__(
-            trunk_model,
-            seqlen,
-            optimizer,
-            lr_scheduler,
-            optimizer_kwargs,
-            lr_scheduler_kwargs,
+            trunk_model=trunk_model,
+            seqlen=seqlen,
+            optimizer=optimizer,
+            lr_scheduler=lr_scheduler,
+            optimizer_kwargs=optimizer_kwargs,
+            lr_scheduler_kwargs=lr_scheduler_kwargs,
             use_exp_transform=use_exp_transform,
         )
         self.regression = regression
