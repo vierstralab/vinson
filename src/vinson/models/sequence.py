@@ -228,6 +228,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         seqlen=1344,
         regression=False,
         optimizer=None,
+        use_exp_transform=False,
         lr_scheduler=None,
         optimizer_kwargs=dict(),
         lr_scheduler_kwargs=dict(),
@@ -239,6 +240,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
             lr_scheduler,
             optimizer_kwargs,
             lr_scheduler_kwargs,
+            use_exp_transform=use_exp_transform,
         )
         self.regression = regression
 
