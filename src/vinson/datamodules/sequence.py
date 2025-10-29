@@ -63,6 +63,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         logger.info(f"Finished setup. Available epochs: {self.epoch_names}")
 
     def train_dataloader(self):
+        print('Loading new training dataloader for epoch:', self.current_train_epoch)
         # Cycle to next file index
         self.train_dataset = None
         gc.collect()
