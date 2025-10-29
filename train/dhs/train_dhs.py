@@ -209,8 +209,12 @@ if __name__ == "__main__":
     # Set global seed
     set_global_seed(args.seed)
 
+    if args.checkpoint == "last":
+        checkpoint = os.path.join(outdir, "checkpoints", "last.ckpt")
+    else:
+        checkpoint = args.checkpoint
     # Initialize model from config
-    model = model_from_config(config, checkpoint_path=args.checkpoint)
+    model = model_from_config(config, checkpoint_path=checkpoint)
     trainer_kwargs = {}
 
     if args.debug:
@@ -252,5 +256,5 @@ if __name__ == "__main__":
         model,
         trainer,
         datamodule,
-        checkpoint=args.checkpoint,
+        checkpoint=checkpoint,
     )

@@ -26,6 +26,7 @@ if __name__ == "__main__":
     parser.add_argument("--nodelist", type=str, default=None, help='Names of nodes to use. Formatted according to sbatch --nodelist option.')
     parser.add_argument("--config", type=str, default=None, help='Path to custom config file')
     parser.add_argument("--env_path", type=str, default="/home/sabramov/miniconda3/envs/pytorch", help='Path to conda environment')
+    parser.add_argument("--checkpoint", type=str, default=None, help='Path to existing checkpoint.')
     parser.add_argument('anndata', type=str, help='Path to anndata file')
     parser.add_argument('fasta', type=str, help='Path to fasta file')
     parser.add_argument('genotype', type=str, help='Path to genotype file')
@@ -54,6 +55,7 @@ if __name__ == "__main__":
         outdir=args.outdir,
         config=f"--config {args.config}" if args.config else "",
         debug="--debug" if args.debug else "",
+        checkpoint=f"--checkpoint {args.checkpoint}" if args.checkpoint else "",
         script_dir=SCRIPT_DIR.as_posix()
     )
 
