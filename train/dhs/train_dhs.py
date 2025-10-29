@@ -93,6 +93,7 @@ def init_multigpu_trainer(
         log_every_n_steps=100,
         gradient_clip_val=1.0,
         reload_dataloaders_every_n_epochs=1,
+        num_sanity_val_steps=0,
         **trainer_kwargs,
        # precision='16-mixed',
     )

@@ -100,6 +100,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
         )
     
     def teardown(self, stage: str):
+        print("Teardown datamodule and free memory")
+        print(stage)
         del self.adata
         gc.collect()
     
@@ -131,7 +133,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
         ]
 
         data, embeddings_df = extract_data_from_anndata(adata, suffix)
-
         return data, embeddings_df
 
     # def iterate_train_dataset(self):
