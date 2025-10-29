@@ -8,7 +8,7 @@ import pandas as pd
 from torch.utils.data import DataLoader
 from vinson.utils.run import model_from_config as load_vinson_model
 from vinson.utils.run import read_configs
-from vinson.utils.run import dataset_from_h5_and_config
+from vinson.utils.run import dataset_from_h5
 
 from genome_tools.data.anndata import read_zarr_backed
 
@@ -93,7 +93,7 @@ def main():
         adata.obsm['motif_embeddings'] = motif_embedding.loc[adata.obs_names]
 
 
-    dataset = dataset_from_h5_and_config(
+    dataset = dataset_from_h5(
         h5_file=args.h5_data,
         ref_adata=adata,
         fasta_file=args.fasta_file,

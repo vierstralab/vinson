@@ -82,7 +82,7 @@ def model_from_config(config, checkpoint_path=None):
     return model
 
 ############
-def dataset_from_h5_and_config(
+def dataset_from_h5(
     h5_file: str,
     ref_adata: ad.AnnData,
     fasta_file: str,
