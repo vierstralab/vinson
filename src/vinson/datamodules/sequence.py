@@ -91,12 +91,9 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.current_train_epoch = next(self.train_epoch_cycler)
         print('Loading new training dataloader for epoch:', self.current_train_epoch)
         # Cycle to next file index
-
-        self.current_train_epoch = next(self.train_epoch_cycler)
-        train_dataset = self.train_dataset()
         # Create new dataloader
         return DataLoader(
-            train_dataset,
+            self.train_dataset(),
             batch_size=self.batch_size,
             shuffle=True,
             **self.dataloader_kwargs,
@@ -107,9 +104,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
         gc.collect()
     
     def val_dataloader(self):
-        valid_dataset = self.validation_dataset()
         return DataLoader(
-            valid_dataset,
+            self.validation_dataset(),
             batch_size=self.batch_size,
             shuffle=False,
             **self.dataloader_kwargs,
