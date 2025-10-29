@@ -15,7 +15,7 @@ export NCCL_SOCKET_FAMILY=AF_INET
 export MASTER_ADDR=127.0.0.1
 export NCCL_P2P_DISABLE=1
 
-srun python {script_dir}/dhs/train_dhs.py \
+python {script_dir}/dhs/train_dhs.py \
     --run_name {run_name} \
     --nodes {nodes} \
     --accelerator gpu \
