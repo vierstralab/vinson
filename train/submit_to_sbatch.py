@@ -64,7 +64,7 @@ if __name__ == "__main__":
         cfg['nodelist'] = args.preset
         if args.preset == 'hpcg05-a100':
             cfg['gpus_per_node'] = 8
-            cfg['cpus_per_task'] = 8
+            cfg['cpus_per_task'] = 12
         elif args.preset == 'hpcg04-heavy':
             cfg['gpus_per_node'] = 8
             cfg['cpus_per_task'] = 4
