@@ -130,7 +130,7 @@ class PoissonNLL(torch.nn.Module):
             log_input = torch.log(input + self.pseudocount)
             lam = input
 
-        # Poisson NLL centered at target (your formula)
+        # Poisson NLL centered at target
         nll = (lam - target) + torch.special.xlogy(target, target) - target * log_input
 
         if self.reduction == "sum":
