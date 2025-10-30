@@ -276,8 +276,8 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
     
     def forward_final(self, x):
         x = self.final(x)
-        if self.log_output:
-            x = torch.nn.ReLU()(x)
+        if not self.log_output:
+            x = torch.relu(x)
         return x
 
     def _forward_from_batch(self, batch):
