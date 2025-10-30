@@ -91,11 +91,29 @@ def negative_binomial_loss(
 
 class PoissonNLL(torch.nn.Module):
     """Relative Poisson negative log-likelihood with clipped exponential"""
-    def __init__(self, exp_clip=30.0, reduction="mean", dtype=torch.float32):
+    def __init__(self, exp_clip=30.0, pseudocount=1e-6, log_input=True, reduction="mean", dtype=torch.float32):
+        """
+        Parameters
+        ----------
+        exp_clip : float, optional
+            Clipping value for the exponential function to prevent overflow.
+            Only used if log_input is True.
+        pseudocount : float, optional
+            Small constant added to input when log_input is False to prevent log(0).
+            Only used if log_input is False.
+        log_input : bool, optional
+            If True, input is assumed to be in log space. If False, input is in normal space.
+        reduction : str, optional
+            Specifies the reduction to apply to the output: 'mean' or 'sum'
+        dtype : torch.dtype, optional
+            Data type for computations.
+        """
         super(PoissonNLL, self).__init__()
         self.c = float(exp_clip)
         self.reduction = reduction
         self.dtype = dtype
+        self.pseudocount = pseudocount
+        self.log_input = log_input
 
     def clipped_exp(self, x: torch.Tensor) -> torch.Tensor:
         c_t = torch.as_tensor(self.c, dtype=x.dtype, device=x.device)
@@ -104,9 +122,13 @@ class PoissonNLL(torch.nn.Module):
         exp_c = torch.exp(c_t)
         return exp_bounded + exp_c * rel  # e^x (x<=c), e^c(1+x-c) (x>c)
 
-    def forward(self, log_input, target):
-        # Predicted rate (clipped exp of log λ)
-        lam = self.clipped_exp(log_input)
+    def forward(self, input, target):
+        if self.log_input:
+            log_input = input
+            lam = self.clipped_exp(log_input)
+        else:
+            log_input = torch.log(input + self.pseudocount)
+            lam = input
 
         # Poisson NLL centered at target (your formula)
         nll = (lam - target) + torch.special.xlogy(target, target) - target * log_input
