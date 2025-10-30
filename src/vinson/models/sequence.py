@@ -217,7 +217,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         seqlen=1344,
         regression=False,
         optimizer=None,
-        use_exp_transform=False,
+        log_output=True,
         lr_scheduler=None,
         optimizer_kwargs=dict(),
         lr_scheduler_kwargs=dict(),
@@ -231,10 +231,10 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
             lr_scheduler_kwargs=lr_scheduler_kwargs,
         )
         self.regression = regression
-        self.use_exp_transform = use_exp_transform
+        self.log_output = log_output
 
         self.loss = (
-            PoissonNLL(log_input=not use_exp_transform, reduction="none")
+            PoissonNLL(log_input=log_output, reduction="none")
             if self.regression
             else BCEWithLogitsLoss(reduction="none")
         )
@@ -276,8 +276,8 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
     
     def forward_final(self, x):
         x = self.final(x)
-        if self.use_exp_transform:
-            x = torch.nn.ReLU(x)
+        if self.log_output:
+            x = torch.nn.ReLU()(x)
         return x
 
     def _forward_from_batch(self, batch):
@@ -286,14 +286,18 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         return y
 
     def _run_step_regression(self, y, read_depth, bg, density):
-        pseudocount = torch.tensor(1e-6, device=self.device)
-        
-        log_pred_counts = torch.logaddexp(
-            y - torch.tensor(1e6, device=self.device).log() + torch.log(read_depth), torch.log(bg + pseudocount)
-        )
-        target_counts = (density / 1e6 * read_depth) + pseudocount
+        million = torch.tensor(1e6, device=self.device)
 
-        return log_pred_counts, target_counts # y_hat, y
+        if self.log_output:
+            input = torch.logaddexp(
+                y - million.log() + torch.log(read_depth), torch.log(bg)
+            )
+        else:
+            input = y / million * read_depth + bg
+
+        target_counts = torch.clip(density / million * read_depth, bg, None)
+
+        return input, target_counts # y_hat, y
 
     def _run_step_classification(self, y, indicator):
         return y, indicator.float()  # y_hat, y
