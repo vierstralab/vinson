@@ -1,6 +1,6 @@
 model_type: regression
 model_kwargs:
-  use_exp_transform: false
+  log_output: true
 train_augmentation_kwargs:
   reverse_complement: true
   jitter: 5

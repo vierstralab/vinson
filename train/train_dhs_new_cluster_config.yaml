@@ -1,6 +1,6 @@
 model_type: regression
 model_kwargs:
-  use_exp_transform: true
+  log_output: false
 hparams:
   batch_size: 32
 data_params:
