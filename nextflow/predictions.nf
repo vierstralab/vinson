@@ -86,3 +86,10 @@ workflow {
     annotate_with_predictions()
     
 }
+
+workflow visualize {
+    Channel.fromPath(params.samples_file)
+        | splitCsv(header:true, sep:'\t')
+        | map(row -> tuple(row.prefix, file(row.dhs_dataset), file(row.model_config), file("${params.outdir}/predictions/${row.prefix}/${row.prefix}.npy")))
+        | visualize_predictions
+}
