@@ -10,6 +10,7 @@ from torchmetrics.classification import (
     BinaryAUROC,
 )
 from torchmetrics.regression import PearsonCorrCoef
+from torch.nn import BCEWithLogitsLoss
 
 from vinson.loss import (
     PoissonNLL,
@@ -130,7 +131,89 @@ class BassetTrunkEmbed(BassetTrunk):
         return x
 
 
-class BaseSequenceModel(L.LightningModule):
+class AbstractBaseSequenceModel(L.LightningModule):
+    def __init__(
+        self,
+        trunk_model,
+        seqlen=1344,
+        optimizer=None,
+        lr_scheduler=None,
+        optimizer_kwargs=dict(),
+        lr_scheduler_kwargs=dict(),
+    ):
+        super().__init__()
+
+        self.trunk = trunk_model
+        self.seqlen = seqlen
+
+        # Common architecture
+        self.fc1 = torch.nn.LazyLinear(1024)
+        self.bn1 = torch.nn.BatchNorm1d(1024, momentum=0.1)
+        self.dropout1 = torch.nn.Dropout(0.3)
+        self.relu1 = torch.nn.ReLU()
+
+        self.fc2 = torch.nn.LazyLinear(1024)
+        self.bn2 = torch.nn.BatchNorm1d(1024, momentum=0.1)
+        self.dropout2 = torch.nn.Dropout(0.3)
+        self.relu2 = torch.nn.ReLU()
+
+        self.final = torch.nn.LazyLinear(1)
+
+        # Optimizer setup
+        self.optimizer = optimizer or torch.optim.AdamW
+        self.optimizer_kwargs = optimizer_kwargs
+        self.lr_scheduler = lr_scheduler
+        self.lr_scheduler_kwargs = lr_scheduler_kwargs
+
+        self.train_metrics = MetricCollection({}, prefix="train_")
+        self.valid_metrics = MetricCollection({}, prefix="val_")
+
+    def init_metrics(self):
+        raise NotImplementedError("Subclasses of AbstractBaseSequenceModel must implement init_metrics method.")
+
+    def forward_fc(self, x):
+        x = self.fc1(x)
+        x = self.bn1(x)
+        x = self.dropout1(x)
+        x = self.relu1(x)
+
+        x = self.fc2(x)
+        x = self.bn2(x)
+        x = self.dropout2(x)
+        x = self.relu2(x)
+
+        return x
+
+    def forward_final(self, x):
+        return self.final(x)
+
+    def on_validation_epoch_end(self):
+        self.log_dict(self.valid_metrics.compute(), sync_dist=True)
+        self.valid_metrics.reset()
+
+    def configure_optimizers(self):
+        """ """
+
+        optimizer = self.optimizer(self.parameters(), **self.optimizer_kwargs)
+
+        if self.lr_scheduler is None:
+            return optimizer
+
+        scheduler = self.lr_scheduler(optimizer, **self.lr_scheduler_kwargs)
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_loss",
+                "interval": "step",
+                "frequency": 1,
+                "name": "lr",
+            },
+        }
+
+
+class BaseSequenceModel(AbstractBaseSequenceModel):
     def __init__(
         self,
         trunk_model,
@@ -141,42 +224,24 @@ class BaseSequenceModel(L.LightningModule):
         optimizer_kwargs=dict(),
         lr_scheduler_kwargs=dict(),
     ):
-        super(BaseSequenceModel, self).__init__()
-
-        self.trunk = trunk_model
-        self.seqlen = seqlen
+        super().__init__(
+            trunk_model,
+            seqlen,
+            optimizer,
+            lr_scheduler,
+            optimizer_kwargs,
+            lr_scheduler_kwargs,
+        )
         self.regression = regression
 
-        # Fully-connected layers
-        self.fc1 = torch.nn.LazyLinear(out_features=1024)
-        self.bn1 = torch.nn.BatchNorm1d(num_features=1024, momentum=0.1)
-        self.dropout1 = torch.nn.Dropout(p=0.3)
-        self.relu1 = torch.nn.ReLU()
-
-        self.fc2 = torch.nn.LazyLinear(out_features=1024)
-        self.bn2 = torch.nn.BatchNorm1d(num_features=1024, momentum=0.1)
-        self.dropout2 = torch.nn.Dropout(p=0.3)
-        self.relu2 = torch.nn.ReLU()
-
-        self.final = torch.nn.LazyLinear(out_features=1)
-
-        # Optimizer
-        self.optimizer = optimizer if optimizer is not None else torch.optim.AdamW
-        self.optimizer_kwargs = optimizer_kwargs
-        # LR scheduler
-        self.lr_scheduler = lr_scheduler
-        self.lr_scheduler_kwargs = lr_scheduler_kwargs
-
-        # Loss
         self.loss = (
             PoissonNLL(reduction="none")
             if self.regression
-            else torch.nn.BCEWithLogitsLoss(reduction="none")
-            #torch.nn.BCELossWithLogits(reduction="none")
+            else BCEWithLogitsLoss(reduction="none")
         )
-
-        # Init metrics
+        
         self.init_metrics()
+
 
     def init_metrics(self):
         if self.regression:
@@ -202,23 +267,6 @@ class BaseSequenceModel(L.LightningModule):
         self(torch.zeros((2, 4, self.seqlen)))
         return self
 
-    def forward_fc(self, x):
-        x = self.fc1(x)
-        x = self.bn1(x)
-        x = self.dropout1(x)
-        x = self.relu1(x)
-
-        x = self.fc2(x)
-        x = self.bn2(x)
-        x = self.dropout2(x)
-        x = self.relu2(x)
-
-        return x
-
-    def forward_final(self, x):
-        x = self.final(x)
-        return x
-
     def forward(self, seq, exp=False):
         features = self.trunk(seq)
 
@@ -230,37 +278,56 @@ class BaseSequenceModel(L.LightningModule):
 
         return x
 
-    def training_step(self, batch, batch_idx):
-        X_seq, indicator, density, bg, read_depth, weight = (
-            batch["ohe_seq"],
-            batch["indicator"],
-            batch["density"],
-            batch["bg"],
-            batch["read_depth"],
-            batch["weight"],
-        )
-
+    def _forward_from_batch(self, batch):
+        X_seq = batch["ohe_seq"]
         y = self(X_seq).squeeze()
+        return y
 
+    def _run_step_regression(self, y, read_depth, bg, density):
+        pseudocount = torch.tensor(1e-6, device=self.device)
+        
+        log_pred_counts = torch.logaddexp(
+            y - torch.tensor(1e6, device=self.device).log() + torch.log(read_depth), torch.log(bg + pseudocount)
+        )
+        target_counts = (density / 1e6 * read_depth) + pseudocount
+
+        return log_pred_counts, target_counts # y_hat, y
+
+    def _run_step_classification(self, y, indicator):
+        return y, indicator.float()  # y_hat, y
+
+    def _run_step(self, batch):
+        """
+        Internal step function to parse batch and run forward + step
+
+        Returns:
+        y: model predictions
+        target: ground truth values
+        """
+        weight = batch["weight"]
+
+        y = self._forward_from_batch(batch)
         if self.regression:
-            # Transform normalized density to counts
-            # The model ouputs the log counts
-
-            # pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
-            pseudocount = torch.tensor(1e-6, device=self.device)
-            
-            log_pred_counts = torch.logaddexp(
-                y - torch.tensor(1e6, device=self.device).log() + torch.log(read_depth), torch.log(bg + pseudocount)
-            )
-            target_counts = (density / 1e6 * read_depth) + pseudocount
-
-            loss = self.loss(log_pred_counts, target_counts)
-
+            return self._run_step_regression(
+                y,
+                read_depth=batch["read_depth"],
+                bg=batch["bg"],
+                density=batch["density"]
+            ), weight
         else:
-            loss = self.loss(y, indicator.float())
+            return self._run_step_classification(y, batch["class"] == 1), weight
 
+    def step(self, batch, batch_idx):
+        (y_hat, y), weight = self._run_step(batch)
+
+        loss = self.loss(y_hat, y)
         loss *= weight
         loss = loss.mean()
+
+        return loss, y_hat, y
+
+    def training_step(self, batch, batch_idx):
+        loss, *_ = self.step(batch, batch_idx)
 
         self.log(
             "loss", loss, on_step=True, on_epoch=False, sync_dist=True, prog_bar=True
@@ -269,43 +336,19 @@ class BaseSequenceModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        X_seq, indicator, density, bg, read_depth, weight = (
-            batch["ohe_seq"],
-            batch["indicator"],
-            batch["density"],
-            batch["bg"],
-            batch["read_depth"],
-            batch["weight"],
-        )
-
-        y = self(X_seq).squeeze()
+        loss, y_hat, y = self.step(batch, batch_idx)
 
         if self.regression:
-            # Transform normalized density to counts
-            # The model ouputs the log counts
-
-            # pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
-            pseudocount = torch.tensor(1e-6, device=self.device)
-
-            log_pred_counts = torch.logaddexp(
-                y - torch.tensor(1e6, device=self.device).log() + torch.log(read_depth), torch.log(bg + pseudocount)
-            )
-            target_counts = (density / 1e6 * read_depth) + pseudocount
-
-            loss = self.loss(log_pred_counts, target_counts)
-
             self.valid_metrics.update(
-                torch.logaddexp(log_pred_counts, torch.tensor(1, device=self.device).log()),
-                (target_counts + 1).log(),
+                torch.logaddexp(
+                    y_hat, 
+                    torch.tensor(1, device=self.device).log()
+                ),
+                (y + 1).log(),
             )
         else:
-            loss = self.loss(y, indicator.float())
-
-            self.valid_metrics.update(torch.sigmoid(y), indicator.int())
-
-        loss *= weight
-        loss = loss.mean()
-
+            self.valid_metrics.update(torch.sigmoid(y_hat), y.int())
+        
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
         return loss
@@ -327,7 +370,7 @@ class BaseSequenceModel(L.LightningModule):
             "lr_scheduler": {
                 "scheduler": scheduler,
                 "monitor": "val_loss",
-                "interval": "step",
+                "interval": "epoch",
                 "frequency": 1,
                 "name": "lr",
             },
@@ -337,8 +380,8 @@ class BaseSequenceModel(L.LightningModule):
 class EmbedModel(BaseSequenceModel):
     """Sequence with embeddings model"""
 
-    def __init__(self, trunk, embed, *args, **kwargs):
-        super(EmbedModel, self).__init__(trunk, *args, **kwargs)
+    def __init__(self, trunk: BassetTrunkEmbed, embed: CellEmbedding, *args, **kwargs):
+        super().__init__(trunk, *args, **kwargs)
 
         self.embedding = embed
 
@@ -359,102 +402,27 @@ class EmbedModel(BaseSequenceModel):
 
         return x
 
-    def training_step(self, batch, batch_idx):
-        X_seq, X_embed, indicator, density, bg, read_depth, weight = (
-            batch["ohe_seq"],
-            batch["embed"],
-            batch["indicator"],
-            batch["density"],
-            batch["bg"],
-            batch["read_depth"],
-            batch["weight"],
-        )
-
+    def _forward_from_batch(self, batch):
+        X_seq = batch["ohe_seq"]
+        X_embed = batch["embed"]
         y = self(X_seq, X_embed).squeeze()
+        return y
 
-        if self.regression:
-            # Transform normalized density to counts
-            # The model ouputs the log counts
-
-            # pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
-            pseudocount = torch.tensor(1e-6, device=self.device)
-
-            log_pred_counts = torch.logaddexp(
-                y - torch.tensor(1e6, device=self.device).log() + torch.log(read_depth), torch.log(bg + pseudocount)
-            )
-            target_counts = (density / 1e6 * read_depth) + pseudocount
-
-            loss = self.loss(log_pred_counts, target_counts)
-
-        else:
-            loss = self.loss(y, indicator.float())
-
-        loss *= weight
-        loss = loss.mean()
-
-        self.log(
-            "loss", loss, on_step=True, on_epoch=False, sync_dist=True, prog_bar=True
-        )
-
-        return loss
+    def training_step(self, batch, batch_idx):
+        return super().training_step(batch, batch_idx)
 
     def validation_step(self, batch, batch_idx):
-        """ """
-        X_seq, X_embed, indicator, density, bg, read_depth, weight = (
-            batch["ohe_seq"],
-            batch["embed"],
-            batch["indicator"],
-            batch["density"],
-            batch["bg"],
-            batch["read_depth"],
-            batch["weight"],
-        )
+       return super().validation_step(batch, batch_idx)
 
-        y = self(X_seq, X_embed).squeeze()
 
-        if self.regression:
-            # Transform normalized density to counts
-            # The model ouputs the log counts
-
-            # pred_counts = (torch.exp(y) / 1e6 * read_depth) + bg
-            pseudocount = torch.tensor(1e-6, device=self.device)
-
-            log_pred_counts = torch.logaddexp(
-                y - torch.tensor(1e6, device=self.device).log() + torch.log(read_depth), torch.log(bg + pseudocount)
-            )
-            target_counts = (density / 1e6 * read_depth) + pseudocount
-
-            loss = self.loss(log_pred_counts, target_counts)
-
-            self.valid_metrics.update(
-                torch.logaddexp(log_pred_counts, torch.tensor(1, device=self.device).log()),
-                (target_counts + 1).log(),
-            )
-        else:
-            loss = self.loss(y, indicator.float())
-
-            self.valid_metrics.update(torch.sigmoid(y), indicator.int())
-
-        loss *= weight
-        loss = loss.mean()
-
-        self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-
-        return loss
-
-class _Sub(torch.nn.Module):
-	def __init__(self):
-		super(_Sub, self).__init__()
-
-	def forward(self, *args):
-		return torch.subtract(*args)
-
-class VariantEmbedModel(EmbedModel):
-    def __init__(self, *args, **kwargs):
-        super(VariantEmbedModel, self).__init__(*args, **kwargs)
-        self.sub = _Sub()
-
+class VariantEmbedModel(AbstractBaseSequenceModel):
+    def __init__(self, trunk, embed, *args, **kwargs):
+        super().__init__(trunk, *args, **kwargs)
+    
+        self.loss = binomial_mixture_normed_loss
+        self.embedding = embed
         self.save_hyperparameters()
+
 
     def init_metrics(self):
         self.train_metrics = MetricCollection(
@@ -478,32 +446,43 @@ class VariantEmbedModel(EmbedModel):
         ref_features = self.trunk(seq_ref, x)
         alt_features = self.trunk(seq_alt, x)
 
-        x = self.sub(ref_features, alt_features)
+        x = torch.subtract(ref_features, alt_features)
 
         x = self.forward_fc(x)
         x = self.forward_final(x)
-
         return x
+    
+    def _forward_from_batch(self, batch):
+        X_ref = batch["ohe_seq_ref"]
+        X_alt = batch["ohe_seq_alt"]
+        X_embed = batch["embed"]
+        y = self(X_ref, X_alt, X_embed).squeeze()
+        return y
+    
+    def step(self, batch, batch_idx):
+        y = self._forward_from_batch(batch)
 
-    def training_step(self, batch, batch_idx):
-        X_ref, X_alt, X_embed, ref_counts, total_counts, bad_score, weight = (
-            batch["ohe_seq_ref"],
-            batch["ohe_seq_alt"],
-            batch["embed"],
+        ref_counts, total_counts, bad_score = (
             batch["ref_counts"],
             batch["total_counts"],
             batch["bad_score"],
-            batch["weight"],
         )
 
-        y = self(X_ref, X_alt, X_embed).squeeze()
-
-        loss = binomial_mixture_normed_loss(
-            y, ref_counts, total_counts, bad_score, reduction="none"
+        loss = self.loss(
+            y, 
+            ref_counts=ref_counts,
+            total_counts=total_counts,
+            bad_score=bad_score,
+            reduction="none"
         )
 
-        loss *= weight
+        loss *= batch["weight"]
         loss = loss.mean()
+
+        return loss, y, (ref_counts, total_counts, bad_score)
+
+    def training_step(self, batch, batch_idx):
+        loss, *_ = self.step(batch, batch_idx)
 
         self.log(
             "loss", loss, on_step=True, on_epoch=False, sync_dist=True, prog_bar=True
@@ -512,55 +491,43 @@ class VariantEmbedModel(EmbedModel):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        (
-            X_ref,
-            X_alt,
-            X_embed,
-            ref_counts,
-            total_counts,
-            bad_score,
-            lfc,
-            weight,
-        ) = (
-            batch["ohe_seq_ref"],
-            batch["ohe_seq_alt"],
-            batch["embed"],
-            batch["ref_counts"],
-            batch["total_counts"],
-            batch["bad_score"],
-            batch["lfc"],
-            batch["weight"],
-        )
+        loss, y_hat, y = self.step(batch, batch_idx)
+        lfc = batch["lfc"]
 
-        y = self(X_ref, X_alt, X_embed).squeeze()
-
-        loss = binomial_mixture_normed_loss(
-            y, ref_counts, total_counts, bad_score, reduction="none"
-        )
-
-        loss *= weight
-        loss = loss.mean()
-
-        self.valid_metrics.update(y, lfc)
+        self.valid_metrics.update(y_hat, lfc)
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
         return loss
 
 
-class VariantEmbedModelWrapper(VariantEmbedModel):
+class VariantEmbedModelWrapper(L.LightningModule):
     """Wrapper class for VariantModel to perform only inference"""
 
-    def __init__(self, model):
-        super(VariantEmbedModelWrapper, self).__init__(model.trunk, model.embedding)
+    def __init__(self, model: "VariantEmbedModel"):
+        super().__init__()
+        self.model = model
 
-        self.__dict__.update(model.__dict__)
-
-        self.embedding_ref = copy.deepcopy(self.embedding)
-        self.embedding_alt = copy.deepcopy(self.embedding)
-
-        self.trunk_ref = copy.deepcopy(self.trunk)
-        self.trunk_alt = copy.deepcopy(self.trunk)
+        # Make independent ref/alt branches
+        self.embedding_ref = copy.deepcopy(model.embedding)
+        self.embedding_alt = copy.deepcopy(model.embedding)
+        self.trunk_ref = copy.deepcopy(model.trunk)
+        self.trunk_alt = copy.deepcopy(model.trunk)
+        for mod in [
+            self.trunk_ref, self.trunk_alt, 
+            self.embedding_ref, self.embedding_alt
+        ]:
+            mod.eval()
+            for p in mod.parameters():
+                p.requires_grad = False
+    
+    def __getattr__(self, name):
+        if name != "model":
+            try:
+                return getattr(self.model, name)
+            except AttributeError:
+                pass
+        raise AttributeError(f"{self.model} has no attribute {name}")
 
     def forward(self, seq_ref, seq_alt, embed):
         """ """
@@ -569,7 +536,7 @@ class VariantEmbedModelWrapper(VariantEmbedModel):
 
         x = torch.subtract(features_ref, features_alt)
 
-        x = self.forward_fc(x)
-        x = self.forward_final(x)
+        x = self.model.forward_fc(x)
+        x = self.model.forward_final(x)
 
         return x

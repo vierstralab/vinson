@@ -1,22 +1,25 @@
+import anndata as ad
 import seaborn as sns
-import scipy
-from matplotlib import rcParams
-import sys
-from tqdm import tqdm
-import h5py
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
+import argparse
+import scipy
+
+from genome_tools.data.anndata import read_zarr_backed
+
+from vinson.utils.data_formatting import extract_data_from_h5
+
+
+def get_palette_dict(categories):
+    pass
+
 def cm2inch(value):
     """Function to convert cm to inches"""
     return value/2.54
 
 def array2inch(*args):
     return tuple(cm2inch(x) for x in args)
-import argparse
-from genome_tools.data.anndata import read_zarr_backed
-rcParams["font.sans-serif"] = ["IBM Plex Sans"]
-import configparser
 
 
 def group_plot(g, column, type='box', order=None, ax=None, **kwargs):
@@ -65,118 +68,206 @@ def group_plot(g, column, type='box', order=None, ax=None, **kwargs):
     ax.set_xlim(-0.5, n - 0.5)
     return ax
 
-def df_from_h5(path):
-    with h5py.File(path, 'r') as f:
-        data = {}
-        for key in f.keys():
-            arr = f[key][:]
-            # Decode byte strings if needed
-            if arr.dtype.kind == 'S':
-                arr = arr.astype(str)
-            data[key] = arr
-        return pd.DataFrame(data)
 
-def main(prefix, dataset, predict_output, output_dir):
-    #read in dataset and np array of predictions
-    params = configparser.ConfigParser()
-    params.read("/home/mbrannon/ENCODE4_DHS_index/common/release_paths.ini")
+def plot_per_annotation_comparison(
+    per_dhs_and_annotation_metrics: pd.DataFrame,
+    pred_col: str,
+    target_col: str,
+    ylim: tuple,
+    annotation_data: pd.DataFrame,
+    zero_line_at: float = 0.0,
+):
+    annotation_data = annotation_data.set_index('name').sort_values('order')
+    order = annotation_data.index
+    palette = annotation_data['color'].to_dict()
+    n_total = per_dhs_and_annotation_metrics['extended_annotation'].nunique()
 
-    zarr_human_path = params['index']['human_anndata']
-    human_data = read_zarr_backed(zarr_human_path)
-    vinson_training_data = human_data[
-        human_data.obs.eval('pathological_state == "Normal" & SPOT3_score >= 0.1'),
-        human_data.var.eval('autosomal_dhs'),]
+    fig, axes = plt.subplots(2, 1, figsize=array2inch(12 / n_total * len(order), 4))
+    for i, column in enumerate([pred_col, target_col]):
+        ax = axes[i]
+        ax = group_plot(
+            per_dhs_and_annotation_metrics,
+            column,
+            type='bar',
+            order=order,
+            palette=palette,
+            ax=ax
+        )
+        ax.axhline(zero_line_at, color='grey', zorder=1e6, ls='--')
+        ax.set_ylim(*ylim)
+        if i == 0:
+            ax.set_xticks([])
+            ax.set_xlabel('')
+    return fig, axes
+
+
+def plot_density_correlation(
+    eval_dataset: pd.DataFrame,
+    output_prefix: str,
+    max_points: int = 20_000,
+    x_col: str = "bg_corrected_density",
+    y_col: str = "pred_total_density",
+    xlim: tuple = (0, 5),
+    ylim: tuple = (0, 5),
+):
+    """Plot hexbin correlation between predicted and observed densities."""
+    df = eval_dataset.dropna(subset=[x_col, y_col]).copy()
+    df = df[np.isfinite(df[x_col]) & np.isfinite(df[y_col])]
+
+    # Subsample for performance
+    if len(df) > max_points:
+        df = df.sample(n=max_points, random_state=42)
+
+    x = df[x_col]
+    y = df[y_col]
+
+    pearson = scipy.stats.pearsonr(x, y)
+
+    fig, ax = plt.subplots(figsize=array2inch(5, 5))
+    hb = ax.hexbin(x, y, bins="log", cmap="Blues")
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
+    ax.axline((0, 0), slope=1, color="r", ls="--", lw=0.8)
+
+    # Styling
+    ax.set_xlabel("Observed corrected density")
+    ax.set_ylabel("Predicted total density")
+    ax.text(
+        0.05, 0.9,
+        f"R = {pearson.statistic:.2f}",
+        transform=ax.transAxes,
+        ha="left", va="top", fontsize="small",
+    )
+    plt.colorbar(hb, ax=ax, label="log10(N)")
+    plt.savefig(f"{output_prefix}_corrected_density_correlation.pdf", transparent=True, bbox_inches="tight")
+    plt.close(fig)
+
     
-    dnase_nmf_config = configparser.ConfigParser()
-    dnase_nmf_config.read(params['embedding_nmf']['config_file'])
-    component_data = pd.read_table(dnase_nmf_config['NMF']['component_data'])
-
-    eval_dataset = df_from_h5(dataset)
-    eval_dataset['y_hat'] = np.load(predict_output)
     
-    #calcualte results
+def get_mock_annotation_data(anndata, annotation_column='extended_annotation'):
+    annotation_data = pd.DataFrame({
+        'name': anndata.obs[annotation_column].unique(),
+    })
+    annotation_data['short_name'] = annotation_data['name']
+    annotation_data['index'] = np.arange(len(annotation_data))
+    annotation_data['color'] = annotation_data['name'].map(get_palette_dict(annotation_data['name']))
+    return annotation_data
+
+
+def annotate_eval_dataset(eval_dataset: pd.DataFrame, adata: ad.AnnData) -> pd.DataFrame:
     eval_dataset['pred_counts'] = eval_dataset.eval('exp(y_hat) / 1e6 * read_depth + background')
     eval_dataset['target_counts'] = eval_dataset.eval('density / 1e6 * read_depth')
     eval_dataset['bg_density'] = eval_dataset.eval('background * 1e6 / read_depth')
     eval_dataset['bg_corrected_density'] = np.clip(eval_dataset.eval('density - bg_density'), 0, None)
     eval_dataset['pred_corrected_density'] = eval_dataset.eval('exp(y_hat)')
     eval_dataset['pred_total_density'] = eval_dataset.eval('exp(y_hat) + bg_density')
-    
-    #categorize
-    eval_dataset['extended_annotation'] = eval_dataset['sample_id'].map(vinson_training_data.obs['extended_annotation'].to_dict())
-    eval_dataset['core_annotation'] = eval_dataset['sample_id'].map(vinson_training_data.obs['core_annotation'].to_dict())
-    eval_dataset['system'] = eval_dataset['sample_id'].map(vinson_training_data.obs['system'].to_dict())
+    eval_dataset['extended_annotation'] = eval_dataset['sample_id'].map(adata.obs['extended_annotation'].to_dict())
+    eval_dataset['core_annotation'] = eval_dataset['sample_id'].map(adata.obs['core_annotation'].to_dict())
+    eval_dataset['system'] = eval_dataset['sample_id'].map(adata.obs['system'].to_dict())
+    return eval_dataset
 
-    #group by category
-    g = eval_dataset.groupby(['dhs_id', 'extended_annotation', 'core_annotation', 'system'])[[
-        'bg_corrected_density', 'y_hat', 'pred_corrected_density', 'density', 'pred_total_density',
+def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.DataFrame):
+    eval_dataset = annotate_eval_dataset(eval_dataset, adata)
+
+    # group by annotation
+    per_dhs_and_annotation_metrics = eval_dataset.groupby(
+        ['dhs_id', 'extended_annotation', 'core_annotation', 'system']
+    )[[
+        'bg_corrected_density', 'y_hat', 'pred_corrected_density', 
+        'density','pred_total_density',
     ]].mean().reset_index()
-    
+
+    pseudocount = 1e-2
+
+    per_dhs_and_annotation_metrics['y_hat_mean'] = per_dhs_and_annotation_metrics.groupby('dhs_id')['y_hat'].transform('mean')
+    per_dhs_and_annotation_metrics['y_hat_lfc'] = per_dhs_and_annotation_metrics.eval('y_hat - y_hat_mean')
+    # per_dhs_and_annotation_metrics['y_hat_delta'] = per_dhs_and_annotation_metrics.eval('exp(y_hat_lfc)')
+
+    # per_dhs_and_annotation_metrics['log_pred_corrected_density'] = np.log(per_dhs_and_annotation_metrics['pred_corrected_density'] + pseudocount)
+    # per_dhs_and_annotation_metrics['log_density'] = np.log(per_dhs_and_annotation_metrics['density'] + pseudocount)
+    # per_dhs_and_annotation_metrics['log_pred_total_density'] = np.log(per_dhs_and_annotation_metrics['pred_total_density'] + pseudocount)
+    # per_dhs_and_annotation_metrics['log_bg_corrected_density'] = np.log(per_dhs_and_annotation_metrics['bg_corrected_density'] + pseudocount)
+    # per_dhs_and_annotation_metrics['log_y_hat'] = np.log(per_dhs_and_annotation_metrics['y_hat'] + pseudocount)
+    per_dhs_and_annotation_metrics['median_log_dens_lfc'] = per_dhs_and_annotation_metrics.groupby('extended_annotation')['y_hat_lfc'].transform('median')
+
     #calculate metrics by group
-    g['log_dens'] = np.log(g['bg_corrected_density'] + 1e-1)
-    g['log_dens_mean'] = g.groupby('dhs_id')['log_dens'].transform('mean')
-    g['log_dens_lfc'] = g.eval('log_dens - log_dens_mean') # Just another way to plot it, instead of just density
-    g['dens_delta'] = g.eval('exp(log_dens_lfc)')
+    per_dhs_and_annotation_metrics['log_dens'] = np.log(per_dhs_and_annotation_metrics['bg_corrected_density'] + pseudocount)
+    per_dhs_and_annotation_metrics['log_dens_mean'] = per_dhs_and_annotation_metrics.groupby('dhs_id')['log_dens'].transform('mean')
+    per_dhs_and_annotation_metrics['log_dens_lfc'] = per_dhs_and_annotation_metrics.eval('log_dens - log_dens_mean') # Just another way to plot it, instead of just density
+    # g['dens_delta'] = g.eval('exp(log_dens_lfc)')
 
-    g['y_hat_mean'] = g.groupby('dhs_id')['y_hat'].transform('mean')
-    g['y_hat_lfc'] = g.eval('y_hat - y_hat_mean')
-    g['y_hat_delta'] = g.eval('exp(y_hat_lfc)')
+    # g['y_hat_mean'] = g.groupby('dhs_id')['y_hat'].transform('mean')
+    # g['y_hat_lfc'] = g.eval('y_hat - y_hat_mean')
+    # g['y_hat_delta'] = g.eval('exp(y_hat_lfc)')
 
-    gb = g.groupby("extended_annotation").agg(
-        log_dens_lfc=('log_dens_lfc', 'median'),
-        core_annotation=('core_annotation', 'first'),
-        system=('system', 'first'),
-    ).sort_values(
-        ['system', 'core_annotation', 'log_dens_lfc']
+    # per_annotation_metrics = per_dhs_and_annotation_metrics.groupby(["core_annotation", "extended_annotation"]).agg(
+    #     log_dens_lfc=('log_dens_lfc', 'median'),
+    #     core_annotation=('core_annotation', 'first'),
+    #     system=('system', 'first'),
+    # ).sort_values(
+    #     ['system', 'log_dens_lfc']
+    # )
+    # per_annotation_metrics = annotation_data.set_index('name').join(
+    #     per_annotation_metrics
+    # ).sort_values('index')
+
+    fig, axes = plot_per_annotation_comparison(
+        per_dhs_and_annotation_metrics,
+        pred_col='y_hat_lfc',
+        target_col='log_dens_lfc',
+        ylim=(-2, 2),
+        annotation_data=annotation_data
     )
-    ## change later
-    gb['short_name'] = gb.index
+    axes[0].set_ylabel('Predicted LFC')
+    axes[0].set_title(output_prefix)
+    axes[1].set_ylabel('Observed LFC')
+    plt.savefig(f'{output_prefix}_lfc.pdf', transparent=True, bbox_inches='tight')
+    plt.close(fig)
 
-    gb['order'] = gb['short_name'].map(
-    component_data.reset_index(names=['order']).set_index('short_name')['order'].to_dict()
+    fig, axes = plot_per_annotation_comparison(
+        per_dhs_and_annotation_metrics,
+        pred_col='pred_corrected_density',
+        target_col='bg_corrected_density',
+        ylim=(0, 2),
+        annotation_data=annotation_data
     )
-    gb['color'] = gb['short_name'].map(
-        component_data.set_index('short_name')['color'].to_dict()
-    )
-    gb = gb.sort_values('order').dropna()
-    order = gb.index
-    palette = gb['color'].to_dict()
+    axes[0].set_ylabel('Predicted corrected density')
+    axes[0].set_title(output_prefix)
+    axes[1].set_ylabel('Observed corrected density')
+    plt.savefig(f'{output_prefix}_corrected_density.pdf', transparent=True, bbox_inches='tight')
+    plt.close(fig)
+    
+    plot_density_correlation(eval_dataset, output_prefix)
 
-    n_total = g['extended_annotation'].nunique()
-    n = n_total if order is None else len(order)
-
-    fig, axes = plt.subplots(2, 1, figsize=array2inch(12 / n_total * n, 4))
-    for i, col in enumerate(['y_hat_lfc', 'log_dens_lfc']):
-        ax = axes[i]
-        ax = group_plot(g, col, type='bar', order=order, palette=palette, ax=ax)
-        ax.set_ylabel(col)
-        ax.axhline(0, color='grey', zorder=1e6, ls='--')
-        ax.set_ylim(-2, 2)
-        if i == 0:
-            ax.set_xticks([])
-            ax.set_xlabel('')
-    plt.savefig(f'{output_dir}/{prefix}_lfc.pdf', transparent=True, bbox_inches='tight')
-    plt.show()
-
-    fig, axes = plt.subplots(2, 1, figsize=array2inch(12 / n_total * n, 4))
-    for i, col in enumerate(['pred_corrected_density', 'bg_corrected_density']):
-        ax = axes[i]
-        ax = group_plot(g, col, type='bar', order=order, palette=palette, ax=ax)
-        ax.set_ylabel(col)
-        ax.axhline(0, color='grey', zorder=1e6, ls='--')
-        ax.set_ylim(0, 2)
-        if i == 0:
-            ax.set_xticks([])
-            ax.set_xlabel('')
-    plt.savefig(f'{output_dir}/{prefix}_corrected_density.pdf', transparent=True, bbox_inches='tight')
 
 if __name__ == '__main__':
     print('Visualizing prediction results')
     parser = argparse.ArgumentParser(description="Plot predictions")
     print('Adding options to parser')
-    parser.add_argument("--prefix", type=str, help='sample indicator name')
-    parser.add_argument('--dataset', help='h5 dataset prediction input')
-    parser.add_argument('--predict-output', help='predictions output from predict process, numpy')
-    parser.add_argument('--output-dir', help='Path to save visualizations', default='./')
+    parser.add_argument("--prefix", type=str, help='Unique prefix for the model')
+    parser.add_argument('--h5_data', help='h5 dataset prediction input')
+    parser.add_argument('--npy_prediction', help='Path to model predictions (.npy file)')
+    parser.add_argument('--annotation_data', help='Path to annotation data file (color and order for annotations)', default=None)
+    parser.add_argument('--adata', help='Path to AnnData file with sample annotations', required=True)
+    parser.add_argument('--output', help='Path to save visualizations', default='./')
     args = parser.parse_args()
-    main(args.prefix, args.dataset, args.predict_output, args.output_dir)
+
+    adata = read_zarr_backed(args.adata)
+
+    output = f'{args.output}/{args.prefix}'
+    if args.annotation_data is not None:
+        annotation_plot_data = pd.read_table(args.annotation_data)
+    else:
+        annotation_plot_data = get_mock_annotation_data(adata)
+
+    eval_dataset, embeds = extract_data_from_h5(args.h5_data, adata) # Maybe embeds are not needed here
+    eval_dataset['y_hat'] = np.load(args.npy_prediction)
+    eval_dataset = pd.DataFrame(eval_dataset)
+    
+    
+    main(
+        adata=adata,
+        eval_dataset=eval_dataset,
+        output_prefix=output,
+        annotation_data=annotation_plot_data
+    )

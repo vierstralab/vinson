@@ -1,10 +1,11 @@
 process predict {
     conda "${params.conda_path}"
-    publishDir "${params.outdir}/predictions"
+    publishDir "${params.outdir}/predictions/${prefix}", pattern: "${name}"
     label "gpu"
+    tag "${prefix}"
 
     input:
-        tuple val(prefix), path(embeddings_file), path(dhs_dataset), path(checkpoint), val(model_type)
+        tuple val(prefix), path(dhs_dataset), path(checkpoint), path(model_config), val(model_type)
     
     output:
         tuple val(prefix), path(dhs_dataset), path(name)
@@ -14,10 +15,10 @@ process predict {
     """
     python3 $moduleDir/bin/predict_DHS_model.py \
         ${dhs_dataset} \
-        --embeddings_file ${embeddings_file} \
-        --checkpoint ${checkpoint} \
-        --fasta_file ${params.fasta_file} \
-        --sample_genotype_file ${params.sample_genotype_file} \
+        ${params.zarr_anndata} \
+        ${params.fasta_file} \
+        ${checkpoint} \
+        ${model_config} \
         --genotype_file ${params.genotype_file} \
         --num_workers ${task.cpus} \
         --model_type ${model_type} \
@@ -32,22 +33,22 @@ process annotate_with_predictions {
     label "ldsc"
 
     output:
-        path predict_np
+        path name
 
     script:
-    predict_np = "${file(params.samples_file).baseName}.annotated_with_predictions.tsv"
+    name = "${file(params.samples_file).baseName}.annotated_with_predictions.tsv"
     """
     python3 $moduleDir/bin/annotate_meta.py \
         ${params.samples_file} \
         ${params.outdir}/predictions \
-        ${predict_np}
+        ${name}
     """
 }
 
 process visualize_predictions {
     tag "${prefix}"
     conda "${params.conda_path}"
-    publishDir "${params.outdir}/nmf/${prefix}"
+    publishDir "${params.outdir}/predictions/${prefix}"
     label "med_mem"
 
     input:
@@ -60,17 +61,18 @@ process visualize_predictions {
     """
     python3 $moduleDir/bin/plot_precomputed_data.py \
         --prefix ${prefix} \
-        --dataset ${dhs_dataset} \
-        --predict-output ${predict_np} \
-        --output-dir ${params.outdir}
-        
+        --h5_data ${dhs_dataset} \
+        --npy_prediction ${predict_np} \
+        --output ./ \
+        --adata ${params.zarr_anndata} \
+        --annotation_data ${params.annotation_data}
     """
 }
 
 workflow {
     Channel.fromPath(params.samples_file)
         | splitCsv(header:true, sep:'\t')
-        | map(row -> tuple(row.prefix, file(row.embeddings_file), file(row.dhs_dataset), file(row.checkpoint), row.model_type))
+        | map(row -> tuple(row.prefix, file(row.dhs_dataset), file(row.checkpoint), file(row.model_config), row.model_type))
         | predict
         | visualize_predictions
     

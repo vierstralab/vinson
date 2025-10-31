@@ -5,7 +5,7 @@ import itertools
 from collections.abc import Iterable
 from tqdm import tqdm
 
-from .utils import force_strict_ohe
+from vinson.utils.sequence_utils import force_strict_ohe
 
 from tangermeme.ersatz import dinucleotide_shuffle as dinuc_shuffle
 from tangermeme.predict import predict as tangermeme_predict
