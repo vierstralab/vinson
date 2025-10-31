@@ -137,12 +137,14 @@ def annotate_eval_dataset(eval_dataset: pd.DataFrame, adata: ad.AnnData) -> pd.D
             - 'core_annotation'
             - 'system'
     """
+    eval_dataset['bg_density'] = eval_dataset.eval('background * 1e6 / read_depth')
+    eval_dataset['target_counts'] = eval_dataset.eval('density / 1e6 * read_depth')
+    eval_dataset['bg_corrected_density'] = np.clip(eval_dataset.eval('density - bg_density'), 0, None)
+
     eval_dataset['pred_counts'] = eval_dataset.eval('pred_corrected_density / 1e6 * read_depth + background')
     eval_dataset['pred_total_density'] = eval_dataset.eval('pred_corrected_density + bg_density')
 
-    eval_dataset['target_counts'] = eval_dataset.eval('density / 1e6 * read_depth')
-    eval_dataset['bg_density'] = eval_dataset.eval('background * 1e6 / read_depth')
-    eval_dataset['bg_corrected_density'] = np.clip(eval_dataset.eval('density - bg_density'), 0, None)
+
 
     eval_dataset['extended_annotation'] = eval_dataset['sample_id'].map(adata.obs['extended_annotation'].to_dict())
     eval_dataset['core_annotation'] = eval_dataset['sample_id'].map(adata.obs['core_annotation'].to_dict())
