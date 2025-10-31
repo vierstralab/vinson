@@ -247,7 +247,7 @@ if __name__ == '__main__':
 
     if not log_output:
         eval_dataset['pred_corrected_density'] = np.load(args.npy_prediction)
-        eval_dataset['y_hat'] = np.log(eval_dataset['y_hat'] + 1e-6)
+        eval_dataset['y_hat'] = np.log(eval_dataset['pred_corrected_density'] + 1e-6)
     else:
         eval_dataset['y_hat'] = np.load(args.npy_prediction)
         eval_dataset['pred_corrected_density'] = np.exp(eval_dataset['y_hat'])
