@@ -105,7 +105,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(
             self.validation_dataset(),
-            batch_size=self.batch_size,
             shuffle=False,
             **self.dataloader_kwargs,
         )
