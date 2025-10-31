@@ -24,6 +24,7 @@ process predict {
         --genotype_file ${params.genotype_file} \
         --num_workers ${task.cpus} \
         --model_type ${model_type} \
+        --batch_size ${params.prediction_batch_size} \
         --output ${name} 
     """
 }

@@ -132,6 +132,7 @@ class BassetTrunkEmbed(BassetTrunk):
 
 
 class AbstractBaseSequenceModel(L.LightningModule):
+class AbstractBaseSequenceModel(L.LightningModule):
     def __init__(
         self,
         trunk_model,
@@ -142,10 +143,15 @@ class AbstractBaseSequenceModel(L.LightningModule):
         lr_scheduler_kwargs=dict(),
     ):
         super().__init__()
+        super().__init__()
 
         self.trunk = trunk_model
         self.seqlen = seqlen
 
+        # Common architecture
+        self.fc1 = torch.nn.LazyLinear(1024)
+        self.bn1 = torch.nn.BatchNorm1d(1024, momentum=0.1)
+        self.dropout1 = torch.nn.Dropout(0.3)
         # Common architecture
         self.fc1 = torch.nn.LazyLinear(1024)
         self.bn1 = torch.nn.BatchNorm1d(1024, momentum=0.1)
@@ -155,10 +161,16 @@ class AbstractBaseSequenceModel(L.LightningModule):
         self.fc2 = torch.nn.LazyLinear(1024)
         self.bn2 = torch.nn.BatchNorm1d(1024, momentum=0.1)
         self.dropout2 = torch.nn.Dropout(0.3)
+        self.fc2 = torch.nn.LazyLinear(1024)
+        self.bn2 = torch.nn.BatchNorm1d(1024, momentum=0.1)
+        self.dropout2 = torch.nn.Dropout(0.3)
         self.relu2 = torch.nn.ReLU()
 
         self.final = torch.nn.LazyLinear(1)
+        self.final = torch.nn.LazyLinear(1)
 
+        # Optimizer setup
+        self.optimizer = optimizer or torch.optim.AdamW
         # Optimizer setup
         self.optimizer = optimizer or torch.optim.AdamW
         self.optimizer_kwargs = optimizer_kwargs
@@ -237,9 +249,12 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
             PoissonNLL(log_input=log_output, reduction="none")
             if self.regression
             else BCEWithLogitsLoss(reduction="none")
+            else BCEWithLogitsLoss(reduction="none")
         )
         
+        
         self.init_metrics()
+
 
 
     def init_metrics(self):
@@ -280,6 +295,8 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
             x = torch.relu(x)
         return x
 
+    def _forward_from_batch(self, batch):
+        X_seq = batch["ohe_seq"]
     def _forward_from_batch(self, batch):
         X_seq = batch["ohe_seq"]
         y = self(X_seq).squeeze()
@@ -325,10 +342,20 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 
     def step(self, batch, batch_idx):
         (y_hat, y), weight = self._run_step(batch)
+            return self._run_step_classification(y, batch["class"] == 1), weight
 
+    def step(self, batch, batch_idx):
+        (y_hat, y), weight = self._run_step(batch)
+
+        loss = self.loss(y_hat, y)
         loss = self.loss(y_hat, y)
         loss *= weight
         loss = loss.mean()
+
+        return loss, y_hat, y
+
+    def training_step(self, batch, batch_idx):
+        loss, *_ = self.step(batch, batch_idx)
 
         return loss, y_hat, y
 
@@ -343,6 +370,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 
     def validation_step(self, batch, batch_idx):
         loss, y_hat, y = self.step(batch, batch_idx)
+        loss, y_hat, y = self.step(batch, batch_idx)
 
         if self.regression:
             self.valid_metrics.update(
@@ -351,8 +379,15 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
                     torch.tensor(1, device=self.device).log()
                 ),
                 (y + 1).log(),
+                torch.logaddexp(
+                    y_hat, 
+                    torch.tensor(1, device=self.device).log()
+                ),
+                (y + 1).log(),
             )
         else:
+            self.valid_metrics.update(torch.sigmoid(y_hat), y.int())
+        
             self.valid_metrics.update(torch.sigmoid(y_hat), y.int())
         
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
@@ -377,6 +412,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
                 "scheduler": scheduler,
                 "monitor": "val_loss",
                 "interval": "epoch",
+                "interval": "epoch",
                 "frequency": 1,
                 "name": "lr",
             },
@@ -386,6 +422,8 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 class EmbedModel(BaseSequenceModel):
     """Sequence with embeddings model"""
 
+    def __init__(self, trunk: BassetTrunkEmbed, embed: CellEmbedding, *args, **kwargs):
+        super().__init__(trunk, *args, **kwargs)
     def __init__(self, trunk: BassetTrunkEmbed, embed: CellEmbedding, *args, **kwargs):
         super().__init__(trunk, *args, **kwargs)
 
@@ -412,7 +450,14 @@ class EmbedModel(BaseSequenceModel):
     def _forward_from_batch(self, batch):
         X_seq = batch["ohe_seq"]
         X_embed = batch["embed"]
+    def _forward_from_batch(self, batch):
+        X_seq = batch["ohe_seq"]
+        X_embed = batch["embed"]
         y = self(X_seq, X_embed).squeeze()
+        return y
+
+    def training_step(self, batch, batch_idx):
+        return super().training_step(batch, batch_idx)
         return y
 
     def training_step(self, batch, batch_idx):
@@ -428,7 +473,17 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
     
         self.loss = binomial_mixture_normed_loss
         self.embedding = embed
+       return super().validation_step(batch, batch_idx)
+
+
+class VariantEmbedModel(AbstractBaseSequenceModel):
+    def __init__(self, trunk, embed, *args, **kwargs):
+        super().__init__(trunk, *args, **kwargs)
+    
+        self.loss = binomial_mixture_normed_loss
+        self.embedding = embed
         self.save_hyperparameters()
+
 
 
     def init_metrics(self):
@@ -454,10 +509,23 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
         alt_features = self.trunk(seq_alt, x)
 
         x = torch.subtract(ref_features, alt_features)
+        x = torch.subtract(ref_features, alt_features)
 
         x = self.forward_fc(x)
         x = self.forward_final(x) # in variant model, outputs are always logits of ES -infinity to +infinity
         return x
+    
+    def _forward_from_batch(self, batch):
+        X_ref = batch["ohe_seq_ref"]
+        X_alt = batch["ohe_seq_alt"]
+        X_embed = batch["embed"]
+        y = self(X_ref, X_alt, X_embed).squeeze()
+        return y
+    
+    def step(self, batch, batch_idx):
+        y = self._forward_from_batch(batch)
+
+        ref_counts, total_counts, bad_score = (
     
     def _forward_from_batch(self, batch):
         X_ref = batch["ohe_seq_ref"]
@@ -481,10 +549,22 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
             total_counts=total_counts,
             bad_score=bad_score,
             reduction="none"
+        loss = self.loss(
+            y, 
+            ref_counts=ref_counts,
+            total_counts=total_counts,
+            bad_score=bad_score,
+            reduction="none"
         )
 
         loss *= batch["weight"]
+        loss *= batch["weight"]
         loss = loss.mean()
+
+        return loss, y, (ref_counts, total_counts, bad_score)
+
+    def training_step(self, batch, batch_idx):
+        loss, *_ = self.step(batch, batch_idx)
 
         return loss, y, (ref_counts, total_counts, bad_score)
 
@@ -502,6 +582,10 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
         lfc = batch["lfc"]
 
         self.valid_metrics.update(y_hat, lfc)
+        loss, y_hat, y = self.step(batch, batch_idx)
+        lfc = batch["lfc"]
+
+        self.valid_metrics.update(y_hat, lfc)
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
@@ -509,12 +593,36 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
 
 
 class VariantEmbedModelWrapper(L.LightningModule):
+class VariantEmbedModelWrapper(L.LightningModule):
     """Wrapper class for VariantModel to perform only inference"""
 
     def __init__(self, model: "VariantEmbedModel"):
         super().__init__()
         self.model = model
+    def __init__(self, model: "VariantEmbedModel"):
+        super().__init__()
+        self.model = model
 
+        # Make independent ref/alt branches
+        self.embedding_ref = copy.deepcopy(model.embedding)
+        self.embedding_alt = copy.deepcopy(model.embedding)
+        self.trunk_ref = copy.deepcopy(model.trunk)
+        self.trunk_alt = copy.deepcopy(model.trunk)
+        for mod in [
+            self.trunk_ref, self.trunk_alt, 
+            self.embedding_ref, self.embedding_alt
+        ]:
+            mod.eval()
+            for p in mod.parameters():
+                p.requires_grad = False
+    
+    def __getattr__(self, name):
+        if name != "model":
+            try:
+                return getattr(self.model, name)
+            except AttributeError:
+                pass
+        raise AttributeError(f"{self.model} has no attribute {name}")
         # Make independent ref/alt branches
         self.embedding_ref = copy.deepcopy(model.embedding)
         self.embedding_alt = copy.deepcopy(model.embedding)
@@ -543,6 +651,8 @@ class VariantEmbedModelWrapper(L.LightningModule):
 
         x = torch.subtract(features_ref, features_alt)
 
+        x = self.model.forward_fc(x)
+        x = self.model.forward_final(x)
         x = self.model.forward_fc(x)
         x = self.model.forward_final(x)
 
