@@ -136,6 +136,10 @@ def datamodule_from_config(
         **config['data_params'],
         **config['validation_augmentation_kwargs'],
     }
+    dataloader_kwargs = {
+        'batch_size': config['hparams']['batch_size'],
+        **dataloader_kwargs,
+    }
 
     # DataModule to handle datasets updates and dataloader init
     return SeqEmbedDataModule(
@@ -144,6 +148,5 @@ def datamodule_from_config(
         genotype_file=genotype_file,
         train_dataset_kwargs=train_dataset_kwargs,
         valid_dataset_kwargs=valid_dataset_kwargs,
-        batch_size=config['hparams']['batch_size'],
         **dataloader_kwargs,
     )

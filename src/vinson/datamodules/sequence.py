@@ -23,7 +23,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
         genotype_file=None,
         train_dataset_kwargs={},
         valid_dataset_kwargs={},
-        batch_size=32,
         **dataloader_kwargs,
     ):
         """
@@ -47,7 +46,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.train_dataset_kwargs = train_dataset_kwargs
         self.valid_dataset_kwargs = valid_dataset_kwargs
         self.dataloader_kwargs = dataloader_kwargs
-        self.batch_size = batch_size
         
         self.adata = None
         self.current_train_epoch = self.validation_epoch = self.epoch_names = None
@@ -94,7 +92,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
         # Create new dataloader
         return DataLoader(
             self.train_dataset(),
-            batch_size=self.batch_size,
             shuffle=True,
             **self.dataloader_kwargs,
         )
