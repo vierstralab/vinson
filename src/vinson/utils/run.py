@@ -136,6 +136,7 @@ def datamodule_from_config(
         **config['data_params'],
         **config['validation_augmentation_kwargs'],
     }
+    
     dataloader_kwargs = {
         'batch_size': config['hparams']['batch_size'],
         **dataloader_kwargs,
