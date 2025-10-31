@@ -70,9 +70,9 @@ def group_plot(g, column, type='box', order=None, ax=None, **kwargs):
 
 def plot_density_correlation(
     eval_dataset: pd.DataFrame,
-    max_points: int = 20_000,
     x_col: str = "bg_corrected_density",
     y_col: str = "pred_total_density",
+    max_points: int = 20_000,
     xlim: tuple = (0, 5),
     ylim: tuple = (0, 5),
     ax=None
@@ -265,7 +265,6 @@ def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.D
     fig, ax = plt.subplots(figsize=array2inch(5, 5))
     plot_density_correlation(
         eval_dataset,
-        output_prefix,
         x_col='pred_corrected_density',
         y_col='bg_corrected_density',
         ax=ax
