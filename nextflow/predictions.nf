@@ -10,7 +10,7 @@ process predict {
         tuple val(prefix), path(dhs_dataset), path(checkpoint), path(model_config), val(model_type)
     
     output:
-        tuple val(prefix), path(dhs_dataset), path(name)
+        tuple val(prefix), path(dhs_dataset), path(model_config), path(name)
     
     script:
     name = "${prefix}.npy"
@@ -27,6 +27,33 @@ process predict {
         --output ${name} 
     """
 }
+
+
+process visualize_predictions {
+    tag "${prefix}"
+    conda "${params.conda}"
+    publishDir "${params.outdir}/predictions/${prefix}"
+    label "med_mem"
+
+    input:
+        tuple val(prefix), path(dhs_dataset), path(model_config), path(predict_np)
+
+    output:
+        tuple val(prefix), path("*.pdf")
+
+    script:
+    """
+    python3 $moduleDir/bin/plot_precomputed_data.py \
+        --prefix ${prefix} \
+        --h5_data ${dhs_dataset} \
+        --npy_prediction ${predict_np} \
+        --output ./ \
+        --adata ${params.zarr_anndata} \
+        --annotation_data ${params.annotation_data} \
+        --model_config ${model_config}
+    """
+}
+
 
 
 process annotate_with_predictions {
@@ -47,29 +74,6 @@ process annotate_with_predictions {
     """
 }
 
-process visualize_predictions {
-    tag "${prefix}"
-    conda "${params.conda}"
-    publishDir "${params.outdir}/predictions/${prefix}"
-    label "med_mem"
-
-    input:
-        tuple val(prefix), path(dhs_dataset), path(predict_np)
-
-    output:
-        tuple val(prefix), path("*.pdf")
-
-    script:
-    """
-    python3 $moduleDir/bin/plot_precomputed_data.py \
-        --prefix ${prefix} \
-        --h5_data ${dhs_dataset} \
-        --npy_prediction ${predict_np} \
-        --output ./ \
-        --adata ${params.zarr_anndata} \
-        --annotation_data ${params.annotation_data}
-    """
-}
 
 workflow {
     Channel.fromPath(params.samples_file)

@@ -8,7 +8,7 @@ import argparse
 from genome_tools.data.anndata import read_zarr_backed
 
 from vinson.utils.data_formatting import extract_data_from_h5
-
+from vinson.utils.run import read_configs
 
 def get_palette_dict(categories):
     pass
@@ -111,12 +111,39 @@ def get_mock_annotation_data(anndata, annotation_column='extended_annotation'):
 
 
 def annotate_eval_dataset(eval_dataset: pd.DataFrame, adata: ad.AnnData) -> pd.DataFrame:
-    eval_dataset['pred_counts'] = eval_dataset.eval('exp(y_hat) / 1e6 * read_depth + background')
+    """
+    Annotate the evaluation dataset with additional information from the AnnData object.
+
+    Args:
+        eval_dataset: The evaluation dataset to annotate. pd.DataFrame with columns:
+            - 'pred_corrected_density'
+            - 'y_hat'
+            - 'density'
+            - 'read_depth'
+            - 'background'
+            - 'sample_id'
+        adata: The AnnData object containing additional information. Must have obs columns:
+            - 'extended_annotation'
+            - 'core_annotation'
+            - 'system'
+    Returns:
+        Modified eval_dataset with additional columns:
+            - 'pred_counts'
+            - 'pred_total_density'
+            - 'target_counts'
+            - 'bg_density'
+            - 'bg_corrected_density'
+            - 'extended_annotation'
+            - 'core_annotation'
+            - 'system'
+    """
+    eval_dataset['pred_counts'] = eval_dataset.eval('pred_corrected_density / 1e6 * read_depth + background')
+    eval_dataset['pred_total_density'] = eval_dataset.eval('pred_corrected_density + bg_density')
+
     eval_dataset['target_counts'] = eval_dataset.eval('density / 1e6 * read_depth')
     eval_dataset['bg_density'] = eval_dataset.eval('background * 1e6 / read_depth')
     eval_dataset['bg_corrected_density'] = np.clip(eval_dataset.eval('density - bg_density'), 0, None)
-    eval_dataset['pred_corrected_density'] = eval_dataset.eval('exp(y_hat)')
-    eval_dataset['pred_total_density'] = eval_dataset.eval('exp(y_hat) + bg_density')
+
     eval_dataset['extended_annotation'] = eval_dataset['sample_id'].map(adata.obs['extended_annotation'].to_dict())
     eval_dataset['core_annotation'] = eval_dataset['sample_id'].map(adata.obs['core_annotation'].to_dict())
     eval_dataset['system'] = eval_dataset['sample_id'].map(adata.obs['system'].to_dict())
@@ -204,6 +231,7 @@ if __name__ == '__main__':
     parser.add_argument('--annotation_data', help='Path to annotation data file (color and order for annotations)', default=None)
     parser.add_argument('--adata', help='Path to AnnData file with sample annotations', required=True)
     parser.add_argument('--output', help='Path to save visualizations', default='./')
+    parser.add_argument('--model_config', help='Path to model config file')
     args = parser.parse_args()
 
     adata = read_zarr_backed(args.adata)
@@ -215,7 +243,15 @@ if __name__ == '__main__':
         annotation_plot_data = get_mock_annotation_data(adata)
 
     eval_dataset, embeds = extract_data_from_h5(args.h5_data, adata) # Maybe embeds are not needed here
-    eval_dataset['y_hat'] = np.load(args.npy_prediction)
+    log_output = read_configs(args.model_config)['model_kwargs'].get('log_output', False)
+
+    if not log_output:
+        eval_dataset['pred_corrected_density'] = np.load(args.npy_prediction)
+        eval_dataset['y_hat'] = np.log(eval_dataset['y_hat'] + 1e-6)
+    else:
+        eval_dataset['y_hat'] = np.load(args.npy_prediction)
+        eval_dataset['pred_corrected_density'] = np.exp(eval_dataset['y_hat'])
+
     eval_dataset = pd.DataFrame(eval_dataset)
     
     main(
