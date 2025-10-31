@@ -144,8 +144,6 @@ def annotate_eval_dataset(eval_dataset: pd.DataFrame, adata: ad.AnnData) -> pd.D
     eval_dataset['pred_counts'] = eval_dataset.eval('pred_corrected_density / 1e6 * read_depth + background')
     eval_dataset['pred_total_density'] = eval_dataset.eval('pred_corrected_density + bg_density')
 
-
-
     eval_dataset['extended_annotation'] = eval_dataset['sample_id'].map(adata.obs['extended_annotation'].to_dict())
     eval_dataset['core_annotation'] = eval_dataset['sample_id'].map(adata.obs['core_annotation'].to_dict())
     eval_dataset['system'] = eval_dataset['sample_id'].map(adata.obs['system'].to_dict())
