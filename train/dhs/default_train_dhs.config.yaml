@@ -17,7 +17,7 @@ hparams:
     warmup_steps: 5000
     first_cycle_steps: 50000
     cycle_mult: 1
-    gamma: 0.9
+    gamma: 0.95
     last_epoch: -1
 data_params:
   clip_density: 20
