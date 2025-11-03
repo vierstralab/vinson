@@ -345,20 +345,13 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 
     def validation_step(self, batch, batch_idx):
         loss, y_hat, y = self.step(batch, batch_idx)
-        loss, y_hat, y = self.step(batch, batch_idx)
 
         if self.regression:
+            if not self.log_output:
+                y_hat = torch.log(y_hat + 1e6)
             self.valid_metrics.update(
-                torch.logaddexp(
-                    y_hat, 
-                    torch.tensor(1, device=self.device).log()
-                ),
-                (y + 1).log(),
-                torch.logaddexp(
-                    y_hat, 
-                    torch.tensor(1, device=self.device).log()
-                ),
-                (y + 1).log(),
+                y_hat,
+                y
             )
         else:
             self.valid_metrics.update(torch.sigmoid(y_hat), y.int())
