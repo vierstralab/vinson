@@ -348,7 +348,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 
         if self.regression:
             if not self.log_output:
-                y_hat = torch.log(y_hat + 1e6)
+                y_hat = torch.log(y_hat + 1e-6)
             self.valid_metrics.update(
                 y_hat,
                 y
