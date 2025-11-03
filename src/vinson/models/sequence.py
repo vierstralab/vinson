@@ -25,7 +25,7 @@ class CellEmbedding(torch.nn.Module):
     """
 
     def __init__(self, n_inputs, n_nodes=1024, n_outputs=128, n_layers=0):
-        super(CellEmbedding, self).__init__()
+        super().__init__()
 
         self.n_inputs = n_inputs
         self.n_nodes = n_nodes
@@ -107,7 +107,7 @@ class BassetTrunk(torch.nn.Module):
 
 class BassetTrunkEmbed(BassetTrunk):
     def __init__(self, n_embed_outputs):
-        super(BassetTrunkEmbed, self).__init__()
+        super().__init__()
 
         # TODO: inference output size from BassetTrunk convolutional layers
         self.bias2 = torch.nn.Linear(n_embed_outputs, self.layer2[0].out_channels)
@@ -414,10 +414,6 @@ class EmbedModel(BaseSequenceModel):
         X_seq = batch["ohe_seq"]
         X_embed = batch["embed"]
         y = self(X_seq, X_embed).squeeze()
-        return y
-
-    def training_step(self, batch, batch_idx):
-        return super().training_step(batch, batch_idx)
         return y
 
     def training_step(self, batch, batch_idx):
