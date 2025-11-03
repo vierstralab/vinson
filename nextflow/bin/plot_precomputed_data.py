@@ -182,8 +182,8 @@ def annotate_eval_dataset(eval_dataset: pd.DataFrame, adata: ad.AnnData) -> pd.D
     eval_dataset['target_counts'] = eval_dataset.eval('density / 1e6 * read_depth')
     eval_dataset['bg_corrected_density'] = np.clip(eval_dataset.eval('density - bg_density'), 0, None)
 
-    eval_dataset['pred_counts'] = eval_dataset.eval('pred_corrected_density / 1e6 * read_depth + background')
     eval_dataset['pred_total_density'] = eval_dataset.eval('pred_corrected_density + bg_density')
+    eval_dataset['pred_counts'] = eval_dataset.eval('pred_total_density / 1e6 * read_depth')
 
     eval_dataset['extended_annotation'] = eval_dataset['sample_id'].map(adata.obs['extended_annotation'].to_dict())
     eval_dataset['core_annotation'] = eval_dataset['sample_id'].map(adata.obs['core_annotation'].to_dict())
@@ -205,35 +205,11 @@ def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.D
 
     per_dhs_and_annotation_metrics['y_hat_mean'] = per_dhs_and_annotation_metrics.groupby('dhs_id')['y_hat'].transform('mean')
     per_dhs_and_annotation_metrics['y_hat_lfc'] = per_dhs_and_annotation_metrics.eval('y_hat - y_hat_mean')
-    # per_dhs_and_annotation_metrics['y_hat_delta'] = per_dhs_and_annotation_metrics.eval('exp(y_hat_lfc)')
 
-    # per_dhs_and_annotation_metrics['log_pred_corrected_density'] = np.log(per_dhs_and_annotation_metrics['pred_corrected_density'] + pseudocount)
-    # per_dhs_and_annotation_metrics['log_density'] = np.log(per_dhs_and_annotation_metrics['density'] + pseudocount)
-    # per_dhs_and_annotation_metrics['log_pred_total_density'] = np.log(per_dhs_and_annotation_metrics['pred_total_density'] + pseudocount)
-    # per_dhs_and_annotation_metrics['log_bg_corrected_density'] = np.log(per_dhs_and_annotation_metrics['bg_corrected_density'] + pseudocount)
-    # per_dhs_and_annotation_metrics['log_y_hat'] = np.log(per_dhs_and_annotation_metrics['y_hat'] + pseudocount)
-    per_dhs_and_annotation_metrics['median_log_dens_lfc'] = per_dhs_and_annotation_metrics.groupby('extended_annotation')['y_hat_lfc'].transform('median')
-
-    #calculate metrics by group
     per_dhs_and_annotation_metrics['log_dens'] = np.log(per_dhs_and_annotation_metrics['bg_corrected_density'] + pseudocount)
     per_dhs_and_annotation_metrics['log_dens_mean'] = per_dhs_and_annotation_metrics.groupby('dhs_id')['log_dens'].transform('mean')
     per_dhs_and_annotation_metrics['log_dens_lfc'] = per_dhs_and_annotation_metrics.eval('log_dens - log_dens_mean') # Just another way to plot it, instead of just density
-    # g['dens_delta'] = g.eval('exp(log_dens_lfc)')
 
-    # g['y_hat_mean'] = g.groupby('dhs_id')['y_hat'].transform('mean')
-    # g['y_hat_lfc'] = g.eval('y_hat - y_hat_mean')
-    # g['y_hat_delta'] = g.eval('exp(y_hat_lfc)')
-
-    # per_annotation_metrics = per_dhs_and_annotation_metrics.groupby(["core_annotation", "extended_annotation"]).agg(
-    #     log_dens_lfc=('log_dens_lfc', 'median'),
-    #     core_annotation=('core_annotation', 'first'),
-    #     system=('system', 'first'),
-    # ).sort_values(
-    #     ['system', 'log_dens_lfc']
-    # )
-    # per_annotation_metrics = annotation_data.set_index('name').join(
-    #     per_annotation_metrics
-    # ).sort_values('index')
 
     fig, axes = plot_per_annotation_comparison(
         per_dhs_and_annotation_metrics,
@@ -299,7 +275,7 @@ if __name__ == '__main__':
 
     if not log_output:
         eval_dataset['pred_corrected_density'] = np.load(args.npy_prediction)
-        eval_dataset['y_hat'] = np.log(eval_dataset['pred_corrected_density'] + 1e-6)
+        eval_dataset['y_hat'] = np.log(eval_dataset['pred_corrected_density'] + 1e-2)
     else:
         eval_dataset['y_hat'] = np.load(args.npy_prediction)
         eval_dataset['pred_corrected_density'] = np.exp(eval_dataset['y_hat'])
