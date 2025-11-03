@@ -8,5 +8,5 @@ data_params:
   min_bg: 0.1
   negatives_weight: 1
 logging_params:
-  val_check_interval: 0.2
+  val_check_interval: 0.5
   logger_type: csv
