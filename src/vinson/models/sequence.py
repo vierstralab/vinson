@@ -202,7 +202,6 @@ class AbstractBaseSequenceModel(L.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                "monitor": "val_loss",
                 "interval": "step",
                 "frequency": 1,
                 "name": "lr",
@@ -363,26 +362,6 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
     def on_validation_epoch_end(self):
         self.log_dict(self.valid_metrics.compute(), sync_dist=True)
         self.valid_metrics.reset()
-
-    def configure_optimizers(self):
-        optimizer = self.optimizer(self.parameters(), **self.optimizer_kwargs)
-
-        if self.lr_scheduler is None:
-            return optimizer
-
-        scheduler = self.lr_scheduler(optimizer, **self.lr_scheduler_kwargs)
-
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "monitor": "val_loss",
-                "interval": "epoch",
-                "interval": "epoch",
-                "frequency": 1,
-                "name": "lr",
-            },
-        }
 
 
 class EmbedModel(BaseSequenceModel):
