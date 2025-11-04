@@ -76,7 +76,7 @@ if __name__ == "__main__":
     if args.run_name is None:
         print('Generating run name...')
         run_name = subprocess.check_output(
-            [f"{cfg['env_path']}/bin/python", "-c", "from vinson.utils.run import generate_run_name; print(generate_run_name())"],
+            [f"{cfg['env_path']}/bin/python", "-c", "from vinson.utils.helpers import generate_run_name; print(generate_run_name())"],
             text=True
         ).strip()
     else:

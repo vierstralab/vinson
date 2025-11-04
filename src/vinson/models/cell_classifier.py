@@ -1,9 +1,9 @@
 import torch
-
 import lightning as L
 
 
 class EmbeddingMLP(torch.nn.Module):
+
     def __init__(self, n_inputs, n_nodes=64, n_layers=1, dropout=0.3):
         """ """
         super(EmbeddingMLP, self).__init__()
@@ -48,7 +48,7 @@ class EmbeddingMLP(torch.nn.Module):
 
 class CellClassifierModel(L.LightningModule):
     def __init__(self, n_inputs, n_cell_categories, **kwargs):
-        super(CellClassifierModel, self).__init__()
+        super().__init__()
         
         self.trunk = EmbeddingMLP(n_inputs, **kwargs)
         self.head = torch.nn.Linear(self.trunk.n_nodes, n_cell_categories)
@@ -57,15 +57,20 @@ class CellClassifierModel(L.LightningModule):
 
     def forward(self, x):
         return self.head(self.trunk(x))
-
-    def training_step(self, batch, batch_idx):
+    
+    def step(self, batch):
         X, y = (
             batch["embed"],
             batch["cell_category"],
         )
 
-        y_ = self(X)
-        loss = self.loss_fn(y_, y)
+        y_hat = self(X)
+        loss = self.loss_fn(y_hat, y)
+
+        return loss, y_hat, y
+
+    def training_step(self, batch, batch_idx):
+        loss = self.step(batch)
 
         self.log(
             "loss", loss, on_step=True, on_epoch=False, sync_dist=True, prog_bar=True
@@ -74,13 +79,7 @@ class CellClassifierModel(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        X, y = (
-            batch["embed"],
-            batch["cell_category"],
-        )
-
-        _y = self(X)
-        loss = self.loss_fn(_y, y)
+        loss = self.step(batch)
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 

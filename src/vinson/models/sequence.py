@@ -16,38 +16,23 @@ from vinson.loss import (
     PoissonNLL,
     binomial_mixture_normed_loss,
 )
+from vinson.lr import CosineAnnealingWarmupRestarts
+from vinson.models.cell_classifier import EmbeddingMLP
 
 
-class CellEmbedding(torch.nn.Module):
+class CellEmbedding(EmbeddingMLP):
     """
     This a simple multilayer perceptron to encode cell states from an embedding
     'n_inputs' is the dimension of the embedding space.
     """
 
     def __init__(self, n_inputs, n_nodes=1024, n_outputs=128, n_layers=0):
-        super().__init__()
-
-        self.n_inputs = n_inputs
-        self.n_nodes = n_nodes
-        self.n_outputs = n_outputs
-        self.n_layers = n_layers
-
-        self.ifc = torch.nn.Linear(n_inputs, n_nodes)
-        self.irelu = torch.nn.ReLU()
-
-        self.fcs = torch.nn.ModuleList(
-            [torch.nn.Linear(n_nodes, n_nodes) for i in range(self.n_layers)]
-        )
-        self.relus = torch.nn.ModuleList(
-            [torch.nn.ReLU() for i in range(self.n_layers)]
-        )
+        super().__init__(n_inputs=n_inputs, n_nodes=n_nodes, n_layers=n_layers)
 
         self.ffc = torch.nn.Linear(n_nodes, n_outputs)
 
     def forward(self, embed):
-        x = self.irelu(self.ifc(embed))
-        for i in range(self.n_layers):
-            x = self.relus[i](self.fcs[i](x))
+        super().forward(embed)
         x = self.ffc(x)
         return x
 
@@ -136,7 +121,6 @@ class AbstractBaseSequenceModel(L.LightningModule):
         self,
         trunk_model,
         seqlen=1344,
-        optimizer=None,
         lr_scheduler=None,
         optimizer_kwargs=dict(),
         lr_scheduler_kwargs=dict(),
@@ -160,7 +144,6 @@ class AbstractBaseSequenceModel(L.LightningModule):
         self.final = torch.nn.LazyLinear(1)
 
         # Optimizer setup
-        self.optimizer = optimizer or torch.optim.AdamW
         self.optimizer_kwargs = optimizer_kwargs
         self.lr_scheduler = lr_scheduler
         self.lr_scheduler_kwargs = lr_scheduler_kwargs
@@ -190,8 +173,16 @@ class AbstractBaseSequenceModel(L.LightningModule):
 
     def configure_optimizers(self):
         """ """
+        optimizer = torch.optim.AdamW
+        lr_scheduler_dict = {
+            "CosineAnnealingWarmupRestarts": CosineAnnealingWarmupRestarts,
+            "OneCycleLR": torch.optim.lr_scheduler.OneCycleLR
+        }
+        lr_scheduler = lr_scheduler_dict.get(self.lr_scheduler, None) 
+        if lr_scheduler is None:
+            raise ValueError(f"Unsupported lr_scheduler: {self.lr_scheduler}. Expected one of: {list(lr_scheduler_dict.keys())}")
 
-        optimizer = self.optimizer(self.parameters(), **self.optimizer_kwargs)
+        optimizer = torch.optim.AdamW(self.parameters(), **self.optimizer_kwargs)
 
         if self.lr_scheduler is None:
             return optimizer
@@ -215,16 +206,14 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         trunk_model,
         seqlen=1344,
         regression=False,
-        optimizer=None,
         log_output=True,
-        lr_scheduler=None,
+        lr_scheduler: str=None,
         optimizer_kwargs=dict(),
         lr_scheduler_kwargs=dict(),
     ):
         super().__init__(
             trunk_model=trunk_model,
             seqlen=seqlen,
-            optimizer=optimizer,
             lr_scheduler=lr_scheduler,
             optimizer_kwargs=optimizer_kwargs,
             lr_scheduler_kwargs=lr_scheduler_kwargs,

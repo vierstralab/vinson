@@ -13,14 +13,8 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 
-
-from vinson.utils.run import (
-    generate_run_name,
-    datamodule_from_config, 
-    read_configs,
-    model_from_config,
-    save_config
-)
+from vinson.utils.helpers import read_configs, save_config, generate_run_name
+from vinson.utils.run import datamodule_from_config, model_from_config
 
 
 def set_global_seed(seed=42):
@@ -221,7 +215,6 @@ if __name__ == "__main__":
     else:
         checkpoint = args.checkpoint
     # Initialize model from config
-    model = model_from_config(config, checkpoint_path=checkpoint)
     trainer_kwargs = {}
 
     if args.debug:
@@ -257,6 +250,8 @@ if __name__ == "__main__":
         genotype_file=args.genotype_file,
         **dataloader_kwargs,
     )
+
+    model = model_from_config(config, checkpoint_path=checkpoint)
 
     # Start training
     fit_model(

@@ -3,15 +3,11 @@ model_kwargs:
   log_output: false
 hparams:
   batch_size: 32
-  lr_scheduler: CosineAnnealingWarmupRestarts
+  lr_scheduler: OneCycleLR
   lr_scheduler_kwargs:
-    max_lr: 0.0005
-    min_lr: 5.0e-05
-    warmup_steps: 5000
-    first_cycle_steps: 50000
-    cycle_mult: 1
-    gamma: 0.95
-    last_epoch: -1
+    max_lr: 5.0e-05
+    final_div_factor: 1e4
+    div_fct: 25
 data_params:
   clip_density: 20
   min_bg: 0.1
