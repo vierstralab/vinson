@@ -17,6 +17,9 @@ from vinson.utils.helpers import read_configs, save_config, generate_run_name
 from vinson.utils.run import datamodule_from_config, model_from_config
 
 
+torch.set_float32_matmul_precision('high')
+
+
 def set_global_seed(seed=42):
     # Python's built-in random module
     random.seed(seed)
