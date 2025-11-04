@@ -28,8 +28,9 @@ class CellEmbedding(EmbeddingMLP):
 
     def __init__(self, n_inputs, n_nodes=1024, n_outputs=128, n_layers=0):
         super().__init__(n_inputs=n_inputs, n_nodes=n_nodes, n_layers=n_layers)
+        self.n_outputs = n_outputs
 
-        self.ffc = torch.nn.Linear(n_nodes, n_outputs)
+        self.ffc = torch.nn.Linear(n_nodes, self.n_outputs)
 
     def forward(self, embed):
         super().forward(embed)
