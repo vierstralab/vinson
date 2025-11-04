@@ -48,7 +48,7 @@ def load_legacy_vinson(checkpoint_path):
 def load_and_predict(batch, model):    
     X_seq      = batch["ohe_seq"].to(device, non_blocking=True)
     X_embed    = batch["embed"].to(device, non_blocking=True)
-    y_ = model(X_seq, X_embed).squeeze().detach().cpu().numpy()
+    y_ = model(X_seq, X_embed).squeeze().detach()
     return y_
 
 
@@ -120,9 +120,12 @@ def main():
         raise ValueError(f"Unknown model type: {args.model_type}")
     model_predict.to(device).eval()
 
-    y_hat_all = np.concatenate(
-        [load_and_predict(batch, model_predict) for batch in tqdm(dataloader)]
-    )
+    y_hat_all = []
+    for batch in dataloader:
+        y_ = load_and_predict(batch, model_predict).squeeze().detach()
+        y_hat_all.append(y_.cpu())
+    y_hat_all = torch.cat(y_hat_all).numpy()
+    
     np.save(args.output, y_hat_all)
 
 if __name__ == "__main__":
