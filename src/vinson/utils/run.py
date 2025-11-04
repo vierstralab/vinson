@@ -30,8 +30,8 @@ def model_from_config(config, checkpoint_path=None):
         trunk=trunk_model,
         embed=embed_model,
         regression=config["model_type"] == "regression",
-        lr_scheduler=config["hparams"]["lr_scheduler"],
-        lr_scheduler_kwargs=config["hparams"]["lr_scheduler_kwargs"],
+        lr_scheduler=config["hparams"].get("lr_scheduler"),
+        lr_scheduler_kwargs=config["hparams"].get("lr_scheduler_kwargs", {}),
         optimizer_kwargs=optimizer_kwargs
         **config["model_kwargs"]
     )
