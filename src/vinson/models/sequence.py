@@ -179,12 +179,9 @@ class AbstractBaseSequenceModel(L.LightningModule):
             "OneCycleLR": torch.optim.lr_scheduler.OneCycleLR
         }
         lr_scheduler = lr_scheduler_dict.get(self.lr_scheduler, None) 
-        if lr_scheduler is None:
-            raise ValueError(f"Unsupported lr_scheduler: {self.lr_scheduler}. Expected one of: {list(lr_scheduler_dict.keys())}")
-
         optimizer = torch.optim.AdamW(self.parameters(), **self.optimizer_kwargs)
 
-        if self.lr_scheduler is None:
+        if lr_scheduler is None:
             return optimizer
 
         if self.lr_scheduler == "OneCycleLR":
@@ -203,7 +200,7 @@ class AbstractBaseSequenceModel(L.LightningModule):
             "steps_per_epoch": steps_per_epoch,
             "epochs": max_epochs,
         }
-        scheduler = self.lr_scheduler(optimizer, **self.lr_scheduler_kwargs)
+        scheduler = lr_scheduler(optimizer, **self.lr_scheduler_kwargs)
 
         return {
             "optimizer": optimizer,
