@@ -122,10 +122,10 @@ def main():
 
     y_hat_all = []
     for batch in dataloader:
-        y_ = load_and_predict(batch, model_predict).squeeze().detach()
+        y_ = load_and_predict(batch, model_predict)
         y_hat_all.append(y_.cpu())
     y_hat_all = torch.cat(y_hat_all).numpy()
-    
+
     np.save(args.output, y_hat_all)
 
 if __name__ == "__main__":
