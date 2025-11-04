@@ -22,27 +22,17 @@ def model_from_config(config, checkpoint_path=None):
         )
         return model
 
-    # Optimizer & LR scheduler for the fresh model
-    optimizer = torch.optim.AdamW
-    lr_scheduler_dict = {
-        "CosineAnnealingWarmupRestarts": CosineAnnealingWarmupRestarts,
-        "OneCycleLR": torch.optim.lr_scheduler.OneCycleLR
-    }
-    lr_scheduler = lr_scheduler_dict.get(config["hparams"]["lr_scheduler"], None) 
-    if lr_scheduler is None:
-        raise ValueError(f"Unsupported lr_scheduler: {config['hparams']['lr_scheduler']}. Expected one of: {list(lr_scheduler_dict.keys())}")
-
-    lr_scheduler_kwargs = config["hparams"]["lr_scheduler_kwargs"]
-
     # Create trunk model, maybe move to config later
-
+    optimizer_kwargs = {
+        'lr': config["hparams"]['lr']
+    }
     model = EmbedModel(
         trunk=trunk_model,
         embed=embed_model,
         regression=config["model_type"] == "regression",
-        optimizer=optimizer,
-        lr_scheduler=lr_scheduler,
-        lr_scheduler_kwargs=lr_scheduler_kwargs,
+        lr_scheduler=config["hparams"]["lr_scheduler"],
+        lr_scheduler_kwargs=config["hparams"]["lr_scheduler_kwargs"],
+        optimizer_kwargs=optimizer_kwargs
         **config["model_kwargs"]
     )
 

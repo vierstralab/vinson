@@ -173,7 +173,6 @@ class AbstractBaseSequenceModel(L.LightningModule):
 
     def configure_optimizers(self):
         """ """
-        optimizer = torch.optim.AdamW
         lr_scheduler_dict = {
             "CosineAnnealingWarmupRestarts": CosineAnnealingWarmupRestarts,
             "OneCycleLR": torch.optim.lr_scheduler.OneCycleLR
@@ -187,6 +186,22 @@ class AbstractBaseSequenceModel(L.LightningModule):
         if self.lr_scheduler is None:
             return optimizer
 
+        if self.lr_scheduler == "OneCycleLR":
+            steps_per_epoch = self.lr_scheduler_kwargs.get("steps_per_epoch")
+            if steps_per_epoch is None:
+             if hasattr(self.trainer, "datamodule") \
+                    and self.trainer.datamodule is not None:
+
+                train_dl = self.trainer.datamodule.train_dataloader()
+                steps_per_epoch = len(train_dl)
+
+        max_epochs = getattr(self.trainer, "max_epochs", None)
+
+        self.lr_scheduler_kwargs = {
+            **self.lr_scheduler_kwargs,
+            "steps_per_epoch": steps_per_epoch,
+            "epochs": max_epochs,
+        }
         scheduler = self.lr_scheduler(optimizer, **self.lr_scheduler_kwargs)
 
         return {

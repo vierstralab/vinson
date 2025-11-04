@@ -78,7 +78,7 @@ def init_multigpu_trainer(
     trainer = L.Trainer(
         logger=logger,
         callbacks=callbacks,
-        max_epochs=100,
+        max_epochs=20,
         accelerator=accelerator,
         strategy=strategy,
         num_nodes=nodes,

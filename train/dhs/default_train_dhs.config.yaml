@@ -11,6 +11,8 @@ validation_augmentation_kwargs:
   noise: 0
 hparams:
   batch_size: 64
+  lr: 1.0e-05
+  lr_scheduler: OneCycleLR
 data_params:
   clip_density: 20
   min_bg: 0.1
