@@ -56,7 +56,6 @@ process visualize_predictions {
 }
 
 
-
 process annotate_with_predictions {
     conda "${params.conda}"
     publishDir "${params.outdir}/"
@@ -73,6 +72,17 @@ process annotate_with_predictions {
         ${params.outdir}/predictions \
         ${name}
     """
+}
+
+workflow test {
+    models_data = Channel.fromPath(params.test_samples_file)
+        | splitCsv(header:true, sep:'\t')
+        | map(row -> tuple(file(row.checkpoint), file(row.model_config), row.model_type))
+    
+    generate_cell_selective_data()
+        | combine(models_data)
+        | predict
+        | visualize_predictions
 }
 
 
