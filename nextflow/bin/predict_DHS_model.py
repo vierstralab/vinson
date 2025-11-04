@@ -121,7 +121,7 @@ def main():
     model_predict.to(device).eval()
 
     y_hat_all = []
-    for batch in dataloader:
+    for batch in tqdm(dataloader):
         y_ = load_and_predict(batch, model_predict).cpu()
         y_hat_all.append(y_)
     y_hat_all = torch.cat(y_hat_all).numpy()
