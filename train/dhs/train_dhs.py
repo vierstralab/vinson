@@ -193,6 +193,12 @@ if __name__ == "__main__":
 
     outdir = os.path.join(args.outdir, run_name)
     os.makedirs(outdir, exist_ok=True)
+    
+    prev_run_config = os.path.join(outdir, "run_config.yaml")
+
+    if os.path.exists(prev_run_config) and args.config is None:
+        print("Found existing config in output directory and no custom config provided. Using existing config.")
+        args.config = prev_run_config
 
     default_config_path = os.path.dirname(os.path.abspath(__file__)) + "/default_train_dhs.config.yaml"
 
@@ -201,9 +207,10 @@ if __name__ == "__main__":
         custom_config_path=args.config
     )
     config['command'] = " ".join(["python"] + sys.argv)
+    config_path = os.path.join(outdir, "run_config.yaml")
     save_config(
         config,
-        os.path.join(outdir, "run_config.yaml"),
+        config_path,
     )
 
     # Set global seed

@@ -243,6 +243,8 @@ def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.D
         eval_dataset,
         x_col='pred_corrected_density',
         y_col='bg_corrected_density',
+        xlim=(0, 1),
+        ylim=(0, 1),
         ax=ax
     )
     plt.savefig(f"{output_prefix}_corrected_density_correlation.pdf", transparent=True, bbox_inches="tight")
