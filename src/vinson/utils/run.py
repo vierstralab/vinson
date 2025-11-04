@@ -32,7 +32,7 @@ def model_from_config(config, checkpoint_path=None):
         regression=config["model_type"] == "regression",
         lr_scheduler=config["hparams"].get("lr_scheduler"),
         lr_scheduler_kwargs=config["hparams"].get("lr_scheduler_kwargs", {}),
-        optimizer_kwargs=optimizer_kwargs
+        optimizer_kwargs=optimizer_kwargs,
         **config["model_kwargs"]
     )
 
