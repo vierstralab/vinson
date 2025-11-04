@@ -7,8 +7,8 @@ hparams:
   lr_scheduler: OneCycleLR
   lr_scheduler_kwargs:
     max_lr: 1.0e-03
-    final_div_factor: 1.0e4
     div_factor: 25
+    final_div_factor: 1.0e04
 data_params:
   clip_density: 20
   min_bg: 0.1
