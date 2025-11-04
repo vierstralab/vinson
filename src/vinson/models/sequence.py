@@ -33,7 +33,7 @@ class CellEmbedding(EmbeddingMLP):
         self.ffc = torch.nn.Linear(n_nodes, self.n_outputs)
 
     def forward(self, embed):
-        super().forward(embed)
+        x = super().forward(embed)
         x = self.ffc(x)
         return x
 
