@@ -63,7 +63,6 @@ def extract_data_from_anndata(adata: ad.AnnData, suffix: str):
         'density': layers['density'].data,
     }
 
-
     if 'indiv_id' in adata.obsm:
         # maybe come up with something more elegant
         indiv_ids = np.array(

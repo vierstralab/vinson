@@ -3,12 +3,12 @@ model_kwargs:
   log_output: false
 hparams:
   batch_size: 32
-  lr: 1.0e-05
   lr_scheduler: OneCycleLR
   lr_scheduler_kwargs:
     max_lr: 1.0e-03
     div_factor: 25
     final_div_factor: 10000
+    epochs: 3
 data_params:
   clip_density: 20
   min_bg: 0.1

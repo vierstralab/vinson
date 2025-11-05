@@ -1,9 +1,6 @@
 import anndata as ad
 
-import torch
-
 from vinson.models.sequence import CellEmbedding, BassetTrunkEmbed, EmbedModel
-from vinson.lr import CosineAnnealingWarmupRestarts
 from vinson.datamodules.sequence import SeqEmbedDataModule
 from vinson.datasets.sequence import SequenceEmbedDataset
 from vinson.utils.data_formatting import extract_data_from_h5
@@ -23,16 +20,13 @@ def model_from_config(config, checkpoint_path=None):
         return model
 
     # Create trunk model, maybe move to config later
-    optimizer_kwargs = {
-        'lr': config["hparams"]['lr']
-    }
     model = EmbedModel(
         trunk=trunk_model,
         embed=embed_model,
         regression=config["model_type"] == "regression",
         lr_scheduler=config["hparams"].get("lr_scheduler"),
         lr_scheduler_kwargs=config["hparams"].get("lr_scheduler_kwargs", {}),
-        optimizer_kwargs=optimizer_kwargs,
+        optimizer_kwargs=config["hparams"]['optimizer_kwargs'],
         **config["model_kwargs"]
     )
 
