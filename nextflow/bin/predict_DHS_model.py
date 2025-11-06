@@ -7,7 +7,7 @@ import pandas as pd
 
 from torch.utils.data import DataLoader
 from vinson.utils.run import model_from_config as load_vinson_model
-from vinson.utils.run import read_configs
+from vinson.utils.helpers import read_configs
 from vinson.utils.run import dataset_from_h5
 
 from genome_tools.data.anndata import read_zarr_backed
