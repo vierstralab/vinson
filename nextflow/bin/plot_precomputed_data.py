@@ -9,7 +9,7 @@ import scipy
 from genome_tools.data.anndata import read_zarr_backed
 
 from vinson.utils.data_formatting import extract_data_from_h5
-from vinson.utils.run import read_configs
+from vinson.utils.helpers import read_configs
 
 def get_palette_dict(categories):
     pass
