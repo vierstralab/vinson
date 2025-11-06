@@ -37,7 +37,7 @@ process visualize_predictions {
     label "med_mem"
 
     input:
-        tuple val(prefix), path(dhs_dataset), path(model_config), path(predict_np)
+        tuple val(prefix), path(dhs_dataset), val(model_config), path(predict_np)
 
     output:
         tuple val(prefix), path("*.pdf")
@@ -89,7 +89,7 @@ workflow test {
 workflow {
     Channel.fromPath(params.samples_file)
         | splitCsv(header:true, sep:'\t')
-        | map(row -> tuple(row.prefix, file(row.dhs_dataset), file(row.checkpoint), file(row.model_config), row.model_type))
+        | map(row -> tuple(row.prefix, file(row.dhs_dataset), file(row.checkpoint), row.model_config, row.model_type))
         | predict
         | visualize_predictions
     

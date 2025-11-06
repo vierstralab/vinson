@@ -74,7 +74,7 @@ def main():
     args = parser.parse_args()
 
     adata = read_zarr_backed(args.anndata)
-
+    
     model_config = read_configs(args.model_config_path)
 
     dataset_kwargs: dict = model_config['data_params']
@@ -87,7 +87,7 @@ def main():
         )
     )
 
-    if args.model_type == "vinson_legacy":
+    if args.model_type in ("vinson_legacy", 'legnet'):
         print('legacy')
         motif_embedding = pd.read_table('/home/jvierstra/proj/vinson/data/embeddings_clustername.tsv', index_col=0)
         adata.obsm['motif_embeddings'] = motif_embedding.loc[adata.obs_names]
