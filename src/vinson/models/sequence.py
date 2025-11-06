@@ -192,8 +192,7 @@ class AbstractBaseSequenceModel(L.LightningModule):
             max_epochs = self.lr_scheduler_kwargs.get("epochs")
             if steps_per_epoch is None:
                 if has_datamodule:
-                    train_dl = self.trainer.datamodule.train_dataloader()
-                    steps_per_epoch = len(train_dl)
+                    steps_per_epoch = self.trainer.num_training_batches
                 else:
                     # implement checks when dataset is directly passed to trainer
                     raise ValueError("steps_per_epoch must be provided in lr_scheduler_kwargs when no datamodule is used.")

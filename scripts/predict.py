@@ -12,7 +12,7 @@ from vinson.loss import poisson_loss, mse_loss
 from vinson.models.sequence import BassetTrunkEmbed, CellEmbedding, EmbedModel
 from vinson.interpretation import dinucleotide_shuffle, force_strict_ohe
 from vinson.io import SamplesDensityExtractor
-from vinson.vinson.utils.sequence_utils import intervals_to_ohe
+from vinson.utils.sequence_utils import intervals_to_ohe
 
 """
 This script runs genome-wide predictions using a pretrained Vinson sequence +
