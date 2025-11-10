@@ -2,6 +2,7 @@ import numpy as np
 import anndata as ad
 import h5py
 import pandas as pd
+import dask.array as da
 
 
 def data_to_h5(data: dict, h5_file: str):
@@ -97,6 +98,12 @@ def slice_adata(adata, dhs_ids, sample_ids) -> ad.AnnData:
     return adata_slice
 
 
+def compute_if_dask(array):
+    if isinstance(array, da.Array):
+        array = array.compute()
+    return array
+
+
 def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=None, use_sample_peaks=False) -> dict:
     """
     This function can also be used to extract data into training anndata object.
@@ -118,8 +125,8 @@ def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=No
 
     data = {}
 
-    data['density'] = adata_slice.layers["density"].compute().flatten()
-    data['background'] = adata_slice.layers["mean_bg_agg_cutcounts"].compute().flatten()
+    data['density'] = compute_if_dask(adata_slice.layers["density"]).flatten()
+    data['background'] = compute_if_dask(adata_slice.layers["mean_bg_agg_cutcounts"]).flatten()
     data['class'] = np.where(adata_slice.layers["binary"].toarray().flatten(), 1, -1)
     data['sample_id'] = broadcasted_sample_ids
     data['dhs_id'] = broadcasted_dhs_ids
