@@ -97,11 +97,11 @@ def slice_adata(adata, dhs_ids, sample_ids) -> ad.AnnData:
     return adata_slice
 
 
-def extract_data_from_backed_anndata(training_anndata, dhs_ids=None, sample_ids=None, use_sample_peaks=False) -> dict:
+def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=None, use_sample_peaks=False) -> dict:
     """
     This function can also be used to extract data into training anndata object.
     """
-    adata_slice = slice_adata(training_anndata, dhs_ids, sample_ids) # sample x dhs
+    adata_slice = slice_adata(backed_anndata, dhs_ids, sample_ids) # sample x dhs
 
     print('compute on density', flush=True)
     sample_names = np.array(adata_slice.obs_names)
