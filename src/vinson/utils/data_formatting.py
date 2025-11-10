@@ -113,6 +113,9 @@ def extract_data_from_backed_anndata(training_anndata, dhs_ids=None, sample_ids=
         dhs_names,
         indexing="ij"
     )
+
+    sample_to_indiv_mapping = pd.Series(adata_slice.obsm['indiv_id'], index=adata_slice.obs_names)
+
     data = {}
 
     data['density'] = adata_slice.layers["density"].compute().flatten()
@@ -120,10 +123,10 @@ def extract_data_from_backed_anndata(training_anndata, dhs_ids=None, sample_ids=
     data['class'] = np.where(adata_slice.layers["binary"].toarray().flatten(), 1, -1)
     data['sample_id'] = broadcasted_sample_ids
     data['dhs_id'] = broadcasted_dhs_ids
-    data['read_depth'] = pd.Series(data['sample_id']).map(adata_slice.obs['nuclear_reads'].to_dict())
-    data['indiv_id'] = pd.Series(data['sample_id']).map(adata_slice.obsm['indiv_id']['indiv_id'].to_dict())
-    data['chrom'] = pd.Series(data['dhs_id']).map(adata_slice.var['#chr'].to_dict())
-    data['summit'] = pd.Series(data['dhs_id']).map(adata_slice.var['dhs_summit'].to_dict())
+    data['read_depth'] = pd.Series(data['sample_id']).map(adata_slice.obs['nuclear_reads'])
+    data['indiv_id'] = pd.Series(data['sample_id']).map(sample_to_indiv_mapping)
+    data['chrom'] = pd.Series(data['dhs_id']).map(adata_slice.var['#chr'])
+    data['summit'] = pd.Series(data['dhs_id']).map(adata_slice.var['dhs_summit'])
 
     if use_sample_peaks:
         print('using sample peaks', flush=True)
