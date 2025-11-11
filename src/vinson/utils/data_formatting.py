@@ -128,8 +128,8 @@ def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=No
     data['density'] = compute_if_dask(adata_slice.layers["density"]).flatten()
     data['background'] = compute_if_dask(adata_slice.layers["mean_bg_agg_cutcounts"]).flatten()
     data['class'] = np.where(adata_slice.layers["binary"].toarray().flatten(), 1, -1)
-    data['sample_id'] = broadcasted_sample_ids
-    data['dhs_id'] = broadcasted_dhs_ids
+    data['sample_id'] = broadcasted_sample_ids.flatten()
+    data['dhs_id'] = broadcasted_dhs_ids.flatten()
     data['read_depth'] = pd.Series(data['sample_id']).map(adata_slice.obs['nuclear_reads'])
     data['indiv_id'] = pd.Series(data['sample_id']).map(sample_to_indiv_mapping)
     data['chrom'] = pd.Series(data['dhs_id']).map(adata_slice.var['#chr'])
