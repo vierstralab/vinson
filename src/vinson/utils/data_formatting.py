@@ -104,7 +104,8 @@ def compute_if_dask(array):
     return array
 
 
-def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=None, use_sample_peaks=False) -> dict:
+def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=None, use_sample_peaks=False,
+                                     extra_layers=()) -> dict:
     """
     This function can also be used to extract data into training anndata object.
     """
@@ -127,6 +128,8 @@ def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=No
 
     data['density'] = compute_if_dask(adata_slice.layers["density"]).flatten()
     data['background'] = compute_if_dask(adata_slice.layers["mean_bg_agg_cutcounts"]).flatten()
+    for layer in extra_layers:
+        data[layer] = compute_if_dask(adata_slice.layers[layer]).flatten()
     data['class'] = np.where(adata_slice.layers["binary"].toarray().flatten(), 1, -1)
     data['sample_id'] = broadcasted_sample_ids.flatten()
     data['dhs_id'] = broadcasted_dhs_ids.flatten()
