@@ -34,9 +34,8 @@ def data_to_h5(h5_file: str, data: dict):
     with h5py.File(h5_file, 'w') as f:
         for key, value in data.items():
             if np.issubdtype(value.dtype, np.str_):
-                f.create_dataset(key, data=value, compression="gzip", dtype=strings_dtype)
-            else:
-                f.create_dataset(key, data=value, compression="gzip")
+                value = value.astype(strings_dtype)
+            f.create_dataset(key, data=value, compression="gzip")
 
 
 def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
