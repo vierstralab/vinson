@@ -122,7 +122,6 @@ def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=No
     """
     adata_slice = slice_adata(backed_anndata, dhs_ids, sample_ids) # sample x dhs
 
-    print('compute on density', flush=True)
     sample_names = np.array(adata_slice.obs_names)
     dhs_names = np.array(adata_slice.var_names)
 
