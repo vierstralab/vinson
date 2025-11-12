@@ -1,10 +1,10 @@
-import sys, os
-
+import os
+import sys
+import random
+import numpy as np
 from argparse import ArgumentParser
 
 import torch
-from torch.utils.data import DataLoader
-
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger
 from lightning.pytorch.callbacks import (
@@ -13,153 +13,143 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 
-from vinson.datasets.sequence import VariantEmbedDataset
 
-from vinson.models.sequence import (
-    CellEmbedding,
-    BassetTrunkEmbed,
-    VariantEmbedModel,
-)
+from vinson.utils.helpers import read_configs, save_config, generate_run_name
+from vinson.utils.run import datamodule_from_config, model_from_config
 
 
-def main(args):
-    """ """
-    embeddings_file = "/home/jvierstra/proj/vinson/data/embeddings.tsv"
-    fasta_file = "/net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa"
-    sample_genotype_file = (
-        "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/output/meta+sample_ids.tsv"
-    )
-    genotype_file = "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v4/phasing/output/all_phased.bed.gz"
+torch.set_float32_matmul_precision('high')
 
-    train_dataset = VariantEmbedDataset(
-        args.train_file,
-        embeddings_file,
-        fasta_file,
-        sample_genotype_file=sample_genotype_file,
-        genotype_file=genotype_file,
-        flip_alleles=True,
-        reverse_complement=True,
-        jitter=args.jitter,
-        noise=args.noise,
-    )
 
-    valid_dataset = VariantEmbedDataset(
-        args.val_file,
-        embeddings_file,
-        fasta_file,
-        sample_genotype_file=sample_genotype_file,
-        genotype_file=genotype_file,
-        flip_alleles=False,
-        reverse_complement=False,
-        jitter=0,
-        noise=0,
-    )
+def set_global_seed(seed=42):
+    # Python's built-in random module
+    random.seed(seed)
 
-    dataloader_kwargs = dict(
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=True,
-        drop_last=True,
-    )
+    # Numpy's random module
+    np.random.seed(seed)
 
-    train_dataloader = DataLoader(
-        train_dataset,
-        shuffle=True,
-        **dataloader_kwargs,
-    )
+    # PyTorch seed for CPU
+    torch.manual_seed(seed)
 
-    valid_dataloader = DataLoader(
-        valid_dataset,
-        shuffle=False,
-        **dataloader_kwargs,
-    )
+    # PyTorch seed for all GPU devices (if using CUDA)
+    torch.cuda.manual_seed_all(seed)
 
-    # Optimizer & LR scheduler
-    optimizer = torch.optim.AdamW
-    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau
+    # Make sure to disable CuDNN's non-deterministic optimizations
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
-    # TODO: Make these parameters settable via CLI
-    optimizer_kwargs = dict(lr=0.0001)
-    lr_scheduler_kwargs = dict(
-        mode="min", factor=0.1, patience=3, min_lr=1e-6, verbose=True
-    )
 
-    # Create model
-    embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
-    trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
-    
-    # Create lightning module
-    model = VariantEmbedModel(
-        trunk_model,
-        embed_model,
-        optimizer=optimizer,
-        optimizer_kwargs=optimizer_kwargs,
-        lr_scheduler=lr_scheduler,
-        lr_scheduler_kwargs=lr_scheduler_kwargs,
-    )
 
-    # Initialize model
-    model.init_model()
+def set_worker_seed(worker_id):
+    # Set seed for Python and NumPy in each worker
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
 
-    # Load model trunk weights
-    if args.trunk_weights:
-        print(f"Loading weights from pre-trained model: {args.trunk_weights}")
-        pretrained_state_dict = torch.load(
-            args.trunk_weights,
-            map_location=torch.device("cpu"),
-        )["state_dict"]
-
-        embed_pretrained_dict = {
-            k: v for k, v in pretrained_state_dict.items() if "embedding." in k
-        }
-        trunk_pretrained_dict = {
-            k: v for k, v in pretrained_state_dict.items() if "trunk." in k
-        }
-
-        model_dict = model.state_dict()
-        model_dict.update({**embed_pretrained_dict, **trunk_pretrained_dict})
-
-        model.load_state_dict(model_dict, strict=False)
-
-    # Configure trainer logger & callbacks
-    logger = CSVLogger(os.path.join(args.outdir, "logs"))
+def init_multigpu_trainer(
+        outdir,
+        accelerator,
+        strategy,
+        nodes,
+        devices,
+        logger_type,
+        val_check_interval,
+        **trainer_kwargs
+    ):
+    assert logger_type in ["csv"], "Only 'csv' logger is currently supported."
+    logger = CSVLogger(os.path.join(outdir, "logs"))
 
     callbacks = [
-        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.001, patience=10),
+        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.005, patience=10),
         ModelCheckpoint(
             monitor="val_loss",
             mode="min",
-            filename="{epoch}-{step}-{val_loss:.4f}",
+            filename="{epoch}-{step}-{val_loss:.2f}",
             dirpath=os.path.join(
-                args.outdir,
+                outdir,
                 "checkpoints",
             ),
-            save_top_k=3,
+            save_top_k=5,
             save_last="link",
         ),
         LearningRateMonitor(),
     ]
 
-    # Trainer
     trainer = L.Trainer(
         logger=logger,
         callbacks=callbacks,
-        max_epochs=100,
-        accelerator=args.accelerator,
-        strategy=args.strategy,
-        num_nodes=args.nodes,
-        devices=args.devices,
+        max_epochs=20,
+        accelerator=accelerator,
+        strategy=strategy,
+        num_nodes=nodes,
+        devices=devices,
+        val_check_interval=val_check_interval,
         log_every_n_steps=100,
-        val_check_interval=args.val_check_interval,
         gradient_clip_val=1.0,
+        reload_dataloaders_every_n_epochs=1,
+        num_sanity_val_steps=0,
+        **trainer_kwargs,
+       # precision='16-mixed',
     )
+    return trainer
 
-    # Run trainer
-    trainer.fit(model, train_dataloader, valid_dataloader)
+def fit_model(model, trainer: L.Trainer, datamodule, checkpoint=None):
+    if checkpoint is not None:
+        trainer.fit(model, datamodule=datamodule, ckpt_path=checkpoint)
+    else:
+        trainer.fit(model, datamodule=datamodule)
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
+    
+    #need for embed
+    parser.add_argument(
+        "anndata_file",
+        type=str,
+        help="Input AnnData file.",
+    )
+    
+    parser.add_argument(
+        "fasta_file", type=str, help="FASTA file",
+    )
+    
+    parser.add_argument(
+        "--run_name",
+        default=None,
+        type=str,
+        help="Unique identifier for the training run. Generated if not provided.",
+    )
+    parser.add_argument(
+        '--config',
+        type=str,
+        default=None, 
+        help='Path to YAML config file (see default config for format). If provided, overrides default parameters.'
+    )
+    
+    parser.add_argument(
+        "--genotype_file",
+        type=str,
+        default=None,
+        help="Path to Tabix indexed genotype file.",
+    )
+    
+    parser.add_argument(
+        "--checkpoint", type=str, help="Path to checkpoint.", default=None,
+    )
+    
+    parser.add_argument(
+        "--seed", type=int, help="Random seed", default=42,
+    )
+    
+    parser.add_argument(
+        "--outdir",
+        type=str,
+        default=".",
+        help="Output directory for logs and checkpoints.",
+    )
+    
+    # --- torch multi-gpu setup ---
 
     parser.add_argument(
         "--nodes", type=int, default=1, help="Number of nodes for distributed training."
@@ -167,39 +157,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--devices", type=int, default=4, help="Number of devices (GPUs/CPUs) per node."
     )
-    parser.add_argument(
-        "--outdir",
-        type=str,
-        default=".",
-        help="Output directory for logs and checkpoints.",
-    )
-    parser.add_argument(
-        "--jitter",
-        type=int,
-        default=25,
-        help="Maximum number of bases to randomly shift the region for augmentation.",
-    )
-    parser.add_argument(
-        "--noise",
-        type=float,
-        default=0.01,
-        help="Standard deviation of Gaussian noise added to embeddings.",
-    )
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        default=32,
-        help="Batch size for training and validation.",
-    )
-    parser.add_argument(
-        "--lr", type=float, default=0.0005, help="Learning rate (not implemented yet)."
-    )
-    parser.add_argument(
-        "--val_check_interval",
-        type=float,
-        default=1.0,
-        help="Fraction of an epoch between validation checks.",
-    )
+    
     parser.add_argument(
         "--num_workers",
         type=int,
@@ -219,19 +177,93 @@ if __name__ == "__main__":
         help="Distributed training strategy (e.g., 'ddp', 'auto').",
     )
     parser.add_argument(
-        "--trunk_weights",
-        type=str,
-        default=None,
-        help="Checkpoint of pre-trained model to initialize trunk weights.",
+        "--debug",
+        action="store_true",
+        help="Enable debug mode with max 200 * devices training steps per epoch.",
     )
-    parser.add_argument("train_file", help="Training dataset in hdf5 format")
-    parser.add_argument("val_file", help="Validation dataset in hdf5 format")
-
+    
+    
     args = parser.parse_args()
+    run_name = args.run_name.strip() or "vinson" #or generate_run_name() generates unique name in each subprocess. currently done outside of this script
+    
+    outdir = os.path.join(args.outdir, run_name)
+    os.makedirs(outdir, exist_ok=True)
+    
+    prev_run_config = os.path.join(outdir, "run_config.yaml")
+    
+    if os.path.exists(prev_run_config) and args.config is None:
+        print("Found existing config in output directory and no custom config provided. Using existing config.")
+        args.config = prev_run_config
 
-    try:
-        os.mkdir(args.outdir)
-    except OSError:
-        pass
+    if os.path.exists(prev_run_config) and args.config is None:
+        print("Found existing config in output directory and no custom config provided. Using existing config.")
+        args.config = prev_run_config
+        
+    default_config_path = os.path.dirname(os.path.abspath(__file__)) + "/default_train_dhs.config.yaml"
 
-    main(args)
+    config = read_configs(
+        default_config_path,
+        custom_config_path=args.config
+    )
+    
+    config['command'] = " ".join(["python"] + sys.argv)
+    config_path = os.path.join(outdir, "run_config.yaml")
+    save_config(
+        config,
+        config_path,
+    )
+
+    # Set global seed
+    set_global_seed(args.seed)
+    
+    if args.checkpoint == "last":
+        checkpoint = os.path.join(outdir, "checkpoints", "last.ckpt")
+    else:
+        checkpoint = args.checkpoint
+        
+    trainer_kwargs = {}
+
+    if args.debug:
+        trainer_kwargs['limit_train_batches'] = 200 * args.devices
+        trainer_kwargs['limit_val_batches'] = 200 * args.devices
+        config["logging_params"]["val_check_interval"] = 1.0
+    
+    # trainer
+    trainer = init_multigpu_trainer(
+        outdir,
+        accelerator=args.accelerator,
+        strategy=args.strategy,
+        nodes=args.nodes,
+        devices=args.devices,
+        logger_type=config["logging_params"]["logger_type"],
+        val_check_interval=config["logging_params"]["val_check_interval"],
+        **trainer_kwargs
+    )
+    
+    ### check
+    dataloader_kwargs = dict(
+        num_workers=args.num_workers,
+        pin_memory=True if args.accelerator == "gpu" else False,
+        drop_last=True,
+        worker_init_fn=set_worker_seed,
+        persistent_workers=False
+    )
+
+    # Setup dataloaders -- adjust to have correct input for variant
+    datamodule = datamodule_from_config(
+        config,
+        anndata_file=args.anndata_file,
+        fasta_file=args.fasta_file,
+        genotype_file=args.genotype_file,
+        **dataloader_kwargs,
+    )
+
+    model = model_from_config(config, checkpoint_path=checkpoint)
+
+    # Start training
+    fit_model(
+        model,
+        trainer,
+        datamodule,
+        checkpoint=checkpoint,
+    )

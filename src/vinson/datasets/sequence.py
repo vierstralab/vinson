@@ -3,6 +3,7 @@ import pandas as pd
 from collections import namedtuple
 
 from torch.utils.data import Dataset
+import gzip
 
 from genome_tools import GenomicInterval
 from genome_tools.data.extractors import FastaExtractor, TabixExtractor
@@ -23,8 +24,8 @@ class BaseSequenceDataset(Dataset):
 
     Parameters
     ----------
-    samples_file : str
-        Path to HDF5 file containing sample data.
+    data : dict
+        Dictionary containing sample metadata and values.
     embeddings_file : str
         Path to tab-delimited file with cell-type/state embeddings.
     fasta_file : str
@@ -40,10 +41,10 @@ class BaseSequenceDataset(Dataset):
 
     Attributes
     ----------
-    samples : h5py.File
-        Opened HDF5 file with sample data.
-    embeddings_df : pandas.DataFrame
-        DataFrame of cell-type/state embeddings.
+    data : dict
+        Dictionary containing sample metadata and values.
+    embeddings_file : str
+        Path to tab-delimited file with cell-type/state embeddings.
     fasta_extr : FastaExtractor or None
         Extractor for reference genome sequences (initialized as None).
     seqlen : int
@@ -63,16 +64,16 @@ class BaseSequenceDataset(Dataset):
         self.fasta_file = fasta_file
         self.data = data
 
-        # TODO : validate data keys depending on model type
-        assert set(
-            [
-                "chrom", "summit", "class", 
-                "density", "sample_id", 
-                "background", "read_depth"
-            ]
-        ).issubset(
-            self.data.keys()
-        )
+        # Move to subclass
+        # assert set(
+        #     [
+        #         "chrom", "summit", "class", 
+        #         "density", "sample_id", 
+        #         "background", "read_depth"
+        #     ]
+        # ).issubset(
+        #     self.data.keys()
+        # )
 
         self.reverse_complement = reverse_complement
         self.jitter = jitter
@@ -86,7 +87,7 @@ class BaseSequenceDataset(Dataset):
 
     def __del__(self):
         """
-        Clean up open file handles for samples and FASTA extractor.
+        Clean up open file handles for FASTA extractor.
         """
         if self.fasta_extr:
             self.fasta_extr.close()
@@ -184,6 +185,17 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         self.clip_density = clip_density
         self.min_bg = min_bg
         self.negatives_weight = negatives_weight
+        
+        #moved from base dataset
+        assert set(
+            [
+                "chrom", "summit", "class", 
+                "density", "sample_id", 
+                "background", "read_depth"
+            ]
+        ).issubset(
+            self.data.keys()
+        )
 
         self.genotype_file = genotype_file
         self.genotype_extr: TabixExtractor = None
@@ -416,8 +428,8 @@ class VariantEmbedDataset(BaseSequenceDataset):
 
     Parameters
     ----------
-    samples_file : str
-        Path to HDF5 file containing variant metadata and counts.
+    data : dict
+        Dictionary containing sample metadata and values.
     embeddings_file : str
         Path to tab-delimited file with cell-type/state embeddings.
     fasta_file : str
@@ -439,10 +451,10 @@ class VariantEmbedDataset(BaseSequenceDataset):
 
     Attributes
     ----------
-    samples : h5py.File
-        Opened HDF5 file with variant metadata and counts.
-    embeddings_df : pandas.DataFrame
-        DataFrame of cell-type/state embeddings.
+    data : dict
+        Dictionary containing sample metadata and values.
+    embeddings_file : str
+        Path to tab-delimited file with cell-type/state embeddings.
     fasta_extr : FastaExtractor
         Extractor for reference genome sequences.
     genotype_extr : TabixExtractor
@@ -458,20 +470,19 @@ class VariantEmbedDataset(BaseSequenceDataset):
 
     def __init__(
         self,
-        samples_file,
-        embeddings_file,
-        fasta_file,
-        sample_genotype_file=None,
-        genotype_file=None,
+        data: dict,
+        embeddings_df: pd.DataFrame,
+        fasta_file: str,
+        genotype_file: str = None,
         flip_alleles=True,
         reverse_complement=True,
         jitter=0,
         noise=0,
     ):
         super().__init__(
-            samples_file,
-            embeddings_file,
-            fasta_file,
+            data=data,
+            embeddings_df=embeddings_df,
+            fasta_file=fasta_file,
             reverse_complement=reverse_complement,
             jitter=jitter,
             noise=noise,
@@ -480,7 +491,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
         self.flip_alleles = flip_alleles
 
         self.genotype_file = genotype_file
-        self.genotype_extr = None
+        self.genotype_extr: TabixExtractor = None
 
         assert set(
             [
@@ -494,14 +505,11 @@ class VariantEmbedDataset(BaseSequenceDataset):
                 "sample_id",
                 "logit_es",
             ]
-        ).issubset(self.samples.keys())
+        ).issubset(self.data.keys())
 
-        if sample_genotype_file:
-            logger.info("Loading genotype metadata...")
-            self.sample_to_genotype_df = pd.read_table(
-                sample_genotype_file, index_col=0
-            )
-            # TODO: check if genotype file is available and readable
+        if genotype_file is not None:
+            assert 'indiv_id' in data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
+
             self.include_genotypes = True
         else:
             logger.info(
@@ -509,7 +517,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
             )
             self.include_genotypes = False
 
-    def get_phased_sequences(self, interval, sample_id, reference):
+    def get_phased_sequences(self, interval, sample_id, indiv_id, reference):
         """
         Retrieve phased haplotype sequences for a given interval and sample, injecting
         phased and unphased variants as appropriate.
@@ -518,10 +526,10 @@ class VariantEmbedDataset(BaseSequenceDataset):
         ----------
         interval : GenomicInterval
             Genomic interval to extract.
-        sample_id : str
+        indiv_id : str
             Sample identifier.
-        query_pos : int
-            Position of the query variant.
+        reference : type Variant
+            namedtuple("Variant", ["chr", "pos", "ref", "alt"])
 
         Returns
         -------
@@ -536,17 +544,13 @@ class VariantEmbedDataset(BaseSequenceDataset):
         seq_alt = str(seq_ref)
 
         # Check if sample in has a genotype
-        if sample_id not in self.sample_to_genotype_df.index:
-            raise ValueError(f"Sample {sample_id} not in samples to genotype file!")
-
-        # Get individual ID from sample ID
-        indiv_id = self.sample_to_genotype_df.loc[sample_id, "indiv_id"]
-
-        # Check if not NaN
         if pd.isna(indiv_id):
-            raise ValueError(
-                f"No INDIV_ID for {sample_id} samples to genotype file (indiv_id = NaN). ({str(interval)})"
+            logging.debug(
+                f"INDIV_ID for {sample_id} not provided. ({str(interval)})"
             )
+
+        # Get individual ID from sample ID -- is now input should be part of data
+        # indiv_id = self.sample_to_genotype_df.loc[sample_id, "indiv_id"]
 
         # Extract variants pertaining to individual
         variants = self.genotype_extr[interval]
@@ -572,7 +576,8 @@ class VariantEmbedDataset(BaseSequenceDataset):
             _chr, _pos, _ref, _alt = v.Index
             rel_pos = _pos - interval.start
             # Phased variants, including reference
-            if v.phase_block == ref_variant.phase_block and not pd.isna(
+            #added option for non phased_variant file, will be treated as unphased
+            if "phase_block" in v._fields and v.phase_block == ref_variant.phase_block and not pd.isna(
                 ref_variant.phase_block
             ):
                 if v.gt == "1|0":
@@ -618,6 +623,59 @@ class VariantEmbedDataset(BaseSequenceDataset):
             raise ValueError("Expected ref & alt alleles not found in correct position in sequences!", reference, variants)
 
         return (len(variants), seq_ref, seq_alt)
+                
+    def _init_fileread(self):
+        # pysam is not thread-safe
+        if not self.fasta_extr:
+            self.fasta_extr = FastaExtractor(self.fasta_file)
+        if self.include_genotypes and not self.genotype_extr:
+            openfile = gzip.open if self.genotype_file.endswith(".gz") else open
+            with openfile(self.genotype_file, "rt") as f:
+                phased = False
+                for line in f:
+                    if "phase_set" in line:
+                        phased = True
+                        break
+            if phased:
+                print(f"[INFO] Detected phased genotype format ({self.genotype_file})")
+                self.genotype_extr = TabixExtractor(
+                    self.genotype_file,
+                    skiprows=1,
+                    columns=[
+                        "chr",
+                        "start",
+                        "end",
+                        "ref",
+                        "alt",
+                        "indiv_id",
+                        "gt",
+                        "phase_block",
+                    ],
+                    na_values={"phase_block": "."},
+                )
+            else:
+                print(f"[INFO] Using unphased genotype format ({self.genotype_file})")
+                self.genotype_extr = TabixExtractor(
+                    self.genotype_file,
+                    columns=[
+                        "chr",
+                        "start",
+                        "end",
+                        "rs_id",
+                        "ref",
+                        "alt",
+                        "af_ref",
+                        "af_alt",
+                        "gt",
+                        "_0",
+                        "_1",
+                        "_2",
+                        "_3",
+                        "indiv_id",
+                    ],
+                    na_values=".",
+                )
+            
 
     def __getitem__(self, i):
         """
@@ -652,38 +710,40 @@ class VariantEmbedDataset(BaseSequenceDataset):
         haplotype 1 vs. haplotype 2. We call it "ref" vs. "alt" because the
         variant effect is always measured against the reference genome allele.
         """
+        self._init_fileread()
         # pysam is not thread-safe
-        if not self.fasta_extr:
-            self.fasta_extr = FastaExtractor(self.fasta_file)
+        #moved to file init
+        # if not self.fasta_extr:
+        #     self.fasta_extr = FastaExtractor(self.fasta_file)
 
-        # TODO: move this to "get_phased_sequences" function?
-        if self.include_genotypes and not self.genotype_extr:
-            self.genotype_extr = TabixExtractor(
-                self.genotype_file,
-                skiprows=1,
-                columns=[
-                    "chr",
-                    "start",
-                    "end",
-                    "ref",
-                    "alt",
-                    "indiv_id",
-                    "gt",
-                    "phase_block",
-                ],
-                na_values={"phase_block": "."},
-            )
+        # moved to init
+        # if self.include_genotypes and not self.genotype_extr:
+        #     self.genotype_extr = TabixExtractor(
+        #         self.genotype_file,
+        #         skiprows=1,
+        #         columns=[
+        #             "chr",
+        #             "start",
+        #             "end",
+        #             "ref",
+        #             "alt",
+        #             "indiv_id",
+        #             "gt",
+        #             "phase_block",
+        #         ],
+        #         na_values={"phase_block": "."},
+        #     )
 
         chrom, pos, ref, alt, ref_counts, total_counts, bad, lfc, sample_id = (
-            self.samples["chrom"][i].astype(str),
-            self.samples["pos"][i],
-            self.samples["ref"][i].astype(str),
-            self.samples["alt"][i].astype(str),
-            self.samples["ref_counts"][i].astype(np.float32),
-            self.samples["total_counts"][i].astype(np.float32),
-            self.samples["BAD"][i].astype(np.float32),
-            self.samples["logit_es"][i].astype(np.float32),
-            self.samples["sample_id"][i].astype(str),
+            self.data["chrom"][i].astype(str),
+            self.data["pos"][i],
+            self.data["ref"][i].astype(str),
+            self.data["alt"][i].astype(str),
+            self.data["ref_counts"][i].astype(np.float32),
+            self.data["total_counts"][i].astype(np.float32),
+            self.data["BAD"][i].astype(np.float32),
+            self.data["logit_es"][i].astype(np.float32),
+            self.data["sample_id"][i].astype(str),
         )
 
         variant = GenomicInterval(chrom, pos, pos)
@@ -697,8 +757,9 @@ class VariantEmbedDataset(BaseSequenceDataset):
 
         # Inject genotypes if genotype files provided
         if self.include_genotypes:
+            indiv_id = self.data["indiv_id"][i]   
             _, dna_seq_ref, dna_seq_alt = self.get_phased_sequences(
-                interval, sample_id, Variant(chrom, pos, ref, alt)
+                interval, sample_id, indiv_id, Variant(chrom, pos, ref, alt)
             )
         else:
             dna_seq_ref = self.fasta_extr[interval]
@@ -765,4 +826,4 @@ class VariantEmbedDataset(BaseSequenceDataset):
         int
             Number of variants.
         """
-        return self.samples["chrom"].shape[0]
+        return self.data["chrom"].shape[0]

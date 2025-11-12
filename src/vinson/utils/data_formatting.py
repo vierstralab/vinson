@@ -5,7 +5,18 @@ import pandas as pd
 
 
 def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
-    data_keys = {
+    var_data_keys = {
+        "chrom": np.str_,
+        "pos": np.int32,
+        "ref": np.str_,
+        "alt": np.str_,
+        "ref_counts": np.float32,
+        "total_counts": np.float32,
+        "BAD": np.float32,
+        "sample_id": np.str_,
+        "logit_es": np.float32,
+    }
+    non_var_data_keys = {
         'dhs_id': np.str_,
         'read_depth': np.float32,
         'sample_id': np.str_,
@@ -20,6 +31,14 @@ def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
         'dhs_weight': np.float32,
     }
     with h5py.File(h5_file, 'r') as f:
+        file_keys = set(f.keys())
+        # Automatically choose key group based on presence of 'ref' and 'alt'
+        if {'ref', 'alt'}.issubset(file_keys):
+            print(f"[INFO] Detected variant dataset ({h5_file})")
+            data_keys = var_data_keys
+        else:
+            print(f"[INFO] Detected non-variant dataset ({h5_file})")
+            data_keys = non_var_data_keys
         data = {}
         for key, dtype in data_keys.items():
             p = f[key][()]
@@ -27,6 +46,10 @@ def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
         for key, dtype in optional_keys.items():
             if key in f:
                 data[key] = np.ascontiguousarray(f[key][()].astype(dtype))
+                
+        if 'indiv_id' not in data:
+            indiv_map = pd.read_table('/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/metadata.clustered.tsv').set_index('sample_id')['indiv_id']
+            data['indiv_id'] = pd.Series(data['sample_id']).map(indiv_map).values
 
     return data, ref_adata.obsm['motif_embeddings']
 

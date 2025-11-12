@@ -2,7 +2,7 @@ import anndata as ad
 
 from vinson.models.sequence import CellEmbedding, BassetTrunkEmbed, EmbedModel
 from vinson.datamodules.sequence import SeqEmbedDataModule
-from vinson.datasets.sequence import SequenceEmbedDataset
+from vinson.datasets.sequence import SequenceEmbedDataset, VariantEmbedDataset
 from vinson.utils.data_formatting import extract_data_from_h5
 
 
@@ -12,18 +12,30 @@ def model_from_config(config, checkpoint_path=None):
     trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
 
     if checkpoint_path is not None:
-        model = EmbedModel.load_from_checkpoint(
-            checkpoint_path,
+        #variant model option
+        if config["model_type"] == 'variant':
+            model = VariantEmbedModel.load_from_checkpoint(
+                checkpoint_path,
+                trunk=trunk_model, 
+                embed=embed_model)
+        else:
+            model = EmbedModel.load_from_checkpoint(
+                checkpoint_path,
+                trunk=trunk_model,
+                embed=embed_model,
+            )
+        return model
+    
+    if config["model_type"] == 'variant':
+        model = VariantEmbedModel(
+            trunk=trunk_model, 
+            embed=embed_model)
+    # Create trunk model, maybe move to config later
+    else:
+        model = EmbedModel(
             trunk=trunk_model,
             embed=embed_model,
-        )
-        return model
-
-    # Create trunk model, maybe move to config later
-    model = EmbedModel(
-        trunk=trunk_model,
-        embed=embed_model,
-        regression=config["model_type"] == "regression",
+            regression=config["model_type"] == "regression",
         lr_scheduler=config["hparams"].get("lr_scheduler"),
         lr_scheduler_kwargs=config["hparams"].get("lr_scheduler_kwargs", {}),
         optimizer_kwargs=config["hparams"]['optimizer_kwargs'],
@@ -34,12 +46,14 @@ def model_from_config(config, checkpoint_path=None):
     model.init_model()
     return model
 
+
 ############
 def dataset_from_h5(
     h5_file: str,
     ref_adata: ad.AnnData,
     fasta_file: str,
     genotype_file: str = None,
+    variant_ds: bool = False,
     **dataset_kwargs
 ):
     """
@@ -51,13 +65,22 @@ def dataset_from_h5(
         **dataset_kwargs: Additional arguments for dataset.
     """
     data, embeddings_df = extract_data_from_h5(h5_file, ref_adata=ref_adata)
-    dataset = SequenceEmbedDataset(
-        data=data,
-        embeddings_df=embeddings_df,
-        fasta_file=fasta_file,
-        genotype_file=genotype_file,
-        **dataset_kwargs,
-    )
+    if variant_ds:
+        dataset = VariantEmbedDataset(
+            data=data,
+            embeddings_df=embeddings_df,
+            fasta_file=fasta_file,
+            genotype_file=genotype_file,
+            **dataset_kwargs,
+        )
+    else:
+        dataset = SequenceEmbedDataset(
+            data=data,
+            embeddings_df=embeddings_df,
+            fasta_file=fasta_file,
+            genotype_file=genotype_file,
+            **dataset_kwargs,
+        )
 
     return dataset
 
