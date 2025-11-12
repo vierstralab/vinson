@@ -70,7 +70,7 @@ def calculate_per_dhs_fold_changes(
         eval_dataset[col + '_log_fc'] = np.log2(
             np.clip(eval_dataset[col], kwargs.get('min', 0.005), kwargs.get('max', 20))
         ) - np.log2(
-            eval_dataset['dhs_id'].map(per_dhs_mean)
+            eval_dataset['dhs_id'].map(per_dhs_mean[col])
         )
 
     return eval_dataset
