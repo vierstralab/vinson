@@ -64,7 +64,6 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
             gb_row['median'],
             w, 
             yerr=[[gb_row['median'] - gb_row['q1']], [gb_row['q3'] - gb_row['median']]],
-            capsize=4,
             color=gb_row['color'] if color is None else color,
             label=label if i == 0 else None,
             **kw,
