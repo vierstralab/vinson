@@ -69,7 +69,7 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
             label=label if i == 0 else None,
             **kw,
         )
-
+    ax.set_xticks(np.arange(n))
     ax.set_xticklabels(annotation_data['name'], rotation=90, fontsize='small')
     margin = max(w * (abs(offset) + 0.5), 0.5)
     ax.set_xlim(-margin, n - 1 + margin)
