@@ -49,9 +49,11 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
     gb['color'] = annotation_data['color'].values
 
     kw = dict(
-        elinewidth=0.5,
-        capsize=1,
-        capthick=0.5,
+        error_kw=dict(
+            linewidth=0.5,
+            capsize=1,
+            capthick=0.5,
+        ),
         linewidth=0,
         edgecolor='k',
         fmt='none',
