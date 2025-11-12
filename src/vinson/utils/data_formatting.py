@@ -30,9 +30,13 @@ def sanitize_data(data: dict) -> dict:
 
 
 def data_to_h5(h5_file: str, data: dict):
+    strings_dtype = h5py.string_dtype(encoding='utf-8')
     with h5py.File(h5_file, 'w') as f:
         for key, value in data.items():
-            f.create_dataset(key, data=value, compression="gzip")
+            if np.issubdtype(value.dtype, np.str_):
+                f.create_dataset(key, data=value, compression="gzip", dtype=strings_dtype)
+            else:
+                f.create_dataset(key, data=value, compression="gzip")
 
 
 def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
