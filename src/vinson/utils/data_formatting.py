@@ -26,6 +26,7 @@ def sanitize_data(data: dict) -> dict:
     for key, dtype in optional_keys.items():
         if key in data:
             data[key] = np.ascontiguousarray(data[key].astype(dtype))
+    data['background'] = np.nan_to_num(data['background'])
     return data
 
 
@@ -94,7 +95,7 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str):
     if 'dhs_weight' in train_adata.varm:
         data['dhs_weight'] = train_adata.varm['dhs_weight'][col_idx]
 
-    data = {k: np.ascontiguousarray(v) for k, v in data.items()}
+    data = sanitize_data(data)
 
     embeddings_df = train_adata.obsm['motif_embeddings']
     return data, embeddings_df
