@@ -48,19 +48,32 @@ def annotate_eval_dataset_with_layers(eval_dataset: pd.DataFrame, **kwargs) -> p
 
 def calculate_per_dhs_fold_changes(
     eval_dataset: pd.DataFrame,
-    col: str = 'corrected_density',
+    cols: list,
     **kwargs
-) -> pd.Series:
+) -> pd.DataFrame:
     """
     """
-    
-    per_dhs_and_annotation_metrics = eval_dataset.groupby(
-        ['dhs_id', 'extended_annotation']
-    )[col].agg(clipped_gmean, **kwargs).reset_index()
-    per_dhs_mean = per_dhs_and_annotation_metrics.groupby('dhs_id')[col].agg(clipped_gmean, **kwargs)
+    per_dhs_annot = (
+            eval_dataset
+            .groupby(['dhs_id', 'extended_annotation'])[cols]
+            .agg(clipped_gmean, **kwargs)
+            .reset_index()
+        )
 
-    return eval_dataset[col] / eval_dataset['dhs_id'].map(per_dhs_mean)
+    per_dhs_mean = (
+        per_dhs_annot
+        .groupby('dhs_id')[cols]
+        .agg(clipped_gmean, **kwargs)
+    )
 
+    for col in cols:
+        eval_dataset[col + '_log_fc'] = np.log2(
+            np.clip(eval_dataset[col], kwargs.get('min', 0.005), kwargs.get('max', 20))
+        ) - np.log2(
+            eval_dataset['dhs_id'].map(per_dhs_mean)
+        )
+
+    return eval_dataset
 
 def annotate_eval_dataset_with_obs_columns(eval_dataset: pd.DataFrame, adata: ad.AnnData, cols):
     for col in cols:
