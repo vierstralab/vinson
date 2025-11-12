@@ -8,7 +8,7 @@ import pandas as pd
 from torch.utils.data import DataLoader
 from vinson.utils.run import model_from_config as load_vinson_model
 from vinson.utils.helpers import read_configs
-from vinson.utils.data_formatting import extract_data_from_backed_anndata, extract_data_from_h5
+from vinson.utils.data_formatting import extract_data_from_h5
 from vinson.datasets.sequence import SequenceEmbedDataset
 
 from genome_tools.data.anndata import read_zarr_backed
@@ -55,25 +55,12 @@ def load_and_predict(batch, model):
 
 def main():
     parser = argparse.ArgumentParser(description="Predict DHS model")
+    parser.add_argument("h5_data", type=str, help="Path to DHS dataset (.h5 file)")
+
     parser.add_argument("anndata", type=str, help="Path to full AnnData file")
     parser.add_argument("fasta_file", type=str, help="Path to reference FASTA file")
     parser.add_argument("model_checkpoint", type=str, help="Path to model checkpoint")
     parser.add_argument("model_config_path", type=str, help="Path to model config YAML file")
-    parser.add_argument("--h5_data", type=str, help="Path to DHS dataset (.h5 file)")
-    parser.add_argument(
-        "--dhs_ids",
-        nargs="*",
-        default=None,
-        help="List of DHS IDs to predict (space-separated, optional)",
-    )
-
-    parser.add_argument(
-        "--sample_ids",
-        nargs="*",
-        default=None,
-        help="List of sample IDs to predict (space-separated, optional)",
-    )
-    parser.add_argument('--use_sample_peaks', action='store_true', help='If set, only predict on dhs that overlap with sample peaks', default=False)
     parser.add_argument("--genotype_file", type=str, default=None, help="Path to TABIX indexed genotype file (optional)")
 
     parser.add_argument("--batch_size", type=int, default=128)
@@ -107,25 +94,11 @@ def main():
         motif_embedding = pd.read_table('/home/jvierstra/proj/vinson/data/embeddings_clustername.tsv', index_col=0)
         adata.obsm['motif_embeddings'] = motif_embedding.loc[adata.obs_names]
 
-    adata_filters = args.dhs_ids is not None or args.sample_ids is not None
-    if args.h5_data is not None and adata_filters:
-        print('Using provided h5 file. Sample IDs and DHS IDs are ignored')
-        adata_filters = False
-    elif args.h5_data is None and not adata_filters:
-        raise ValueError("Either --h5_data, or --dhs_ids and/or --sample_ids must be provided to filter the AnnData.")
-
-    if adata_filters:
-        data, embeddings_df = extract_data_from_backed_anndata(
-            adata,
-            dhs_ids=args.dhs_ids,
-            sample_ids=args.sample_ids,
-            use_sample_peaks=args.use_sample_peaks,
-        )
-    else:
-        data, embeddings_df = extract_data_from_h5(
-            h5_file=args.h5_data,
-            ref_adata=adata,
-        )
+    
+    data, embeddings_df = extract_data_from_h5(
+        h5_file=args.h5_data,
+        ref_adata=adata,
+    )
     
     dataset = SequenceEmbedDataset(
         data=data,
