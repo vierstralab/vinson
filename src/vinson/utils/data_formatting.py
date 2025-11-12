@@ -5,13 +5,8 @@ import pandas as pd
 import dask.array as da
 
 
-def data_to_h5(data: dict, h5_file: str):
-    with h5py.File(h5_file, 'w') as f:
-        for key, value in data.items():
-            f.create_dataset(key, data=value, compression="gzip")
-
-
-def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
+def sanitize_data(data: dict) -> dict:
+    """Ensure that all data arrays are contiguous and of the correct dtype."""
     data_keys = {
         'dhs_id': np.str_,
         'read_depth': np.float32,
@@ -26,14 +21,27 @@ def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
         'indiv_id': np.str_,
         'dhs_weight': np.float32,
     }
+    for key, dtype in data_keys.items():
+        data[key] = np.ascontiguousarray(data[key].astype(dtype))
+    for key, dtype in optional_keys.items():
+        if key in data:
+            data[key] = np.ascontiguousarray(data[key].astype(dtype))
+    return data
+
+
+def data_to_h5(h5_file: str, data: dict):
+    with h5py.File(h5_file, 'w') as f:
+        for key, value in data.items():
+            f.create_dataset(key, data=value, compression="gzip")
+
+
+def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
     with h5py.File(h5_file, 'r') as f:
         data = {}
-        for key, dtype in data_keys.items():
-            p = f[key][()]
-            data[key] = np.ascontiguousarray(p.astype(dtype))
-        for key, dtype in optional_keys.items():
-            if key in f:
-                data[key] = np.ascontiguousarray(f[key][()].astype(dtype))
+        for key in f.keys():
+            data[key] = f[key][()]
+
+        data = sanitize_data(data)
 
     return data, ref_adata.obsm['motif_embeddings']
 
@@ -144,4 +152,5 @@ def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=No
         for key in data:
             data[key] = data[key][sample_peaks_mask]
 
+    data = sanitize_data(data)
     return data
