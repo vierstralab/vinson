@@ -53,10 +53,10 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
             linewidth=0.5,
             capsize=1,
             capthick=0.5,
+            fmt='none',
         ),
         linewidth=0,
         edgecolor='k',
-        fmt='none',
     )
     kw = {**kw, **kwargs}
 
