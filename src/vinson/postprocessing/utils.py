@@ -59,7 +59,7 @@ def calculate_per_dhs_fold_changes(
     )[col].agg(clipped_gmean, **kwargs).reset_index()
     per_dhs_mean = per_dhs_and_annotation_metrics.groupby('dhs_id')[col].transform(clipped_gmean, **kwargs)
 
-    return (eval_dataset.set_index('dhs_id')[col] / per_dhs_mean).set_index(eval_dataset.index) # <- Series
+    return (eval_dataset.set_index('dhs_id')[col] / per_dhs_mean).set_axis(eval_dataset.index)
 
 
 def annotate_eval_dataset_with_obs_columns(eval_dataset: pd.DataFrame, adata: ad.AnnData, cols):
