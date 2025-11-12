@@ -53,25 +53,18 @@ def calculate_per_dhs_fold_changes(
 ) -> pd.DataFrame:
     """
     """
-    per_dhs_annot = (
-            eval_dataset
-            .groupby(['dhs_id', 'extended_annotation'])[cols]
-            .agg(clipped_gmean, **kwargs)
-            .reset_index()
-        )
-
-    per_dhs_mean = (
-        per_dhs_annot
-        .groupby('dhs_id')[cols]
-        .agg(clipped_gmean, **kwargs)
-    )
-
     for col in cols:
-        eval_dataset[col + '_log_fc'] = np.log2(
-            np.clip(eval_dataset[col], kwargs.get('min', 0.005), kwargs.get('max', 20))
-        ) - np.log2(
-            eval_dataset['dhs_id'].map(per_dhs_mean[col])
-        )
+        eval_dataset['_tmp_log_data'] = np.log2(eval_dataset[col].clip(kwargs.get('min', 0.005), kwargs.get('max', 20)))
+        log_data = eval_dataset.pivot(index='dhs_id', columns='sample_id', values='_tmp_log_data')
+        
+        sample_by_annotation = pd.get_dummies(
+            eval_dataset.drop_duplicates('sample_id').set_index('sample_id')['extended_annotation'], prefix='', prefix_sep=''
+        ).astype(int)
+        average_log_data = log_data @ sample_by_annotation / sample_by_annotation.sum(axis=0)
+        
+        eval_dataset[col + '_log2_fc'] = eval_dataset['_tmp_log_data'] - eval_dataset['dhs_id'].map(average_log_data.mean(axis=1))
+    
+        del eval_dataset['_tmp_log_data']
 
     return eval_dataset
 
