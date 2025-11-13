@@ -88,7 +88,6 @@ def main(args):
         anndata_file=args.anndata_file,
         fasta_file=args.fasta_file,
         genotype_file=args.genotype_file,
-        variant=True,
         **dataloader_kwargs,
     )
 

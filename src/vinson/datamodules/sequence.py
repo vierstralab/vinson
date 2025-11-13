@@ -21,7 +21,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
         anndata_file: str,
         fasta_file: str,
         genotype_file=None,
-        variant=False,
         train_dataset_kwargs={},
         valid_dataset_kwargs={},
         **dataloader_kwargs,
@@ -44,7 +43,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.anndata_file = anndata_file
 
         self.genotype_file = genotype_file
-        self.variant_ds = variant
 
         self.train_dataset_kwargs = train_dataset_kwargs
         self.valid_dataset_kwargs = valid_dataset_kwargs
@@ -68,43 +66,25 @@ class SeqEmbedDataModule(L.LightningDataModule):
         data, embeddings_df = self.get_data(self.current_train_epoch, 'train', 'train')
 
         # Create new dataset
-        if self.variant_ds:
-            train_dataset = VariantEmbedDataset(
-                data=data,
-                embeddings_df=embeddings_df,
-                fasta_file=self.fasta_file,
-                genotype_file=self.genotype_file,
-                **self.train_dataset_kwargs,
-            )
-        else:
-            train_dataset = SequenceEmbedDataset(
-                data=data,
-                embeddings_df=embeddings_df,
-                fasta_file=self.fasta_file,
-                genotype_file=self.genotype_file,
-                **self.train_dataset_kwargs,
-            )
+        train_dataset = SequenceEmbedDataset(
+            data=data,
+            embeddings_df=embeddings_df,
+            fasta_file=self.fasta_file,
+            genotype_file=self.genotype_file,
+            **self.train_dataset_kwargs,
+        )
         return train_dataset
 
     def validation_dataset(self):
         data, embeddings_df = self.get_data(self.validation_epoch, 'val', 'train')
-    
-        if self.variant_ds:
-            valid_dataset = VariantEmbedDataset(
-                data=data,
-                embeddings_df=embeddings_df,
-                fasta_file=self.fasta_file,
-                genotype_file=self.genotype_file,
-                **self.valid_dataset_kwargs,
-            )
-        else:
-            valid_dataset = SequenceEmbedDataset(
-                data=data,
-                embeddings_df=embeddings_df,
-                fasta_file=self.fasta_file,
-                genotype_file=self.genotype_file,
-                **self.valid_dataset_kwargs,
-            )
+
+        valid_dataset = SequenceEmbedDataset(
+            data=data,
+            embeddings_df=embeddings_df,
+            fasta_file=self.fasta_file,
+            genotype_file=self.genotype_file,
+            **self.valid_dataset_kwargs,
+        )
         return valid_dataset
 
 #note is this used
@@ -151,9 +131,46 @@ class SeqEmbedDataModule(L.LightningDataModule):
             full_adata.obsm['split_data'] == sample_split,
             full_adata.varm['split_data'] == dhs_split
         ]
-        if self.variant_ds:
-            data, embeddings_df = extract_var_data_from_anndata(adata, suffix)
-        else:
-            data, embeddings_df = extract_data_from_anndata(adata, suffix)
+
+        data, embeddings_df = extract_data_from_anndata(adata, suffix)
             
         return data, embeddings_df
+    
+    
+    
+class SeqEmbedVariantDataModule(SeqEmbedDataModule):
+    """
+    Variant version of SeqEmbedDataModule.
+
+    Differences:
+      - Uses extract_var_data_from_anndata
+      - Uses VariantEmbedDataset instead of SequenceEmbedDataset
+    """
+    
+    def train_dataset(self):
+        data, embeddings_df = self.get_data(self.current_train_epoch, "train", "train")
+        return VariantEmbedDataset(
+            data=data,
+            embeddings_df=embeddings_df,
+            fasta_file=self.fasta_file,
+            genotype_file=self.genotype_file,
+            **self.train_dataset_kwargs,
+        )
+
+    def validation_dataset(self):
+        data, embeddings_df = self.get_data(self.validation_epoch, "val", "train")
+        return VariantEmbedDataset(
+            data=data,
+            embeddings_df=embeddings_df,
+            fasta_file=self.fasta_file,
+            genotype_file=self.genotype_file,
+            **self.valid_dataset_kwargs,
+        )
+
+    def get_data(self, suffix, dhs_split="train", sample_split="train"):
+        """Extract variant-level data from AnnData."""
+        adata = self.adata[
+            self.adata.obsm["split_data"] == sample_split,
+            self.adata.varm["split_data"] == dhs_split,
+        ]
+        return extract_var_data_from_anndata(adata, suffix)

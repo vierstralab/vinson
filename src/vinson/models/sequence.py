@@ -410,7 +410,7 @@ class EmbedModel(BaseSequenceModel):
 
 
 class VariantEmbedModel(AbstractBaseSequenceModel):
-    def __init__(self, trunk, embed, *args, **kwargs):
+    def __init__(self, trunk: BassetTrunkEmbed, embed: CellEmbedding, *args, **kwargs):
         super().__init__(trunk, *args, **kwargs)
     
         self.loss = binomial_mixture_normed_loss
@@ -433,6 +433,10 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
             torch.zeros((2, 4, self.seqlen)),
             torch.zeros((2, self.embedding.n_inputs)),
         )
+        
+    def forward_final(self, x):
+        x = self.final(x)
+        return x
 
     def forward(self, seq_ref, seq_alt, embed):
         x = self.embedding(embed)
@@ -504,8 +508,12 @@ class VariantEmbedModelWrapper(L.LightningModule):
         self.model = model
 
         # Make independent ref/alt branches
+        self.embedding_ref = copy.deepcopy(model.embedding)
         self.embedding_alt = copy.deepcopy(model.embedding)
+
         self.trunk_ref = copy.deepcopy(model.trunk)
+        self.trunk_alt = copy.deepcopy(model.trunk)
+        
         for mod in [
             self.trunk_ref, self.trunk_alt, 
             self.embedding_ref, self.embedding_alt

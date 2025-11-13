@@ -3,9 +3,10 @@ import anndata as ad
 import h5py
 import pandas as pd
 
-#note - should not be necessary anymore
-def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
-    var_data_keys = {
+
+def extract_var_data_from_h5(h5_file, ref_adata: ad.AnnData):
+    """Extract variant-level data (with ref/alt info) from an H5 file."""
+    data_keys = {
         "chrom": np.str_,
         "pos": np.int32,
         "ref": np.str_,
@@ -16,42 +17,61 @@ def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
         "sample_id": np.str_,
         "logit_es": np.float32,
     }
-    non_var_data_keys = {
-        'dhs_id': np.str_,
-        'read_depth': np.float32,
-        'sample_id': np.str_,
-        'chrom': np.str_,
-        'summit': np.int32,
-        'background': np.float32,
-        'class': np.int8,
-        'density': np.float32,
-    }
     optional_keys = {
-        'indiv_id': np.str_,
-        'dhs_weight': np.float32,
+        "indiv_id": np.str_,
+        "dhs_weight": np.float32,
     }
-    with h5py.File(h5_file, 'r') as f:
-        file_keys = set(f.keys())
-        # Automatically choose key group based on presence of 'ref' and 'alt'
-        if {'ref', 'alt'}.issubset(file_keys):
-            print(f"[INFO] Detected variant dataset ({h5_file})")
-            data_keys = var_data_keys
-        else:
-            print(f"[INFO] Detected non-variant dataset ({h5_file})")
-            data_keys = non_var_data_keys
-        data = {}
+
+    data = {}
+    with h5py.File(h5_file, "r") as f:
         for key, dtype in data_keys.items():
-            p = f[key][()]
-            data[key] = np.ascontiguousarray(p.astype(dtype))
+            if key not in f:
+                raise KeyError(f"Missing expected key '{key}' in {h5_file}")
+            data[key] = np.ascontiguousarray(f[key][()].astype(dtype))
+
         for key, dtype in optional_keys.items():
             if key in f:
                 data[key] = np.ascontiguousarray(f[key][()].astype(dtype))
-                
-        if 'indiv_id' not in data:
-            indiv_map = pd.read_table('/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/metadata.clustered.tsv').set_index('sample_id')['indiv_id']
-            data['indiv_id'] = pd.Series(data['sample_id']).map(indiv_map).values
 
-    return data, ref_adata.obsm['motif_embeddings']
+        if "indiv_id" not in data:
+            indiv_map = pd.read_table(
+                "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/metadata.clustered.tsv"
+            ).set_index("sample_id")["indiv_id"]
+            data["indiv_id"] = pd.Series(data["sample_id"]).map(indiv_map).values
+
+    return data, ref_adata.obsm["motif_embeddings"]
+
+
+def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
+    """Extract DHS-level (non-variant) data from an H5 file."""
+    data_keys = {
+        "dhs_id": np.str_,
+        "read_depth": np.float32,
+        "sample_id": np.str_,
+        "chrom": np.str_,
+        "summit": np.int32,
+        "background": np.float32,
+        "class": np.int8,
+        "density": np.float32,
+    }
+    optional_keys = {
+        "indiv_id": np.str_,
+        "dhs_weight": np.float32,
+    }
+
+    data = {}
+    with h5py.File(h5_file, "r") as f:
+        for key, dtype in data_keys.items():
+            if key not in f:
+                raise KeyError(f"Missing expected key '{key}' in {h5_file}")
+            data[key] = np.ascontiguousarray(f[key][()].astype(dtype))
+
+        for key, dtype in optional_keys.items():
+            if key in f:
+                data[key] = np.ascontiguousarray(f[key][()].astype(dtype))
+
+    return data, ref_adata.obsm["motif_embeddings"]
+
 
 #add functionality for variants
 def extract_data_from_anndata(adata: ad.AnnData, suffix: str):
