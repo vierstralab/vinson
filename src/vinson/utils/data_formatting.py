@@ -3,7 +3,7 @@ import anndata as ad
 import h5py
 import pandas as pd
 
-
+#note - should not be necessary anymore
 def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
     var_data_keys = {
         "chrom": np.str_,
@@ -53,7 +53,7 @@ def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
 
     return data, ref_adata.obsm['motif_embeddings']
 
-
+#add functionality for variants
 def extract_data_from_anndata(adata: ad.AnnData, suffix: str):
     """
     Convert AnnData object to H5 format and extract embeddings.
@@ -65,7 +65,7 @@ def extract_data_from_anndata(adata: ad.AnnData, suffix: str):
         data (dict): Dictionary containing extracted data arrays.
         embeddings_df (pd.DataFrame): DataFrame containing motif embeddings.
     """
-
+    
     layers = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
     for layer_name in layers:
         epoch_layer_name = f"{layer_name}.{suffix}"
@@ -98,6 +98,53 @@ def extract_data_from_anndata(adata: ad.AnnData, suffix: str):
 
     if 'dhs_weight' in adata.varm:
         data['dhs_weight'] = adata.varm['dhs_weight'][col_idx]
+
+    data = {k: np.ascontiguousarray(v) for k, v in data.items()}
+
+    embeddings_df = adata.obsm['motif_embeddings']
+    return data, embeddings_df
+
+def extract_var_data_from_anndata(adata: ad.AnnData, suffix: str):
+    """
+    Convert AnnData object to H5 format and extract embeddings.
+    Args:
+        adata (ad.AnnData): AnnData object containing DHS data.
+        suffix (str): Suffix of the epoch/layer to extract. Gets added to layer names as `{layer}.{suffix}`. E.g. epoch_1, epoch_2, etc.
+    
+    Returns:
+        data (dict): Dictionary containing extracted data arrays.
+        embeddings_df (pd.DataFrame): DataFrame containing motif embeddings.
+    """
+    
+    layers = {"ref_counts": None, "total_counts": None, "BAD": None, "logit_es":None}
+    for layer_name in layers:
+        epoch_layer_name = f"{layer_name}.{suffix}"
+        layers[layer_name] = adata.layers[epoch_layer_name].tocoo()
+
+    class_coo = layers["total_counts"]
+    row_idx, col_idx = class_coo.row, class_coo.col
+
+    data = {
+        'chrom': adata.var['#chr'].values[col_idx],
+        'pos': adata.var['pos'].values[col_idx],
+        'ref': adata.var['ref'].values[col_idx],
+        'alt': adata.var['alt'].values[col_idx],
+        'sample_id': adata.obs_names[row_idx],
+        'ref_counts': layers['ref_counts'].data,
+        'total_counts': layers['total_counts'].data,
+        'BAD': layers['BAD'].data,
+        'logit_es': layers['logit_es'].data,
+    }
+
+    if 'indiv_id' in adata.obsm:
+        # maybe come up with something more elegant
+        indiv_ids = np.array(
+            [
+                x if x != "None" else None
+                for x in adata.obsm['indiv_id']
+            ]
+        )
+        data['indiv_id'] = indiv_ids[row_idx]
 
     data = {k: np.ascontiguousarray(v) for k, v in data.items()}
 
