@@ -8,7 +8,7 @@ import anndata as ad
 from vinson.models.sequence import CellEmbedding, BassetTrunkEmbed, EmbedModel, VariantEmbedModel
 from vinson.datamodules.sequence import SeqEmbedDataModule, SeqEmbedVariantDataModule
 from vinson.datasets.sequence import SequenceEmbedDataset, VariantEmbedDataset
-from vinson.utils.data_formatting import extract_data_from_h5, extract_var_data_from_h5, extract_var_data_from_anndata, extract_data_from_anndata
+from vinson.utils.data_formatting import extract_data_from_h5
 
 from lightning.pytorch.callbacks import (
     EarlyStopping,
@@ -16,6 +16,7 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 from lightning.pytorch.loggers import CSVLogger
+
 
 # dataset util functions
 def model_from_config(config, checkpoint_path=None):
@@ -79,7 +80,7 @@ def dataset_from_h5(
         **dataset_kwargs: Additional arguments for dataset.
     """
     if config["model_type"] == 'variant':
-        data, embeddings_df = extract_var_data_from_h5(h5_file, ref_adata=ref_adata)
+        data, embeddings_df = extract_data_from_h5(h5_file, ref_adata=ref_adata, is_variant=True)
         dataset = VariantEmbedDataset(
             data=data,
             embeddings_df=embeddings_df,
@@ -88,7 +89,7 @@ def dataset_from_h5(
             **dataset_kwargs,
         )
     else:
-        data, embeddings_df = extract_data_from_h5(h5_file, ref_adata=ref_adata)
+        data, embeddings_df = extract_data_from_h5(h5_file, ref_adata=ref_adata, is_variant=False)
         dataset = SequenceEmbedDataset(
             data=data,
             embeddings_df=embeddings_df,

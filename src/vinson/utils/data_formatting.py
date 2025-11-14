@@ -55,13 +55,13 @@ def data_to_h5(h5_file: str, data: dict):
             f.create_dataset(key, data=value, compression="gzip")
 
 
-def extract_data_from_h5(h5_file, ref_adata: ad.AnnData):
+def extract_data_from_h5(h5_file, ref_adata: ad.AnnData, is_variant=False):
     with h5py.File(h5_file, 'r') as f:
         data = {}
         for key in f.keys():
             data[key] = f[key][()]
 
-        data = sanitize_data(data)
+        data = sanitize_data(data, is_variant=is_variant)
     return data, ref_adata.obsm["motif_embeddings"]
 
 
