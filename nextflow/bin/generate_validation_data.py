@@ -5,8 +5,6 @@ import anndata as ad
 from tqdm import tqdm
 
 from genome_tools.data.anndata import read_zarr_backed
-from genome_tools.data.extractors import TabixExtractor
-from genome_tools import df_to_genomic_intervals
 
 from vinson.utils.data_formatting import extract_data_from_backed_anndata as extract_dhs_data_from_backed_anndata
 from vinson.utils.data_formatting import data_to_h5, sanitize_data
