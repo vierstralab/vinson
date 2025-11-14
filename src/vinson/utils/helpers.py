@@ -27,3 +27,6 @@ def read_configs(default_config_path, custom_config_path=None):
 def save_config(config, path):
     with open(path, 'w') as f:
         yaml.safe_dump(config, f)
+
+def replace_at(s, i, char):
+    return s[:i] + char + s[i + 1:]

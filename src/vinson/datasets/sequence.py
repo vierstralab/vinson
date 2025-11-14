@@ -1,18 +1,18 @@
 import numpy as np
 import pandas as pd
-from collections import namedtuple
 
 from torch.utils.data import Dataset
 import gzip
 
-from genome_tools import GenomicInterval
+from genome_tools import GenomicInterval, VariantInterval, df_to_variant_intervals
 from genome_tools.data.extractors import FastaExtractor, TabixExtractor
 
 from vinson.utils.sequence_utils import one_hot_encode, get_iupac_char_from_alleles
-
+from vinson.utils.helpers import replace_at
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 
 class BaseSequenceDataset(Dataset):
@@ -75,6 +75,16 @@ class BaseSequenceDataset(Dataset):
 
         self.fasta_extr: FastaExtractor = None
         self.genotype_extr: TabixExtractor = None
+        if self.genotype_file is not None:
+            assert 'indiv_id' in data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
+
+            self.include_genotypes = True
+        else:
+            logger.info(
+                "No genotyping files provided -- continuing without sample genotypes."
+            )
+            self.include_genotypes = False
+
 
     def __del__(self):
         """
@@ -141,7 +151,7 @@ class BaseSequenceDataset(Dataset):
                     self.genotype_file,
                     skiprows=1,
                     columns=[
-                        "chr",
+                        "chrom",
                         "start",
                         "end",
                         "ref",
@@ -157,7 +167,7 @@ class BaseSequenceDataset(Dataset):
                 self.genotype_extr = TabixExtractor(
                     self.genotype_file,
                     columns=[
-                        "chr",
+                        "chrom",
                         "start",
                         "end",
                         "rs_id",
@@ -175,103 +185,100 @@ class BaseSequenceDataset(Dataset):
                     na_values=".",
                 )
     
-    def get_sample_sequence(self, interval, sample_id, indiv_id=None, return_variant=False, reference=None):
-        ref_variant = None
+    def get_sample_sequence(
+            self,
+            interval: GenomicInterval,
+            indiv_id,
+            reference_variant: VariantInterval=None
+        ):
+        """
+        
+        Returns:
+            tuple: (base_sequence str, variants List[Variant])
+        """
         seq = self.fasta_extr[interval]
-        
-        if return_variant:
-            assert reference is not None, "Must provide `reference` when `return_variant=True`."
-            seq_ref = seq
-            seq_alt = str(seq_ref)
-        
-        #check indiv id
-        if pd.isna(indiv_id):
-            logging.debug(
-                f"INDIV_ID for {sample_id} not provided. ({str(interval)})"
-            )
-            # Return the original sequence
-            if not return_variant:
-                return 0, seq
-            
-        #is this necessary     
+        seq_iupac = seq_ref = seq_alt = str(seq)
+
+        if pd.isna(indiv_id) or indiv_id == "None":
+            return 0, seq_iupac, seq_ref, seq_alt
+
         assert 'INDIV' in indiv_id, f"INDIV_ID format incorrect ({indiv_id})."
-        
         variants = self.genotype_extr[interval]
-        
-        # FIX formatting issue (.bed.gz suffix) -- note do i need version for other
-        variants = variants[variants["indiv_id"] == f"{indiv_id}.bed.gz"].set_index(
-            ["chr", "start", "ref", "alt"]
-        )
-        
-        logger.debug(
-            f"Found {len(variants)} variants in sample {sample_id} from individual {indiv_id}"
-        )
-        if return_variant:
+        variants = variants[variants["indiv_id"] == f"{indiv_id}.bed.gz"]
+
+        extra_columns = ('gt',)
+        if reference_variant is not None:
+            assert 'phase_set' in variants.columns, "Phased genotype data required for variant-aligned sequence extraction."
             try:
                 # Look for the reference variant in the individual's genotypes
-                ref_variant = variants.loc[(reference.chr, reference.pos, reference.ref, reference.alt)]
+                phase_set = variants.set_index(
+                    ["chrom", "start", "ref", "alt"]
+                ).loc[
+                    (
+                        reference_variant.chrom,
+                        reference_variant.start,
+                        reference_variant.ref,
+                        reference_variant.alt
+                    ),
+                    'phase_set'
+                ]
+                if not pd.isna(phase_set):
+                    reference_variant.phase_set = phase_set
+                    extra_columns = ('gt', 'phase_set')
             except KeyError:
                 raise ValueError(
                     "Query variant not found in genotyping file "
-                    f"({str(interval)}/{sample_id}/{indiv_id}/{reference.pos})"
+                    f"({str(interval)}/{indiv_id}/{reference_variant.pos}/{reference_variant.alt})"
                 )
-
-        for v in variants.itertuples():
-            # Variant position is the dataframe index
-            _chr, _pos, _ref, _alt = v.Index
-            rel_pos = _pos - interval.start
-
-            is_phased = (
-                ref_variant is not None
-                and "phase_block" in ref_variant
-                and getattr(v, "phase_block", None) == ref_variant["phase_block"]
-            )
-            #check if variant is phased, should only be in variant data
-            if is_phased:
-                if v.gt == "1|0":
-                    seq_ref = seq_ref[:rel_pos] + _alt + seq_ref[rel_pos + 1 :]
-                elif v.gt == "0|1":
-                    seq_alt = seq_alt[:rel_pos] + _alt + seq_alt[rel_pos + 1 :]
-                else:
-                    raise ValueError(
-                        f"Phased genotype {v.gt} not recognized! ({_chr}:{_pos}:{indiv_id})"
-                    )
-            #do we want to add elif unphased reference do we want to use the same notation
-            elif v.Index == reference:
-                seq_alt = seq_alt[:rel_pos] + _alt + seq_alt[rel_pos + 1 :]
-            elif not reference or _pos != reference.pos:
-                #if non variant dataset use this logic, 'not ref'
-                # If heterozygous, get IUPAC base character
-                # make parsing function more robust
-                if (v.gt[0] == "1" and v.gt[2] == "0") or (
-                    v.gt[0] == "0" and v.gt[2] == "1"
-                ):
-                    base = get_iupac_char_from_alleles((_ref, _alt))
-                # If homozygous alternate
-                elif v.gt[0] == "1" and v.gt[2] == "1":
-                    base = _alt
-                # Else homozygous reference
-                else:
-                    base = _ref
-                if not return_variant:
-                    seq = seq[:rel_pos] + base + seq[rel_pos + 1 :]
-                    return len(variants), seq
-
-                seq_ref = seq_ref[:rel_pos] + base + seq_ref[rel_pos + 1 :]
-                seq_alt = seq_alt[:rel_pos] + base + seq_alt[rel_pos + 1 :]
+        variants = df_to_variant_intervals(
+            variants, extra_columns=extra_columns
+        )
+        
+        for variant_interval in variants:
+            rel_pos = variant_interval.start - interval.start
+            if 'phase_set' in extra_columns and reference_variant.phase_set == variant_interval.phase_set:
+                    base = get_iupac_char_from_alleles(variant_interval.ref, variant_interval.alt)
+                    seq_iupac = replace_at(seq_iupac, rel_pos, base)
+                    if variant_interval.gt == "1|0":
+                        seq_ref = replace_at(seq_ref, rel_pos, variant_interval.alt)
+                        seq_alt = replace_at(seq_alt, rel_pos, variant_interval.ref)
+                    elif variant_interval.gt == "0|1":
+                        seq_ref = replace_at(seq_ref, rel_pos, variant_interval.ref)
+                        seq_alt = replace_at(seq_alt, rel_pos, variant_interval.alt)
+                    else:
+                        raise ValueError(f'Phased genotype not recognized! {variant_interval}')
             else:
-                pass
-            
-        #note == question why is this here and not done above with this if statement
-        if ref_variant["gt"] == "1|0":
-            seq_ref, seq_alt = seq_alt, seq_ref
-    
-        #check sequences
-        rel_pos = reference[1] - interval.start
-        if (seq_ref[rel_pos] != reference[2]) or (seq_alt[rel_pos] != reference[3]):
-            raise ValueError("Expected ref & alt alleles not found in correct position in sequences!", reference, variants)
+                assert variant_interval.gt[0] in ("0", "1") and variant_interval.gt[2] in ("0", "1"), f"Genotype format not recognized! {variant_interval} {variant_interval.gt}"
+                variant_is_het = (
+                    variant_interval.gt[0] == "1" and variant_interval.gt[2] == "0"
+                ) or (
+                    variant_interval.gt[0] == "0" and variant_interval.gt[2] == "1"
+                )
+                if variant_is_het:
+                    base = get_iupac_char_from_alleles(variant_interval.ref, variant_interval.alt)
+                    seq_iupac = replace_at(seq_iupac, rel_pos, base)
+                    seq_ref = replace_at(seq_ref, rel_pos, variant_interval.ref)
+                    seq_alt = replace_at(seq_alt, rel_pos, variant_interval.alt)
+                elif variant_interval.gt[0] == "1":
+                    base = variant_interval.alt
+                    seq_iupac = replace_at(seq_iupac, rel_pos, base)
+                    seq_ref = replace_at(seq_ref, rel_pos, base)
+                    seq_alt = replace_at(seq_alt, rel_pos, base)
+                else:
+                    base = variant_interval.ref
+                    seq_iupac = replace_at(seq_iupac, rel_pos, base)
+                    seq_ref = replace_at(seq_ref, rel_pos, base)
+                    seq_alt = replace_at(seq_alt, rel_pos, base)
 
-        return (len(variants), seq_ref, seq_alt)
+        if reference_variant.gt == "1|0":
+            seq_ref, seq_alt = seq_alt, seq_ref
+        
+        rel_pos = reference_variant.start - interval.start
+        if (seq_ref[rel_pos] != reference_variant.ref) or (seq_alt[rel_pos] != reference_variant.alt):
+            raise ValueError("Expected ref & alt alleles not found in correct position in sequences!", reference_variant, variants)
+
+        return len(variants), seq_iupac, seq_ref, seq_alt
+
 
 class SequenceEmbedDataset(BaseSequenceDataset):
     """
@@ -342,16 +349,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             self.data.keys()
         )
 
-        if self.genotype_file is not None:
-            assert 'indiv_id' in data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
-
-            self.include_genotypes = True
-        else:
-            logger.info(
-                "No genotyping files provided -- continuing without sample genotypes."
-            )
-            self.include_genotypes = False
-
     def __getitem__(self, i):
         """
         Retrieve a single training sample, including sequence, embedding, and metadata.
@@ -402,7 +399,10 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         # indiv_id is expected to be in self.data if genotypes are included
         if self.include_genotypes:
             indiv_id = self.data['indiv_id'][i]
-            _, dna_seq = self.get_sample_sequence(interval, sample_id, indiv_id)
+            _, dna_seq, _, _ = self.get_sample_sequence(
+                interval,
+                indiv_id
+            )
         else:
             dna_seq = self.fasta_extr[interval]
         
@@ -450,8 +450,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             "sample_id": sample_id,
         }
 
-
-Variant = namedtuple("Variant", ["chr", "pos", "ref", "alt"])
 
 class VariantEmbedDataset(BaseSequenceDataset):
     """
@@ -586,8 +584,12 @@ class VariantEmbedDataset(BaseSequenceDataset):
         # Inject genotypes if genotype files provided
         if self.include_genotypes:
             indiv_id = self.data["indiv_id"][i]   
-            _, dna_seq_ref, dna_seq_alt = self.get_sample_sequence(
-                interval, sample_id, indiv_id, return_variant=True, reference=Variant(chrom, pos, ref, alt)
+            _, _, dna_seq_ref, dna_seq_alt = self.get_sample_sequence(
+                interval, 
+                indiv_id,
+                reference=VariantInterval(
+                    chrom=chrom, start=pos, end=pos + 1, ref=ref, alt=alt
+                )
             )
         else:
             dna_seq_ref = self.fasta_extr[interval]
