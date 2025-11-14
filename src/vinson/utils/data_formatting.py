@@ -34,12 +34,16 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
         "indiv_id": np.str_,
         "dhs_weight": np.float32,
     }
-    for key, dtype in data_keys.items():
+    keys = {
+        **data_keys,
+        **{x: y for x, y in optional_keys.items() if x in data},
+    }
+    for key, dtype in keys.items():
+        if dtype == np.str_:
+            mask = pd.isna(data[key]) or (data[key] == 'None')
+            data[key][mask] = ''
         data[key] = np.ascontiguousarray(data[key].astype(dtype))
-    for key, dtype in optional_keys.items():
-        if key in data:
-            data[key] = np.ascontiguousarray(data[key].astype(dtype))
-    
+
     if 'background' in data:
         data['background'] = np.nan_to_num(data['background'])
 
@@ -199,14 +203,7 @@ def compute_if_dask(array):
 
 
 def get_indiv_id_info(train_adata: ad.AnnData, row_idx: np.ndarray):
-    # maybe come up with something more elegant
-    indiv_ids = np.array(
-        [
-            x if x != "None" else None
-            for x in train_adata.obsm['indiv_id']
-        ]
-    )
-    return indiv_ids[row_idx]
+    return train_adata.obsm['indiv_id'].values[row_idx]
 
 
 def update_layers_dict(layers: dict, train_adata: ad.AnnData, suffix: str):
