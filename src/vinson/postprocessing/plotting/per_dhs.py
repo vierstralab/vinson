@@ -35,18 +35,61 @@ def obs_pred_barplot_by_ann(
     return ax
 
 
-def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax=None, color=None, label=None, **kwargs):
-    n = len(annotation_data)
-    if ax is None:
-        ax = plt.gca()
-
+def get_agg_by_annotation(df, column, annotation_data):
     gb = df.groupby('extended_annotation').agg(
         median=(column, 'median'),
         q1=(column, lambda x: np.percentile(x, 25)),
         q3=(column, lambda x: np.percentile(x, 75)),
     ).loc[annotation_data['extended_annotation']]
 
-    gb['color'] = annotation_data['color'].values
+    gb['color'] = annotation_data['color'].fillna('#D0D0D0').values
+    return gb
+
+
+def scatter_by_ann(
+        df,
+        x_col,
+        y_col,
+        annotation_data,
+        ax=None,
+        **kwargs
+):
+    x_gb = get_agg_by_annotation(df, x_col, annotation_data)
+    y_gb = get_agg_by_annotation(df, y_col, annotation_data)
+    gb = x_gb.merge(
+        y_gb[['median', 'q1', 'q3']],
+        left_index=True,
+        right_index=True,
+        suffixes=('_x', '_y')
+    )
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(5 / 2.54, 5 / 2.54))
+
+    kw = dict(
+        s=1,
+        alpha=0,
+        edgecolor='none',
+    )
+
+    kw = {**kw, **kwargs}
+
+    plt.scatter(
+        gb['median_x'],
+        gb['median_y'],
+        c=gb['color'],
+        **kw
+    )
+
+    return ax
+
+
+
+def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax=None, color=None, label=None, **kwargs):
+    n = len(annotation_data)
+    if ax is None:
+        ax = plt.gca()
+
+    gb = get_agg_by_annotation(df, column, annotation_data)
 
     kw = dict(
         error_kw=dict(
@@ -57,6 +100,7 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
         linewidth=0,
         edgecolor='k',
     )
+    kw['error_kw'] = {**kw['error_kw'], **kwargs.pop('error_kw', {})}
     kw = {**kw, **kwargs}
 
     for i, (_, gb_row) in enumerate(gb.iterrows()):
