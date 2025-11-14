@@ -197,7 +197,7 @@ class BaseSequenceDataset(Dataset):
             tuple: (base_sequence str, variants List[Variant])
         """
         seq = self.fasta_extr[interval]
-        seq_iupac = seq_ref = seq_alt = str(seq)
+        seq_iupac = seq_ref = seq_alt = str(seq) # modify all 3 regardless
 
         if pd.isna(indiv_id) or indiv_id == "None":
             return 0, seq_iupac, seq_ref, seq_alt
@@ -224,7 +224,7 @@ class BaseSequenceDataset(Dataset):
                 ]
                 if not pd.isna(phase_set):
                     reference_variant.phase_set = phase_set
-                    extra_columns = ('gt', 'phase_set')
+                    extra_columns = ('gt', 'phase_set') # extract phase set to match the reference variant
             except KeyError:
                 raise ValueError(
                     "Query variant not found in genotyping file "
