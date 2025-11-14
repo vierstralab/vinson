@@ -17,7 +17,7 @@ def get_bg_for_peaks(peaks_df, stats_path):
     rows = []
     with TabixExtractor(stats_path) as extractor:
         for interval in tqdm(intervals):
-            df_slice = extractor[interval].query('fit_type == "segment')
+            df_slice = extractor[interval].query('fit_type == "segment"')
             assert len(df_slice) == 1, "Expected exactly one matching stats row per peak"
             rows.append(df_slice)
     stats = pd.concat(rows)
