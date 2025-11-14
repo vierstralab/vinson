@@ -94,7 +94,6 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
             capthick=0.5,
         ),
         linewidth=0,
-        edgecolor='k',
     )
     kw['error_kw'] = {**kw['error_kw'], **kwargs.pop('error_kw', {})}
     kw = {**kw, **kwargs}
