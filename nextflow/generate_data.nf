@@ -1,3 +1,5 @@
+include { predict } from "./predictions"
+
 
 process generate_sample_validation_data {
 
@@ -6,13 +8,12 @@ process generate_sample_validation_data {
     tag "${prefix}"
 
     input:
-        tuple val(sample_id), val(mode)
+        tuple val(prefix), val(sample_id), val(mode)
 
     output:
         tuple val(prefix), path(name)
 
     script:
-    prefix = "${sample_id}.${mode}"
     name = "${prefix}.validation_data.h5"
     """
     python3 $moduleDir/bin/generate_validation_data.py \
@@ -47,10 +48,23 @@ process generate_dhs_validation_data {
 }
 
 workflow {
-    Channel.fromPath(params.validation_samples_file)
+    meta = Channel.fromPath(params.validation_samples_file)
         | splitCsv(header:true, sep:'\t')
-        | map(row -> tuple(row.sample_id, row.mode))
-        | generate_sample_validation_data
+        | map(row -> tuple(
+            row.prefix,
+            row.sample_id,
+            row.mode,
+            file(row.checkpoint),
+            row.model_config,
+            row.model_type
+            )
+        )
+    
+    meta
+        | map(it -> tuple(it[0], it[1], it[2]))
+        | generate_sample_validation_data // prefix, dhs_dataset
+        | join(meta.map(it -> tuple(it[0], it[3], it[4], it[5]))) // prefix, dhs_dataset, checkpoint, model_config, model_type
+        | predict
 }
 
 workflow dhsValidation {
