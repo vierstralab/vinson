@@ -7,7 +7,8 @@ from genome_tools.data.anndata import read_zarr_backed
 from genome_tools.data.extractors import TabixExtractor
 from genome_tools import df_to_genomic_intervals
 
-from vinson.utils.data_formatting import data_to_h5, extract_data_from_backed_anndata, sanitize_data
+from vinson.utils.data_formatting import extract_data_from_backed_anndata as extract_dhs_data_from_backed_anndata
+from vinson.utils.data_formatting import data_to_h5, sanitize_data
 
 
 def get_bg_for_peaks(peaks_df, stats_path):
@@ -76,14 +77,14 @@ if __name__ == '__main__':
         else:
             use_sample_peaks = args.mode == 'sample_dhs'
             print('Generating validation data for sample DHSs')
-            data = extract_data_from_backed_anndata(
+            data = extract_dhs_data_from_backed_anndata(
                 anndata,
                 sample_ids=sample_ids,
                 use_sample_peaks=use_sample_peaks
             )
     else:
         print('DHS IDs are provided. Ignoring "--mode" argument')
-        data = extract_data_from_backed_anndata(
+        data = extract_dhs_data_from_backed_anndata(
             anndata,
             sample_ids=sample_ids,
             dhs_ids=dhs_ids
