@@ -84,7 +84,7 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
     if ax is None:
         ax = plt.gca()
 
-    gb = get_agg_by_annotation(df, column, annotation_data, by='extended_annotation').loc[annotation_data['extended_annotation']]
+    gb = get_agg_by_annotation(df, column, by='extended_annotation').loc[annotation_data['extended_annotation']]
     gb['color'] = annotation_data['color'].fillna('#D0D0D0').values
 
     kw = dict(
