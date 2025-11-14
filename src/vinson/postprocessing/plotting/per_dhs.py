@@ -1,16 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+from vinson.postprocessing.utils import get_agg_by_annotation
 
-
-def get_agg_by_annotation(df, column, by='extended_annotation'):
-    gb = df.groupby(by).agg(
-        median=(column, 'median'),
-        q1=(column, lambda x: np.percentile(x, 25)),
-        q3=(column, lambda x: np.percentile(x, 75)),
-    )
-
-    return gb
 
 def get_agg_by_annotation_obs_pred(df, x_col, y_col, annotation_data, by=['dhs_id', 'extended_annotation']):
     x_gb = get_agg_by_annotation(df, x_col, by=by)
@@ -36,8 +28,6 @@ def aggregate_eval_dataset_by_sample(eval_dataset, annotation_data):
         by=['sample_id', 'extended_annotation'],
     )
     return gb
-
-
 
 def scatter_by_ann(
     gb,
@@ -89,7 +79,6 @@ def scatter_by_ann_train_val(gb, in_training, pos_tr=0.05, ax=None):
     return ax
 
 
-
 def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax=None, color='annotation', edgecolor='none', label=None, **kwargs):
     n = len(annotation_data)
     if ax is None:
@@ -128,13 +117,20 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
     return ax
 
 
-
 def obs_pred_barplot_by_ann(
-        df, obs_col, pred_col, annotation_data, ax=None, **kwargs
+        df, obs_col, pred_col, annotation_data,
+        figsize_per_annotation=(12 / 33 / 2.54, 2 / 2.54),
+        separate_axes=False,
+        **kwargs
 ):
     n = len(annotation_data)
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(12 / 33 * n / 2.54, 2 / 2.54))
+    figsize=(n * figsize_per_annotation[0], figsize_per_annotation[1] if not separate_axes else figsize_per_annotation[1] * 2)
+    fig, axes = plt.subplots(1 if not separate_axes else 2, 1, figsize=figsize, squeeze=False)
+
+    if separate_axes:
+        ax1, ax2 = axes[0], axes[1]
+    else:
+        ax1 = ax2 = axes
 
     barplot_by_ann_with_offset(
         df,
@@ -145,7 +141,7 @@ def obs_pred_barplot_by_ann(
         edgecolor='annotation',
         linewidth=0.5,
         label='Observed',
-        ax=ax,
+        ax=ax1,
         **kwargs,
     )
     barplot_by_ann_with_offset(
@@ -155,10 +151,9 @@ def obs_pred_barplot_by_ann(
         offset=0.5,
         color='annotation',
         label='Predicted',
-        ax=ax,
+        ax=ax2,
         **kwargs,
     )
-    ax.legend(frameon=False, fontsize='small', loc='upper right')
+    ax2.legend(frameon=False, fontsize='small', loc='upper right')
 
-    return ax
-
+    return axes
