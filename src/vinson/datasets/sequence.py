@@ -3,6 +3,7 @@ import pandas as pd
 from collections import namedtuple
 
 from torch.utils.data import Dataset
+import gzip
 
 from genome_tools import GenomicInterval
 from genome_tools.data.extractors import FastaExtractor, TabixExtractor
@@ -23,29 +24,29 @@ class BaseSequenceDataset(Dataset):
 
     Parameters
     ----------
-    samples_file : str
-        Path to HDF5 file containing sample data.
-    embeddings_file : str
-        Path to tab-delimited file with cell-type/state embeddings.
+    data : dict
+        Dictionary containing sample metadata. Must include keys like 'chrom'.
+    embeddings_df : pd.DataFrame
+        DataFrame of cell-type/state embeddings indexed by sample ID.
     fasta_file : str
         Path to reference genome FASTA file.
-    reverse_complement : bool, optional
-        If True, randomly reverse-complement sequences for augmentation (default: False).
-    jitter : int, optional
-        Maximum number of bases to randomly shift the region (default: 0).
-    noise : float, optional
-        Standard deviation of Gaussian noise added to embeddings (default: 0).
-    seqlen : int, optional
-        Length of the sequence window (default: 1344, must be even).
+    genotype_file : str, optional
+        Path to genotype file in tabix format.
+    reverse_complement : bool, default False
+        Randomly reverse-complement sequences for augmentation.
+    jitter : int, default 0
+        Maximum number of bases to shift the region randomly.
+    noise : float, default 0
+        Standard deviation of Gaussian noise added to embeddings.
+    seqlen : int, default 1344
+        Sequence window length; must be even.
 
     Attributes
     ----------
-    samples : h5py.File
-        Opened HDF5 file with sample data.
-    embeddings_df : pandas.DataFrame
-        DataFrame of cell-type/state embeddings.
-    fasta_extr : FastaExtractor or None
-        Extractor for reference genome sequences (initialized as None).
+    fasta_extr : FastaExtractor
+        Reference genome sequence extractor.
+    genotype_extr : TabixExtractor
+        Genotype data extractor, if provided.
     seqlen : int
         Length of the sequence window.
     """
@@ -54,7 +55,8 @@ class BaseSequenceDataset(Dataset):
         self,
         data: dict,
         embeddings_df: pd.DataFrame,
-        fasta_file,
+        fasta_file: str,
+        genotype_file: str = None,
         reverse_complement=False,
         jitter=0,
         noise=0,
@@ -62,34 +64,26 @@ class BaseSequenceDataset(Dataset):
     ):
         self.fasta_file = fasta_file
         self.data = data
-
-        # TODO : validate data keys depending on model type
-        assert set(
-            [
-                "chrom", "summit", "class", 
-                "density", "sample_id", 
-                "background", "read_depth"
-            ]
-        ).issubset(
-            self.data.keys()
-        )
-
         self.reverse_complement = reverse_complement
         self.jitter = jitter
         self.noise = noise
         self.embeddings_df = embeddings_df
-
+        self.genotype_file = genotype_file
+        
         assert seqlen % 2 == 0, "Error 'seqlen' must be a even number!"
         self.seqlen = seqlen
 
         self.fasta_extr: FastaExtractor = None
+        self.genotype_extr: TabixExtractor = None
 
     def __del__(self):
         """
-        Clean up open file handles for samples and FASTA extractor.
+        Clean up open file handles for FASTA extractor.
         """
         if self.fasta_extr:
             self.fasta_extr.close()
+        if self.genotype_extr:
+            self.genotype_extr.close()
 
     def __getitem__(self, i):
         """
@@ -127,36 +121,187 @@ class BaseSequenceDataset(Dataset):
             x = x + np.random.normal(0, self.noise, len(x)).astype(np.float32)
 
         return x
+    
+                    
+    def _init_fileread(self):
+        # pysam is not thread-safe
+        if not self.fasta_extr:
+            self.fasta_extr = FastaExtractor(self.fasta_file)
+        if self.include_genotypes and not self.genotype_extr:
+            openfile = gzip.open if self.genotype_file.endswith(".gz") else open
+            with openfile(self.genotype_file, "rt") as f:
+                phased = False
+                for line in f:
+                    if "phase_set" in line:
+                        phased = True
+                        break
+            if phased:
+                print(f"[INFO] Detected phased genotype format ({self.genotype_file})")
+                self.genotype_extr = TabixExtractor(
+                    self.genotype_file,
+                    skiprows=1,
+                    columns=[
+                        "chr",
+                        "start",
+                        "end",
+                        "ref",
+                        "alt",
+                        "indiv_id",
+                        "gt",
+                        "phase_block",
+                    ],
+                    na_values={"phase_block": "."},
+                )
+            else:
+                print(f"[INFO] Using unphased genotype format ({self.genotype_file})")
+                self.genotype_extr = TabixExtractor(
+                    self.genotype_file,
+                    columns=[
+                        "chr",
+                        "start",
+                        "end",
+                        "rs_id",
+                        "ref",
+                        "alt",
+                        "af_ref",
+                        "af_alt",
+                        "gt",
+                        "_0",
+                        "_1",
+                        "_2",
+                        "_3",
+                        "indiv_id",
+                    ],
+                    na_values=".",
+                )
+    
+    def get_sample_sequence(self, interval, sample_id, indiv_id=None, return_variant=False, reference=None):
+        ref_variant = None
+        seq = self.fasta_extr[interval]
+        
+        if return_variant:
+            assert reference is not None, "Must provide `reference` when `return_variant=True`."
+            seq_ref = seq
+            seq_alt = str(seq_ref)
+        
+        #check indiv id
+        if pd.isna(indiv_id):
+            logging.debug(
+                f"INDIV_ID for {sample_id} not provided. ({str(interval)})"
+            )
+            # Return the original sequence
+            if not return_variant:
+                return 0, seq
+            
+        #is this necessary     
+        assert 'INDIV' in indiv_id, f"INDIV_ID format incorrect ({indiv_id})."
+        
+        variants = self.genotype_extr[interval]
+        
+        # FIX formatting issue (.bed.gz suffix) -- note do i need version for other
+        variants = variants[variants["indiv_id"] == f"{indiv_id}.bed.gz"].set_index(
+            ["chr", "start", "ref", "alt"]
+        )
+        
+        logger.debug(
+            f"Found {len(variants)} variants in sample {sample_id} from individual {indiv_id}"
+        )
+        if return_variant:
+            try:
+                # Look for the reference variant in the individual's genotypes
+                ref_variant = variants.loc[(reference.chr, reference.pos, reference.ref, reference.alt)]
+            except KeyError:
+                raise ValueError(
+                    "Query variant not found in genotyping file "
+                    f"({str(interval)}/{sample_id}/{indiv_id}/{reference.pos})"
+                )
 
+        for v in variants.itertuples():
+            # Variant position is the dataframe index
+            _chr, _pos, _ref, _alt = v.Index
+            rel_pos = _pos - interval.start
+
+            is_phased = (
+                ref_variant is not None
+                and "phase_block" in ref_variant
+                and getattr(v, "phase_block", None) == ref_variant["phase_block"]
+            )
+            #check if variant is phased, should only be in variant data
+            if is_phased:
+                if v.gt == "1|0":
+                    seq_ref = seq_ref[:rel_pos] + _alt + seq_ref[rel_pos + 1 :]
+                elif v.gt == "0|1":
+                    seq_alt = seq_alt[:rel_pos] + _alt + seq_alt[rel_pos + 1 :]
+                else:
+                    raise ValueError(
+                        f"Phased genotype {v.gt} not recognized! ({_chr}:{_pos}:{indiv_id})"
+                    )
+            #do we want to add elif unphased reference do we want to use the same notation
+            elif v.Index == reference:
+                seq_alt = seq_alt[:rel_pos] + _alt + seq_alt[rel_pos + 1 :]
+            elif not reference or _pos != reference.pos:
+                #if non variant dataset use this logic, 'not ref'
+                # If heterozygous, get IUPAC base character
+                # make parsing function more robust
+                if (v.gt[0] == "1" and v.gt[2] == "0") or (
+                    v.gt[0] == "0" and v.gt[2] == "1"
+                ):
+                    base = get_iupac_char_from_alleles((_ref, _alt))
+                # If homozygous alternate
+                elif v.gt[0] == "1" and v.gt[2] == "1":
+                    base = _alt
+                # Else homozygous reference
+                else:
+                    base = _ref
+                if not return_variant:
+                    seq = seq[:rel_pos] + base + seq[rel_pos + 1 :]
+                    return len(variants), seq
+
+                seq_ref = seq_ref[:rel_pos] + base + seq_ref[rel_pos + 1 :]
+                seq_alt = seq_alt[:rel_pos] + base + seq_alt[rel_pos + 1 :]
+            else:
+                pass
+            
+        #note == question why is this here and not done above with this if statement
+        if ref_variant["gt"] == "1|0":
+            seq_ref, seq_alt = seq_alt, seq_ref
+    
+        #check sequences
+        rel_pos = reference[1] - interval.start
+        if (seq_ref[rel_pos] != reference[2]) or (seq_alt[rel_pos] != reference[3]):
+            raise ValueError("Expected ref & alt alleles not found in correct position in sequences!", reference, variants)
+
+        return (len(variants), seq_ref, seq_alt)
 
 class SequenceEmbedDataset(BaseSequenceDataset):
     """
     PyTorch Dataset for extracting sequence and cell-type embeddings, with optional
     genotype injection, negative sampling, and read depth normalization.
-
+    
     Parameters
     ----------
     data : dict
-        Dictionary containing sample metadata and values.
-    embeddings_file : str
-        Path to tab-delimited file with cell-type/state embeddings.
+        Dictionary containing sample metadata. Must include:
+        'chrom', 'summit', 'class', 'density', 'sample_id', 'background', 'read_depth'.
+    embeddings_df : pd.DataFrame
+        DataFrame of cell-type/state embeddings indexed by sample ID.
     fasta_file : str
         Path to reference genome FASTA file.
     genotype_file : str, optional
-        Path to genotype file in tabix format.
+        Path to genotype file in tabix format. If provided, requires 'indiv_id' in data.
+    negatives_weight : float, default 1.0
+        Weight applied to negative class examples.
+    clip_density : float, default 20
+        Maximum value to clip density.
+    min_bg : float, default 0.1
+        Minimum value to clip background signal.
+    reverse_complement : bool, default False
+        Randomly reverse-complement sequences for augmentation.
+    jitter : int, default 0
+        Maximum number of bases to shift sequences.
+    noise : float, default 0
+        Standard deviation of Gaussian noise added to embeddings.
 
-    negative_samples_weight : float, optional
-        Weight assigned to negative samples (default: 1).
-    clip_density : float, optional
-        Maximum allowed density value (default: 5).
-    min_bg : float, optional
-        Minimum allowed background value (default: 0.05).
-    reverse_complement : bool, optional
-        If True, randomly reverse-complement sequences for augmentation (default: False).
-    jitter : int, optional
-        Maximum number of bases to randomly shift the region (default: 0).
-    noise : float, optional
-        Standard deviation of Gaussian noise added to embeddings (default: 0).
     """
 
     def __init__(
@@ -176,6 +321,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             data=data,
             embeddings_df=embeddings_df,
             fasta_file=fasta_file,
+            genotype_file=genotype_file,
             reverse_complement=reverse_complement,
             jitter=jitter,
             noise=noise,
@@ -184,10 +330,19 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         self.clip_density = clip_density
         self.min_bg = min_bg
         self.negatives_weight = negatives_weight
+        
+        #moved from base dataset
+        assert set(
+            [
+                "chrom", "summit", "class", 
+                "density", "sample_id", 
+                "background", "read_depth"
+            ]
+        ).issubset(
+            self.data.keys()
+        )
 
-        self.genotype_file = genotype_file
-        self.genotype_extr: TabixExtractor = None
-        if genotype_file is not None:
+        if self.genotype_file is not None:
             assert 'indiv_id' in data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
 
             self.include_genotypes = True
@@ -196,105 +351,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
                 "No genotyping files provided -- continuing without sample genotypes."
             )
             self.include_genotypes = False
-
-    def get_sample_sequence(self, interval, sample_id, indiv_id=None):
-        """
-        Retrieve the DNA sequence for a given interval and sample, injecting sample-specific
-        genotypes if available.
-
-        Parameters
-        ----------
-        interval : GenomicInterval
-            Genomic interval to extract.
-        sample_id : str
-            Sample identifier.
-
-        Returns
-        -------
-        int
-            Number of variants injected.
-        str
-            DNA sequence with genotypes injected.
-
-        Notes
-        -----
-        Works with both unphased and phased genotypes.
-        """
-        seq = self.fasta_extr[interval]
-
-        # Check if sample_id has a genotype
-        if pd.isna(indiv_id) or indiv_id == "None":
-            logging.debug(
-                f"INDIV_ID for {sample_id} not provided. ({str(interval)})"
-            )
-            # Return the original sequence
-            return 0, seq
-
-        # Extract variants pertaining to individual
-        variants = self.genotype_extr[interval]
-        
-        assert 'INDIV' in indiv_id, f"INDIV_ID format incorrect ({indiv_id})."
-
-        # FIX formatting issue (.bed.gz suffix) 
-        variants = variants[variants["indiv_id"] == f"{indiv_id}.bed.gz"].set_index(
-            ["chr", "start", "ref", "alt"]
-        )
-
-        logger.debug(
-            f"Found {len(variants)} variants in sample {sample_id} from individual {indiv_id}"
-        )
-
-        for v in variants.itertuples():
-            # Variant position is the dataframe index
-            _chr, _pos, _ref, _alt = v.Index
-            rel_pos = _pos - interval.start
-
-            # If heterozygous, get IUPAC base character
-            # make parsing function more robust
-            if (v.gt[0] == "1" and v.gt[2] == "0") or (
-                v.gt[0] == "0" and v.gt[2] == "1"
-            ):
-                base = get_iupac_char_from_alleles((_ref, _alt))
-            # If homozygous alternate
-            elif v.gt[0] == "1" and v.gt[2] == "1":
-                base = _alt
-            # Else homozygous reference
-            else:
-                base = _ref
-
-            seq = seq[:rel_pos] + base + seq[rel_pos + 1 :]
-
-        return len(variants), seq
-
-
-    def _init_fileread(self):
-        # pysam is not thread-safe
-        if not self.fasta_extr:
-            self.fasta_extr = FastaExtractor(self.fasta_file)
-
-        # tabix is not thread-safe
-        if self.include_genotypes and not self.genotype_extr:
-            self.genotype_extr = TabixExtractor(
-                self.genotype_file,
-                columns=[
-                    "chr",
-                    "start",
-                    "end",
-                    "rs_id",
-                    "ref",
-                    "alt",
-                    "af_ref",
-                    "af_alt",
-                    "gt",
-                    "_0",
-                    "_1",
-                    "_2",
-                    "_3",
-                    "indiv_id",
-                ],
-                na_values=".",
-            )
-
 
     def __getitem__(self, i):
         """
@@ -312,16 +368,16 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         -------
         dict
             Dictionary with keys:
-                - 'seq': np.ndarray, one-hot encoded DNA sequence
-                - 'embed': np.ndarray, cell-type/state embedding
-                - 'indicator': int, 1 for positive, 0 for negative sample
-                - 'density': float, normalized density value
-                - 'bg': float, background value
-                - 'read_depth': float, sample read depth
-                - 'weight': float, sample weight
-                - 'chrom': str, chromosome name
-                - 'mid': int, midpoint coordinate
-                - 'sample_id': str, sample identifier
+            - 'ohe_seq': one-hot encoded DNA sequence (np.ndarray)
+            - 'embed': cell-type embedding (np.ndarray)
+            - 'class': int, 1 (positive) or -1 (negative)
+            - 'density': float, clipped density value
+            - 'bg': float, clipped background
+            - 'read_depth': float, read depth
+            - 'weight': float, sample weight
+            - 'chrom': str, chromosome
+            - 'summit': int, center coordinate
+            - 'sample_id': str, sample identifier
         """
         self._init_fileread()
         chrom, summit, sample_id, density, bg, read_depth, example_class = (
@@ -395,92 +451,56 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         }
 
 
-    def __del__(self):
-        """
-        Clean up open file handles for genotype and negative sample extractors.
-        """
-        super().__del__()
-
-        if self.genotype_extr:
-            self.genotype_extr.close()
-
-
-
-
 Variant = namedtuple("Variant", ["chr", "pos", "ref", "alt"])
 
 class VariantEmbedDataset(BaseSequenceDataset):
     """
-    PyTorch Dataset for extracting reference and alternate allele sequences and
-    cell-type embeddings for variant effect prediction.
+    PyTorch Dataset for variant effect prediction with reference and alternate sequences.
 
     Parameters
     ----------
-    samples_file : str
-        Path to HDF5 file containing variant metadata and counts.
-    embeddings_file : str
-        Path to tab-delimited file with cell-type/state embeddings.
+    data : dict
+        Dictionary containing variant metadata. Must include:
+        'chrom', 'pos', 'ref', 'alt', 'ref_counts', 'total_counts', 'BAD', 'sample_id', 'logit_es'.
+    embeddings_df : pd.DataFrame
+        DataFrame of cell-type/state embeddings indexed by sample ID.
     fasta_file : str
         Path to reference genome FASTA file.
-    sample_genotype_file : str, optional
-        Path to genotype metadata file (tab-delimited).
-    genotype_file : str, optional
-        Path to genotype file in tabix format.
-    flip_alleles : bool, optional
-        If True, randomly flip reference and alternate alleles for regularization (default: True).
-    reverse_complement : bool, optional
-        If True, randomly reverse-complement sequences for augmentation (default: True).
-    jitter : int, optional
-        Maximum number of bases to randomly shift the region (default: 0).
-    noise : float, optional
-        Standard deviation of Gaussian noise added to embeddings (default: 0).
-    seed : int or None, optional
-        Seed for random number generator (default: None).
-
-    Attributes
-    ----------
-    samples : h5py.File
-        Opened HDF5 file with variant metadata and counts.
-    embeddings_df : pandas.DataFrame
-        DataFrame of cell-type/state embeddings.
-    fasta_extr : FastaExtractor
-        Extractor for reference genome sequences.
-    genotype_extr : TabixExtractor
-        Extractor for genotype data.
-
-    Notes
-    -----
-    - Extracts both reference and alternate allele sequences for each variant.
-    - Supports region jittering and reverse complementation for data augmentation.
-    - Returns a dictionary with reference and alternate sequences, embedding,
-      reference and total counts, BAD score, log fold change, sample ID, and weight.
+    genotype_file : str
+        Path to genotype file in tabix format. Requires 'indiv_id' in data.
+    flip_alleles : bool, default True
+        Randomly swap reference and alternate sequences for augmentation.
+    reverse_complement : bool, default True
+        Randomly reverse-complement sequences for augmentation.
+    jitter : int, default 0
+        Maximum number of bases to shift sequences randomly.
+    noise : float, default 0
+        Standard deviation of Gaussian noise added to embeddings.
     """
 
     def __init__(
         self,
-        samples_file,
-        embeddings_file,
-        fasta_file,
-        sample_genotype_file=None,
-        genotype_file=None,
+        data: dict,
+        embeddings_df: pd.DataFrame,
+        fasta_file: str,
+        genotype_file: str = None,
         flip_alleles=True,
         reverse_complement=True,
         jitter=0,
         noise=0,
     ):
         super().__init__(
-            samples_file,
-            embeddings_file,
-            fasta_file,
+            data=data,
+            embeddings_df=embeddings_df,
+            fasta_file=fasta_file,
+            genotype_file=genotype_file,
             reverse_complement=reverse_complement,
             jitter=jitter,
             noise=noise,
         )
 
         self.flip_alleles = flip_alleles
-
-        self.genotype_file = genotype_file
-        self.genotype_extr = None
+        self.genotype_extr: TabixExtractor = None
 
         assert set(
             [
@@ -494,130 +514,18 @@ class VariantEmbedDataset(BaseSequenceDataset):
                 "sample_id",
                 "logit_es",
             ]
-        ).issubset(self.samples.keys())
+        ).issubset(self.data.keys())
 
-        if sample_genotype_file:
-            logger.info("Loading genotype metadata...")
-            self.sample_to_genotype_df = pd.read_table(
-                sample_genotype_file, index_col=0
-            )
-            # TODO: check if genotype file is available and readable
+        if self.genotype_file is not None:
+            assert 'indiv_id' in data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
+
             self.include_genotypes = True
         else:
-            logger.info(
-                "No genotyping files provided -- continuing without sample genotypes."
-            )
-            self.include_genotypes = False
-
-    def get_phased_sequences(self, interval, sample_id, reference):
-        """
-        Retrieve phased haplotype sequences for a given interval and sample, injecting
-        phased and unphased variants as appropriate.
-
-        Parameters
-        ----------
-        interval : GenomicInterval
-            Genomic interval to extract.
-        sample_id : str
-            Sample identifier.
-        query_pos : int
-            Position of the query variant.
-
-        Returns
-        -------
-        int
-            Number of variants injected.
-        str
-            Haplotype 1 DNA sequence.
-        str
-            Haplotype 2 DNA sequence.
-        """
-        seq_ref = self.fasta_extr[interval]
-        seq_alt = str(seq_ref)
-
-        # Check if sample in has a genotype
-        if sample_id not in self.sample_to_genotype_df.index:
-            raise ValueError(f"Sample {sample_id} not in samples to genotype file!")
-
-        # Get individual ID from sample ID
-        indiv_id = self.sample_to_genotype_df.loc[sample_id, "indiv_id"]
-
-        # Check if not NaN
-        if pd.isna(indiv_id):
             raise ValueError(
-                f"No INDIV_ID for {sample_id} samples to genotype file (indiv_id = NaN). ({str(interval)})"
+                "Genotype file is required but not provided. "
+                "Please specify `genotype_file` to enable variant-aware training."
             )
-
-        # Extract variants pertaining to individual
-        variants = self.genotype_extr[interval]
-        variants = variants[variants["indiv_id"].str.contains(indiv_id)].set_index(
-            ["chr", "start", "ref", "alt"]
-        )
-
-        try:
-            # Look for query variant
-            ref_variant = variants.loc[reference]
-        except KeyError:
-            raise ValueError(
-                "Query variant not found in genotyping file "
-                f"({str(interval)}/{sample_id}/{indiv_id}/{reference.pos})"
-            )
-
-        logger.info(
-            f"Found {len(variants)} variants in sample {sample_id} from individual {indiv_id} in {interval}"
-        )
-
-        for v in variants.itertuples():
-            # Variant position is the dataframe index
-            _chr, _pos, _ref, _alt = v.Index
-            rel_pos = _pos - interval.start
-            # Phased variants, including reference
-            if v.phase_block == ref_variant.phase_block and not pd.isna(
-                ref_variant.phase_block
-            ):
-                if v.gt == "1|0":
-                    seq_ref = seq_ref[:rel_pos] + _alt + seq_ref[rel_pos + 1 :]
-                elif v.gt == "0|1":
-                    seq_alt = seq_alt[:rel_pos] + _alt + seq_alt[rel_pos + 1 :]
-                else:
-                    raise ValueError(
-                        f"Phased genotype {v.gt} not recognized! ({_chr}:{_pos}:{indiv_id})"
-                    )
-            # The unphased reference
-            elif v.Index == reference:
-                seq_alt = seq_alt[:rel_pos] + _alt + seq_alt[rel_pos + 1 :]
-            # Unphased additional variants that are not at the same 
-            # position as the referencee
-            elif _pos != reference.pos:
-                # If heterozygous, get IUPAC base character
-                if (v.gt[0] == "1" and v.gt[2] == "0") or (
-                    v.gt[0] == "0" and v.gt[2] == "1"
-                ):
-                    base = get_iupac_char_from_alleles((_ref, _alt))
-                # If homozygous alternate
-                elif v.gt[0] == "1" and v.gt[2] == "1":
-                    base = _alt
-                # Else homozygous reference
-                else:
-                    base = _ref
-
-                seq_ref = seq_ref[:rel_pos] + base + seq_ref[rel_pos + 1 :]
-                seq_alt = seq_alt[:rel_pos] + base + seq_alt[rel_pos + 1 :]
-            else:
-                pass
-
-        # The ref sequence should have the reference allele for
-        # variant. This would only occur for phased variants, hence
-        # the "1|0" genotype.
-        if ref_variant["gt"] == "1|0":
-            seq_ref, seq_alt = seq_alt, seq_ref
-
-        # Check the sequences
-        rel_pos = reference[1] - interval.start
-        if (seq_ref[rel_pos] != reference[2]) or (seq_alt[rel_pos] != reference[3]):
-            raise ValueError("Expected ref & alt alleles not found in correct position in sequences!", reference, variants)
-
-        return (len(variants), seq_ref, seq_alt)
+  
 
     def __getitem__(self, i):
         """
@@ -652,38 +560,18 @@ class VariantEmbedDataset(BaseSequenceDataset):
         haplotype 1 vs. haplotype 2. We call it "ref" vs. "alt" because the
         variant effect is always measured against the reference genome allele.
         """
-        # pysam is not thread-safe
-        if not self.fasta_extr:
-            self.fasta_extr = FastaExtractor(self.fasta_file)
-
-        # TODO: move this to "get_phased_sequences" function?
-        if self.include_genotypes and not self.genotype_extr:
-            self.genotype_extr = TabixExtractor(
-                self.genotype_file,
-                skiprows=1,
-                columns=[
-                    "chr",
-                    "start",
-                    "end",
-                    "ref",
-                    "alt",
-                    "indiv_id",
-                    "gt",
-                    "phase_block",
-                ],
-                na_values={"phase_block": "."},
-            )
+        self._init_fileread()
 
         chrom, pos, ref, alt, ref_counts, total_counts, bad, lfc, sample_id = (
-            self.samples["chrom"][i].astype(str),
-            self.samples["pos"][i],
-            self.samples["ref"][i].astype(str),
-            self.samples["alt"][i].astype(str),
-            self.samples["ref_counts"][i].astype(np.float32),
-            self.samples["total_counts"][i].astype(np.float32),
-            self.samples["BAD"][i].astype(np.float32),
-            self.samples["logit_es"][i].astype(np.float32),
-            self.samples["sample_id"][i].astype(str),
+            self.data["chrom"][i].astype(str),
+            self.data["pos"][i],
+            self.data["ref"][i].astype(str),
+            self.data["alt"][i].astype(str),
+            self.data["ref_counts"][i].astype(np.float32),
+            self.data["total_counts"][i].astype(np.float32),
+            self.data["BAD"][i].astype(np.float32),
+            self.data["logit_es"][i].astype(np.float32),
+            self.data["sample_id"][i].astype(str),
         )
 
         variant = GenomicInterval(chrom, pos, pos)
@@ -697,8 +585,9 @@ class VariantEmbedDataset(BaseSequenceDataset):
 
         # Inject genotypes if genotype files provided
         if self.include_genotypes:
-            _, dna_seq_ref, dna_seq_alt = self.get_phased_sequences(
-                interval, sample_id, Variant(chrom, pos, ref, alt)
+            indiv_id = self.data["indiv_id"][i]   
+            _, dna_seq_ref, dna_seq_alt = self.get_sample_sequence(
+                interval, sample_id, indiv_id, return_variant=True, reference=Variant(chrom, pos, ref, alt)
             )
         else:
             dna_seq_ref = self.fasta_extr[interval]
@@ -747,15 +636,6 @@ class VariantEmbedDataset(BaseSequenceDataset):
             "pos": pos,
         }
 
-    def __del__(self):
-        """
-        Clean up open file handle for genotype extractor.
-        """
-        super(VariantEmbedDataset, self).__del__()
-
-        if self.genotype_extr:
-            self.genotype_extr.close()
-
     def __len__(self):
         """
         Return the number of variants in the dataset.
@@ -765,4 +645,4 @@ class VariantEmbedDataset(BaseSequenceDataset):
         int
             Number of variants.
         """
-        return self.samples["chrom"].shape[0]
+        return self.data["chrom"].shape[0]

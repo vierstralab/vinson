@@ -1,7 +1,8 @@
 import lightning.pytorch as L
 from torch.utils.data import DataLoader
 from vinson.datasets.sequence import SequenceEmbedDataset
-from vinson.utils.data_formatting import extract_data_from_train_anndata
+from vinson.utils.data_formatting import extract_data_from_train_anndata, extract_var_data_from_anndata
+from vinson.datasets.sequence import SequenceEmbedDataset, VariantEmbedDataset
 from itertools import cycle
 from torchdata.stateful_dataloader import StatefulDataLoader
 
@@ -32,6 +33,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             adata (ad.AnnData): AnnData object containing the dataset.
             fasta_file (str): Path to the FASTA file.
             genotype_file (str, optional): Path to the genotype file.
+            variant (bool): determines if varaiant dataset or sequence dataset
             train_dataset_kwargs (dict, optional): Additional arguments for the training dataset.
             valid_dataset_kwargs (dict, optional): Additional arguments for the validation dataset.
             dataloader_kwargs (dict, optional): Additional arguments for train and validation dataloaders. See DataLoader.__init__ for options.
@@ -50,11 +52,12 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.adata = None
         self.current_train_epoch = self.validation_epoch = self.epoch_names = None
         self.train_epoch_cycler = None
-        # self.train_dl = None
 
     def setup(self, stage):
         # changes epochs
         self.adata = ad.read_h5ad(self.anndata_file)
+        if "epoch_names" not in self.adata.uns:
+            raise KeyError("AnnData missing 'epoch_names' in .uns")
         self.epoch_names = self.adata.uns['epoch_names']
         self.train_epoch_cycler = cycle(self.epoch_names)
         self.validation_epoch = self.epoch_names[0]
@@ -130,51 +133,42 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
         data, embeddings_df = extract_data_from_train_anndata(adata, suffix)
         return data, embeddings_df
-
-    # def iterate_train_dataset(self):
-    #     """ """
-    #     # Cycle to next file index
-    #     self.i = next(self.train_file_cycler)
-        
-    #     # Create new dataset
-    #     self.train_dataset = SequenceEmbedDataset(
-    #         self.train_samples_files[self.i],
-    #         self.embeddings_file,
-    #         self.fasta_file,
-    #         negative_samples_file=self.train_samples_negative_files[self.i],
-    #         **self.train_dataset_kwargs,
-    #     )
-
-    #     self.train_dl = StatefulDataLoader(
-    #         self.train_dataset,
-    #         shuffle=True,
-    #         **self.dataloader_kwargs,
-    #         worker_init_fn=self.worker_init_fn,
-    #     )
-
-    # def train_dataloader(self):
-    #     return self.train_dl
     
-    # def state_dict(self):
-    #     state = {
-    #         "embeddings_file": self.embeddings_file,
-    #         "fasta_file": self.fasta_file,
-    #         "train_samples_files": self.train_samples_files,
-    #         "train_samples_negative_files": self.train_samples_negative_files,
-    #         "valid_samples_file": self.valid_samples_file,
-    #         "valid_samples_negative_file": self.valid_samples_negative_file,
-    #         "train_dataset_kwargs": self.train_dataset_kwargs,
-    #         "valid_dataset_kwargs": self.valid_dataset_kwargs,
-    #         "dataloader_kwargs": self.dataloader_kwargs,
-    #         "i": self.i, # which file are currently using (epoch)
-    #     }
-    #     # state["train_dataloader"] = self.train_dataloader.state_dict()
+    
+    
+class SeqEmbedVariantDataModule(SeqEmbedDataModule):
+    """
+    Variant version of SeqEmbedDataModule.
 
-    #     return state
+    Differences:
+      - Uses extract_var_data_from_anndata
+      - Uses VariantEmbedDataset instead of SequenceEmbedDataset
+    """
+    
+    def train_dataset(self):
+        data, embeddings_df = self.get_data(self.current_train_epoch, "train", "train")
+        return VariantEmbedDataset(
+            data=data,
+            embeddings_df=embeddings_df,
+            fasta_file=self.fasta_file,
+            genotype_file=self.genotype_file,
+            **self.train_dataset_kwargs,
+        )
 
-    # def load_state_dict(self, state_dict):
-    #     # Update module attributes
-    #     # dl_state_dict = state_dict.pop("train_dataloader")
-    #     # self.train_dataloader.load_state_dict(dl_state_dict)
+    def validation_dataset(self):
+        data, embeddings_df = self.get_data(self.validation_epoch, "val", "train")
+        return VariantEmbedDataset(
+            data=data,
+            embeddings_df=embeddings_df,
+            fasta_file=self.fasta_file,
+            genotype_file=self.genotype_file,
+            **self.valid_dataset_kwargs,
+        )
 
-    #     self.__dict__.update(state_dict)
+    def get_data(self, suffix, dhs_split="train", sample_split="train"):
+        """Extract variant-level data from AnnData."""
+        adata = self.adata[
+            self.adata.obsm["split_data"] == sample_split,
+            self.adata.varm["split_data"] == dhs_split,
+        ]
+        return extract_var_data_from_anndata(adata, suffix)

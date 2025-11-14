@@ -335,7 +335,6 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         (y_hat, y), weight = self._run_step(batch)
 
         loss = self.loss(y_hat, y)
-        loss = self.loss(y_hat, y)
         loss *= weight
         loss = loss.mean()
 
@@ -407,11 +406,11 @@ class EmbedModel(BaseSequenceModel):
         return super().training_step(batch, batch_idx)
 
     def validation_step(self, batch, batch_idx):
-       return super().validation_step(batch, batch_idx)
+        return super().validation_step(batch, batch_idx)
 
 
 class VariantEmbedModel(AbstractBaseSequenceModel):
-    def __init__(self, trunk, embed, *args, **kwargs):
+    def __init__(self, trunk: BassetTrunkEmbed, embed: CellEmbedding, *args, **kwargs):
         super().__init__(trunk, *args, **kwargs)
     
         self.loss = binomial_mixture_normed_loss
@@ -434,13 +433,16 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
             torch.zeros((2, 4, self.seqlen)),
             torch.zeros((2, self.embedding.n_inputs)),
         )
+        
+    def forward_final(self, x):
+        x = self.final(x)
+        return x
 
     def forward(self, seq_ref, seq_alt, embed):
         x = self.embedding(embed)
         ref_features = self.trunk(seq_ref, x)
         alt_features = self.trunk(seq_alt, x)
 
-        x = torch.subtract(ref_features, alt_features)
         x = torch.subtract(ref_features, alt_features)
 
         x = self.forward_fc(x)
@@ -473,7 +475,6 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
         )
 
         loss *= batch["weight"]
-        loss *= batch["weight"]
         loss = loss.mean()
 
         return loss, y, (ref_counts, total_counts, bad_score)
@@ -493,10 +494,6 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
         lfc = batch["lfc"]
 
         self.valid_metrics.update(y_hat, lfc)
-        loss, y_hat, y = self.step(batch, batch_idx)
-        lfc = batch["lfc"]
-
-        self.valid_metrics.update(y_hat, lfc)
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
@@ -509,15 +506,14 @@ class VariantEmbedModelWrapper(L.LightningModule):
     def __init__(self, model: "VariantEmbedModel"):
         super().__init__()
         self.model = model
-    def __init__(self, model: "VariantEmbedModel"):
-        super().__init__()
-        self.model = model
 
         # Make independent ref/alt branches
         self.embedding_ref = copy.deepcopy(model.embedding)
         self.embedding_alt = copy.deepcopy(model.embedding)
+
         self.trunk_ref = copy.deepcopy(model.trunk)
         self.trunk_alt = copy.deepcopy(model.trunk)
+        
         for mod in [
             self.trunk_ref, self.trunk_alt, 
             self.embedding_ref, self.embedding_alt
