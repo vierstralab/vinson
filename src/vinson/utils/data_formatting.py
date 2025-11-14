@@ -40,7 +40,7 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
     }
     for key, dtype in keys.items():
         if dtype == np.str_:
-            mask = pd.isna(data[key]) or (data[key] == 'None')
+            mask = pd.isna(data[key]) or np.any(data[key] == 'None') or np.any(data[key] == 'nan')
             data[key][mask] = ''
         data[key] = np.ascontiguousarray(data[key].astype(dtype))
 
