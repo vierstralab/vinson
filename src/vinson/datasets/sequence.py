@@ -138,13 +138,9 @@ class BaseSequenceDataset(Dataset):
         if not self.fasta_extr:
             self.fasta_extr = FastaExtractor(self.fasta_file)
         if self.include_genotypes and not self.genotype_extr:
-            openfile = gzip.open if self.genotype_file.endswith(".gz") else open
-            with openfile(self.genotype_file, "rt") as f:
-                phased = False
-                for line in f:
-                    if "phase_set" in line:
-                        phased = True
-                        break
+            # Check header
+            with gzip.open(self.genotype_file, "rt") as f:
+                phased = "phase_set" in f.readline()
             if phased:
                 print(f"[INFO] Detected phased genotype format ({self.genotype_file})")
                 self.genotype_extr = TabixExtractor(
