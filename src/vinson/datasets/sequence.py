@@ -266,12 +266,13 @@ class BaseSequenceDataset(Dataset):
                     seq_ref = replace_at(seq_ref, rel_pos, base)
                     seq_alt = replace_at(seq_alt, rel_pos, base)
 
-        if reference_variant is not None and reference_variant.gt == "1|0":
-            seq_ref, seq_alt = seq_alt, seq_ref
+        if reference_variant is not None:
+            if reference_variant.gt == "1|0":
+                seq_ref, seq_alt = seq_alt, seq_ref
         
-        rel_pos = reference_variant.start - interval.start
-        if (seq_ref[rel_pos] != reference_variant.ref) or (seq_alt[rel_pos] != reference_variant.alt):
-            raise ValueError("Expected ref & alt alleles not found in correct position in sequences!", reference_variant, variants)
+            rel_pos = reference_variant.start - interval.start
+            if (seq_ref[rel_pos] != reference_variant.ref) or (seq_alt[rel_pos] != reference_variant.alt):
+                raise ValueError("Expected ref & alt alleles not found in correct position in sequences!", reference_variant, variants)
 
         return len(variants), seq_iupac, seq_ref, seq_alt
 
