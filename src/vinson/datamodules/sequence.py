@@ -1,7 +1,7 @@
 import lightning.pytorch as L
 from torch.utils.data import DataLoader
 from vinson.datasets.sequence import SequenceEmbedDataset
-from vinson.utils.data_formatting import extract_data_from_train_anndata, extract_var_data_from_anndata
+from vinson.utils.data_formatting import extract_data_from_train_anndata, extract_variant_data_from_anndata
 from vinson.datasets.sequence import SequenceEmbedDataset, VariantEmbedDataset
 from itertools import cycle
 from torchdata.stateful_dataloader import StatefulDataLoader
@@ -171,4 +171,4 @@ class SeqEmbedVariantDataModule(SeqEmbedDataModule):
             self.adata.obsm["split_data"] == sample_split,
             self.adata.varm["split_data"] == dhs_split,
         ]
-        return extract_var_data_from_anndata(adata, suffix)
+        return extract_variant_data_from_anndata(adata, suffix)
