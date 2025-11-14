@@ -72,3 +72,13 @@ def annotate_eval_dataset_with_obs_columns(eval_dataset: pd.DataFrame, adata: ad
     for col in cols:
         eval_dataset[col] = eval_dataset['sample_id'].map(adata.obs[col])
     return eval_dataset
+
+def get_samples_used_in_training_for_dhs(train_adata, dhs_ids):
+    if len(dhs_ids) == 0:
+        return np.array([])
+    in_training = np.zeros(train_adata.shape[0], dtype=bool)
+    for epoch_name in train_adata.uns['epoch_names']:
+        example_class = train_adata[:, dhs_ids].layers[f'class.{epoch_name}']
+        in_training |= example_class.toarray()[:, 0] != 0
+    return train_adata.obs_names[in_training]
+
