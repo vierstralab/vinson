@@ -12,16 +12,11 @@ from vinson.utils.data_formatting import extract_data_from_backed_anndata as ext
 from vinson.utils.data_formatting import data_to_h5, sanitize_data
 
 
-def get_bg_for_peaks(peaks_df, stats_path):
-    intervals = df_to_genomic_intervals(peaks_df)
-    rows = []
-    with TabixExtractor(stats_path) as extractor:
-        for interval in tqdm(intervals):
-            df_slice = extractor[interval].query('fit_type == "segment"')
-            assert len(df_slice) == 1, "Expected exactly one matching stats row per peak"
-            rows.append(df_slice)
-    stats = pd.concat(rows)
-    bg = stats.eval('bg_r * bg_p / (1 - bg_p)').values
+def get_bg_for_peaks(peaks_df: pd.DataFrame, stats_path):
+    stats = pd.read_table(stats_path)
+    merged = peaks_df[['#chr', 'summit']].merge(stats, on="#chr", how="left")
+    merged = merged.query('summit >= start & summit < end')
+    bg = merged.eval('bg_r * bg_p / (1 - bg_p)').values
     return bg
 
 
@@ -31,19 +26,14 @@ def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> dict:
     for sample_id, row in anndata_slice.obs.iterrows():
         sample_slice = anndata_slice[sample_id, :]
         fit_stats_file = row['hotspot3_fit_stats_file']
-        peaks = pd.read_table(row['peaks_file_0.01fdr']).drop(
-            columns=['start']
-        ).rename(
-            columns={'summit': 'start'}
-        )
+        peaks = pd.read_table(row['peaks_file_0.01fdr'])
         
-        peaks['end'] = peaks['start'] + 1
         data_bundle = {
             'dhs_id': f'{sample_id}.' + peaks.index.astype(str).values,
             'sample_id': np.full(len(peaks), sample_id, dtype=np.str_),
             'read_depth': np.full(len(peaks), row['nuclear_reads'], dtype=np.float32),
             'chrom': peaks['#chr'].values,
-            'summit': peaks['start'].values,
+            'summit': peaks['summit'].values,
             'background': get_bg_for_peaks(peaks, fit_stats_file),
             'class': np.ones(len(peaks), dtype=np.int8),
             'density': peaks['summit_density'].values,
