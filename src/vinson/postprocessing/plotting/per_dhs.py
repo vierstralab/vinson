@@ -127,10 +127,12 @@ def obs_pred_barplot_by_ann(
     figsize=(n * figsize_per_annotation[0], figsize_per_annotation[1] if not separate_axes else figsize_per_annotation[1] * 2)
     fig, axes = plt.subplots(1 if not separate_axes else 2, 1, figsize=figsize, squeeze=False)
 
-    if separate_axes:
-        ax1, ax2 = axes[0], axes[1]
+    if not separate_axes:
+        ax1 = axes[0, 0]
+        ax2 = ax1
     else:
-        ax1 = ax2 = axes
+        ax1 = axes[0, 0]
+        ax2 = axes[1, 0]
 
     barplot_by_ann_with_offset(
         df,
