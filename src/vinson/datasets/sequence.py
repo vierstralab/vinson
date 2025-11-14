@@ -266,7 +266,7 @@ class BaseSequenceDataset(Dataset):
                     seq_ref = replace_at(seq_ref, rel_pos, base)
                     seq_alt = replace_at(seq_alt, rel_pos, base)
 
-        if reference_variant.gt == "1|0":
+        if reference_variant is not None and reference_variant.gt == "1|0":
             seq_ref, seq_alt = seq_alt, seq_ref
         
         rel_pos = reference_variant.start - interval.start
