@@ -73,7 +73,8 @@ if __name__ == '__main__':
     if 'indiv_id' not in anndata.obsm:
         anndata.obsm['indiv_id'] = pd.read_table(
                 "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/metadata.clustered.tsv"
-            ).set_index("sample_id").loc[anndata.obs_names, "indiv_id"].values
+            ).set_index("sample_id").reindex(anndata.obs_names)["indiv_id"].values
+
     sample_ids = [sid for sid in args.sample_ids if check_none(sid)]
     dhs_ids = [did for did in args.dhs_ids if check_none(did)]
 
