@@ -195,7 +195,7 @@ class BaseSequenceDataset(Dataset):
         seq = self.fasta_extr[interval]
         seq_iupac = seq_ref = seq_alt = str(seq) # modify all 3 regardless
 
-        if pd.isna(indiv_id) or indiv_id == "None":
+        if pd.isna(indiv_id) or indiv_id in ("None", ""):
             return 0, seq_iupac, seq_ref, seq_alt
 
         assert 'INDIV' in indiv_id, f"INDIV_ID format incorrect ({indiv_id})."
