@@ -35,14 +35,13 @@ def obs_pred_barplot_by_ann(
     return ax
 
 
-def get_agg_by_annotation(df, column, annotation_data):
-    gb = df.groupby('extended_annotation').agg(
+def get_agg_by_annotation(df, column, by='extended_annotation'):
+    gb = df.groupby(by).agg(
         median=(column, 'median'),
         q1=(column, lambda x: np.percentile(x, 25)),
         q3=(column, lambda x: np.percentile(x, 75)),
-    ).loc[annotation_data['extended_annotation']]
+    )
 
-    gb['color'] = annotation_data['color'].fillna('#D0D0D0').values
     return gb
 
 
@@ -51,23 +50,29 @@ def scatter_by_ann(
         x_col,
         y_col,
         annotation_data,
+        by=['dhs_id', 'extended_annotation'],
         ax=None,
         **kwargs
 ):
-    x_gb = get_agg_by_annotation(df, x_col, annotation_data)
-    y_gb = get_agg_by_annotation(df, y_col, annotation_data)
+    x_gb = get_agg_by_annotation(df, x_col, by=by)
+    y_gb = get_agg_by_annotation(df, y_col, by=by)
     gb = x_gb.merge(
         y_gb[['median', 'q1', 'q3']],
         left_index=True,
         right_index=True,
         suffixes=('_x', '_y')
-    )
+    ).reset_index()
+
+    gb['color'] = gb['extended_annotation'].map(
+        annotation_data.set_index('extended_annotation')['color']
+    ).fillna('#D0D0D0')
+
     if ax is None:
         fig, ax = plt.subplots(figsize=(5 / 2.54, 5 / 2.54))
 
     kw = dict(
         s=1,
-        alpha=0,
+        alpha=1,
         edgecolor='none',
     )
 
@@ -89,7 +94,8 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
     if ax is None:
         ax = plt.gca()
 
-    gb = get_agg_by_annotation(df, column, annotation_data)
+    gb = get_agg_by_annotation(df, column, annotation_data, by='extended_annotation').loc[annotation_data['extended_annotation']]
+    gb['color'] = annotation_data['color'].fillna('#D0D0D0').values
 
     kw = dict(
         error_kw=dict(
