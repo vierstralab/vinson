@@ -49,7 +49,7 @@ def load_legacy_vinson(checkpoint_path):
 def load_and_predict(batch, model):    
     X_seq      = batch["ohe_seq"].to(device, non_blocking=True)
     X_embed    = batch["embed"].to(device, non_blocking=True)
-    y_ = model(X_seq, X_embed).squeeze().detach()
+    y_ = model(X_seq, X_embed).squeeze(-1).detach()
     return y_
 
 
