@@ -84,7 +84,7 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
     if ax is None:
         ax = plt.gca()
 
-    gb = get_agg_by_annotation(df, column, annotation_data, by='extended_annotation').loc[annotation_data['extended_annotation']]
+    gb = get_agg_by_annotation(df, column, by='extended_annotation').loc[annotation_data['extended_annotation']]
     gb['color'] = annotation_data['color'].fillna('#D0D0D0').values
 
     kw = dict(
@@ -94,7 +94,6 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
             capthick=0.5,
         ),
         linewidth=0,
-        edgecolor='k',
     )
     kw['error_kw'] = {**kw['error_kw'], **kwargs.pop('error_kw', {})}
     kw = {**kw, **kwargs}
@@ -127,10 +126,12 @@ def obs_pred_barplot_by_ann(
     figsize=(n * figsize_per_annotation[0], figsize_per_annotation[1] if not separate_axes else figsize_per_annotation[1] * 2)
     fig, axes = plt.subplots(1 if not separate_axes else 2, 1, figsize=figsize, squeeze=False)
 
-    if separate_axes:
-        ax1, ax2 = axes[0], axes[1]
+    if not separate_axes:
+        ax1 = axes[0, 0]
+        ax2 = ax1
     else:
-        ax1 = ax2 = axes
+        ax1 = axes[0, 0]
+        ax2 = axes[1, 0]
 
     barplot_by_ann_with_offset(
         df,
@@ -150,6 +151,8 @@ def obs_pred_barplot_by_ann(
         annotation_data,
         offset=0.5,
         color='annotation',
+        edgecolor='annotation',
+        linewidth=0.5,
         label='Predicted',
         ax=ax2,
         **kwargs,
