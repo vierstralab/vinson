@@ -198,7 +198,7 @@ class BaseSequenceDataset(Dataset):
         if pd.isna(indiv_id) or indiv_id in ("None", ""):
             return 0, seq_iupac, seq_ref, seq_alt
 
-        assert 'INDIV' in indiv_id, f"INDIV_ID format incorrect ({indiv_id})."
+        assert 'INDIV' in indiv_id, f"INDIV_ID format incorrect ({indiv_id}, {type(indiv_id)})."
         variants = self.genotype_extr[interval]
         variants = variants[variants["indiv_id"] == f"{indiv_id}.bed.gz"]
 
