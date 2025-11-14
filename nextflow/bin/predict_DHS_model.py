@@ -39,7 +39,7 @@ def load_legacy_vinson(checkpoint_path):
     ).to(device)
     pretrained_state_dict = torch.load(
         checkpoint_path,
-        map_location=torch.device("cpu"),
+        map_location=device,
     )["state_dict"]
 
     model_predict.load_state_dict(pretrained_state_dict)
