@@ -45,6 +45,14 @@ def annotate_eval_dataset_with_layers(eval_dataset: pd.DataFrame, **kwargs) -> p
     eval_dataset['pred_counts'] = eval_dataset.eval('pred_total_density / 1e6 * read_depth')
     return eval_dataset
 
+def get_agg_by_annotation(df, column, by='extended_annotation'):
+    gb = df.groupby(by).agg(
+        median=(column, 'median'),
+        q1=(column, lambda x: np.percentile(x, 25)),
+        q3=(column, lambda x: np.percentile(x, 75)),
+    )
+
+    return gb
 
 def calculate_per_dhs_fold_changes(
     eval_dataset: pd.DataFrame,
