@@ -37,6 +37,12 @@ def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> dict:
         )
         
         peaks['end'] = peaks['start'] + 1
+        if 'indiv_id' not in sample_slice.obsm:
+            indiv_id = indiv_map = pd.read_table(
+                "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/metadata.clustered.tsv"
+            ).set_index("sample_id").loc[sample_id, "indiv_id"]
+        else:
+            indiv_id = sample_slice.obsm['indiv_id']
         data_bundle = {
             'dhs_id': f'{sample_id}.' + peaks.index.astype(str).values,
             'sample_id': np.full(len(peaks), sample_id, dtype=np.str_),
@@ -46,7 +52,7 @@ def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> dict:
             'background': get_bg_for_peaks(peaks, fit_stats_file),
             'class': np.ones(len(peaks), dtype=np.int8),
             'density': peaks['summit_density'].values,
-            'indiv_id': np.full(len(peaks), sample_slice.obsm['indiv_id'], dtype=np.str_),
+            'indiv_id': np.full(len(peaks), indiv_id, dtype=np.str_),
         }
         data.append(data_bundle)
     

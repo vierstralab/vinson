@@ -10,7 +10,7 @@ from genome_tools.data.anndata import read_zarr_backed
 
 from vinson.utils.data_formatting import extract_data_from_h5
 from vinson.utils.helpers import read_configs
-from vinson.plotting.per_dhs import group_plot
+from vinson.postprocessing.plotting.per_dhs import obs_pred_barplot_by_ann
 
 def get_palette_dict(categories):
     pass
@@ -71,6 +71,7 @@ def plot_per_annotation_comparison(
     annotation_data: pd.DataFrame,
     zero_line_at: float = 0.0,
 ):
+    # FIXME
     annotation_data = annotation_data.set_index('name').sort_values('order')
     order = annotation_data.index
     palette = annotation_data['color'].to_dict()
@@ -79,7 +80,7 @@ def plot_per_annotation_comparison(
     fig, axes = plt.subplots(2, 1, figsize=array2inch(12 / n_total * len(order), 4))
     for i, column in enumerate([pred_col, target_col]):
         ax = axes[i]
-        ax = group_plot(
+        ax = obs_pred_barplot_by_ann(
             per_dhs_and_annotation_metrics,
             column,
             type='bar',
