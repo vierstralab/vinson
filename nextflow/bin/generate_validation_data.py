@@ -30,7 +30,11 @@ def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> dict:
     for sample_id, row in anndata_slice.obs.iterrows():
         sample_slice = anndata_slice[sample_id, :]
         fit_stats_file = row['hotspot3_fit_stats_file']
-        peaks = pd.read_table(row['peaks_file_0.01fdr']).drop(columns=['start']).rename({'summit': 'start'})
+        peaks = pd.read_table(row['peaks_file_0.01fdr']).drop(
+            columns=['start']
+        ).rename(
+            columns={'summit': 'start'}
+        )
         
         peaks['end'] = peaks['start'] + 1
         data_bundle = {

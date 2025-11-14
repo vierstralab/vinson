@@ -3,6 +3,7 @@ process generate_sample_validation_data {
 
     conda "${params.conda}"
     publishDir "${params.outdir}/validation_data"
+    tag "${prefix}"
 
     input:
         tuple val(sample_id), val(mode)
