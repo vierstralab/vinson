@@ -151,6 +151,8 @@ def obs_pred_barplot_by_ann(
         annotation_data,
         offset=0.5,
         color='annotation',
+        edgecolor='annotation',
+        linewidth=0.5,
         label='Predicted',
         ax=ax2,
         **kwargs,
