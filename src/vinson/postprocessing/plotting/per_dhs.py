@@ -3,38 +3,6 @@ import numpy as np
 import seaborn as sns
 
 
-def obs_pred_barplot_by_ann(
-        df, obs_col, pred_col, annotation_data, ax=None, **kwargs
-):
-    n = len(annotation_data)
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(12 / 33 * n / 2.54, 2 / 2.54))
-
-    barplot_by_ann_with_offset(
-        df,
-        obs_col,
-        annotation_data,
-        offset=-0.5,
-        color='grey',
-        label='Observed',
-        ax=ax,
-        **kwargs,
-    )
-    barplot_by_ann_with_offset(
-        df,
-        pred_col,
-        annotation_data,
-        offset=0.5,
-        label='Predicted',
-        ax=ax,
-        **kwargs,
-    )
-
-    ax.legend(frameon=False, fontsize='small', loc='upper right')
-
-    return ax
-
-
 def get_agg_by_annotation(df, column, by='extended_annotation'):
     gb = df.groupby(by).agg(
         median=(column, 'median'),
@@ -44,16 +12,7 @@ def get_agg_by_annotation(df, column, by='extended_annotation'):
 
     return gb
 
-
-def scatter_by_ann(
-        df,
-        x_col,
-        y_col,
-        annotation_data,
-        by=['dhs_id', 'extended_annotation'],
-        ax=None,
-        **kwargs
-):
+def get_agg_by_annotation_obs_pred(df, x_col, y_col, annotation_data, by=['dhs_id', 'extended_annotation']):
     x_gb = get_agg_by_annotation(df, x_col, by=by)
     y_gb = get_agg_by_annotation(df, y_col, by=by)
     gb = x_gb.merge(
@@ -66,30 +25,72 @@ def scatter_by_ann(
     gb['color'] = gb['extended_annotation'].map(
         annotation_data.set_index('extended_annotation')['color']
     ).fillna('#D0D0D0')
+    return gb
 
+def aggregate_eval_dataset_by_sample(eval_dataset, annotation_data):
+    gb = get_agg_by_annotation_obs_pred(
+        eval_dataset,
+        x_col='corrected_density',
+        y_col='pred_corrected_density',
+        annotation_data=annotation_data,
+        by=['sample_id', 'extended_annotation'],
+    )
+    return gb
+
+
+
+def scatter_by_ann(
+    gb,
+    ax=None,
+    **kwargs
+):
     if ax is None:
         fig, ax = plt.subplots(figsize=(5 / 2.54, 5 / 2.54))
 
     kw = dict(
         s=1,
         alpha=1,
-        edgecolor='none',
     )
 
     kw = {**kw, **kwargs}
 
-    plt.scatter(
+    ax.scatter(
         gb['median_x'],
         gb['median_y'],
-        c=gb['color'],
+        c=kw.pop('color', gb['color']),
+        edgecolor=kw.pop('edgecolor', gb['color']),
         **kw
     )
+
+    ax.axline((0, 0), slope=1, color='k', lw=0.5, ls='--')
 
     return ax
 
 
+def scatter_by_ann_train_val(gb, in_training, pos_tr=0.05, ax=None):
+    if ax is None:
+        ax = plt.gca()
+    ax = scatter_by_ann(
+        gb.query('sample_id not in @in_training'),
+        s=3,
+        lw=0.5,
+        color='none',
+        ax=ax,
+    )
+    ax = scatter_by_ann(
+        gb.query('sample_id in @in_training'),
+        s=5,
+        marker='X',
+        edgecolor='k',
+        lw=0,
+        ax=ax,
+    )
+    ax.axvline(pos_tr, color='k', lw=0.5, ls='--')
+    return ax
 
-def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax=None, color=None, label=None, **kwargs):
+
+
+def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax=None, color='annotation', edgecolor='none', label=None, **kwargs):
     n = len(annotation_data)
     if ax is None:
         ax = plt.gca()
@@ -115,7 +116,8 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
             gb_row['median'],
             w, 
             yerr=[[gb_row['median'] - gb_row['q1']], [gb_row['q3'] - gb_row['median']]],
-            color=gb_row['color'] if color is None else color,
+            color=gb_row['color'] if color == 'annotation' else color,
+            edgecolor=gb_row['color'] if edgecolor == 'annotation' else edgecolor,
             label=label if i == 0 else None,
             **kw,
         )
@@ -124,3 +126,39 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
     margin = max(w * (abs(offset) + 0.5), 0.5)
     ax.set_xlim(-margin, n - 1 + margin)
     return ax
+
+
+
+def obs_pred_barplot_by_ann(
+        df, obs_col, pred_col, annotation_data, ax=None, **kwargs
+):
+    n = len(annotation_data)
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(12 / 33 * n / 2.54, 2 / 2.54))
+
+    barplot_by_ann_with_offset(
+        df,
+        obs_col,
+        annotation_data,
+        offset=-0.5,
+        color='#E7E7E7',
+        edgecolor='annotation',
+        linewidth=0.5,
+        label='Observed',
+        ax=ax,
+        **kwargs,
+    )
+    barplot_by_ann_with_offset(
+        df,
+        pred_col,
+        annotation_data,
+        offset=0.5,
+        color='annotation',
+        label='Predicted',
+        ax=ax,
+        **kwargs,
+    )
+    ax.legend(frameon=False, fontsize='small', loc='upper right')
+
+    return ax
+
