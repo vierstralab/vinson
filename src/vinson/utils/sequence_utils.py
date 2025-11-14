@@ -103,7 +103,7 @@ def force_strict_ohe(x):
         x_[i, base, j] = 1.0
     return x_
 
-def get_iupac_char_from_alleles(alleles):
+def get_iupac_char_from_alleles(*alleles):
     """Returns the IUPAC character from a list of possible
     DNA nucleotides.
 
