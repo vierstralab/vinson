@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import argparse
 import anndata as ad
+from tqdm import tqdm
 
 from genome_tools.data.anndata import read_zarr_backed
 from genome_tools.data.extractors import TabixExtractor
@@ -15,7 +16,7 @@ def get_bg_for_peaks(peaks_df, stats_path):
     intervals = df_to_genomic_intervals(peaks_df)
     rows = []
     with TabixExtractor(stats_path) as extractor:
-        for interval in intervals:
+        for interval in tqdm(intervals):
             df_slice = extractor[interval].query('fit_type == "segment')
             assert len(df_slice) == 1, "Expected exactly one matching stats row per peak"
             rows.append(df_slice)
@@ -38,7 +39,8 @@ def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> dict:
         
         peaks['end'] = peaks['start'] + 1
         if 'indiv_id' not in sample_slice.obsm:
-            indiv_id = indiv_map = pd.read_table(
+            # TMP hotfix
+            indiv_id = pd.read_table(
                 "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/metadata.clustered.tsv"
             ).set_index("sample_id").loc[sample_id, "indiv_id"]
         else:
