@@ -161,7 +161,7 @@ def obs_pred_barplot_by_ann(
     )
 
     if separate_axes:
-        ax1.legend(frameon=False, fontsize='small', loc='upper right')
+        ax1.legend(frameon=False, fontsize='small', loc='upper left', bbox_to_anchor=(1, 1))
         ax1.set_xticks([])
-    ax2.legend(frameon=False, fontsize='small', loc='upper right')
+    ax2.legend(frameon=False, fontsize='small', loc='upper left', bbox_to_anchor=(1, 1))
     return axes
