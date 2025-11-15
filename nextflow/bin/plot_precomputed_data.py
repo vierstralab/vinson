@@ -75,17 +75,17 @@ def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.D
     eval_dataset = calculate_per_dhs_fold_changes(eval_dataset, cols=['pred_corrected_density', 'corrected_density'])
 
     # barplots
-    ax = obs_pred_barplot_by_ann(eval_dataset, 'corrected_density', 'pred_corrected_density', annotation_data.reset_index(),
+    axes = obs_pred_barplot_by_ann(eval_dataset, 'corrected_density', 'pred_corrected_density', annotation_data.reset_index(),
                             error_kw=dict(linewidth=0, capthick=0))
-    ax.set_ylabel('Density\n(bg. corrected)')
-    ax.set_title(output_prefix)
+    axes[0, 0].set_ylabel('Density\n(bg. corrected)')
+    axes[0, 0].set_title(output_prefix)
     plt.savefig(f'{output_prefix}_corrected_density.pdf', transparent=True, bbox_inches='tight')
     plt.close(fig)
     
-    ax = obs_pred_barplot_by_ann(eval_dataset, 'corrected_density_log2_fc', 'pred_corrected_density_log2_fc', annotation_data.reset_index(),)
+    axes = obs_pred_barplot_by_ann(eval_dataset, 'corrected_density_log2_fc', 'pred_corrected_density_log2_fc', annotation_data.reset_index(),)
                                 # error_kw=dict(linewidth=0.25))
-    ax.set_ylabel('Density\n(log2 FC to DHS avg.)')
-    ax.set_title(output_prefix)
+    axes[0, 0].set_ylabel('Density\n(log2 FC to DHS avg.)')
+    axes[0, 0].set_title(output_prefix)
     plt.savefig(f'{output_prefix}_lfc.pdf', transparent=True, bbox_inches='tight')
     plt.close(fig)
 
