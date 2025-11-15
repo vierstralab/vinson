@@ -80,14 +80,14 @@ def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.D
     axes[0, 0].set_ylabel('Density\n(bg. corrected)')
     axes[0, 0].set_title(output_prefix)
     plt.savefig(f'{output_prefix}_corrected_density.pdf', transparent=True, bbox_inches='tight')
-    plt.close(fig)
+    plt.close(plt.gcf())
     
     axes = obs_pred_barplot_by_ann(eval_dataset, 'corrected_density_log2_fc', 'pred_corrected_density_log2_fc', annotation_data.reset_index(),)
                                 # error_kw=dict(linewidth=0.25))
     axes[0, 0].set_ylabel('Density\n(log2 FC to DHS avg.)')
     axes[0, 0].set_title(output_prefix)
     plt.savefig(f'{output_prefix}_lfc.pdf', transparent=True, bbox_inches='tight')
-    plt.close(fig)
+    plt.close(plt.gcf())
 
 
     # per sample scatterplots
