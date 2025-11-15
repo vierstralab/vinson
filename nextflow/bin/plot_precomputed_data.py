@@ -45,7 +45,7 @@ def plot_density_correlation(
 
     pearson = scipy.stats.pearsonr(x, y)
 
-    hb = ax.hexbin(x, y, bins="log", cmap="Blues", extents=(*xlim, *ylim))
+    hb = ax.hexbin(x, y, bins="log", cmap="Blues", extent=(*xlim, *ylim))
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
     ax.axline((0, 0), slope=1, color="r", ls="--", lw=0.8)
