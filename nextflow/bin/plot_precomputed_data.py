@@ -76,16 +76,16 @@ def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.D
 
     # barplots
     axes = obs_pred_barplot_by_ann(eval_dataset, 'corrected_density', 'pred_corrected_density', annotation_data.reset_index(),
-                            error_kw=dict(linewidth=0, capthick=0))
+                            error_kw=dict(linewidth=0, capthick=0, capsize=0))
     axes[0, 0].set_ylabel('Density\n(bg. corrected)')
-    axes[0, 0].set_title(output_prefix)
+    plt.gcf().suptitle(output_prefix)
     plt.savefig(f'{output_prefix}_corrected_density.pdf', transparent=True, bbox_inches='tight')
     plt.close(plt.gcf())
     
     axes = obs_pred_barplot_by_ann(eval_dataset, 'corrected_density_log2_fc', 'pred_corrected_density_log2_fc', annotation_data.reset_index(),)
                                 # error_kw=dict(linewidth=0.25))
     axes[0, 0].set_ylabel('Density\n(log2 FC to DHS avg.)')
-    axes[0, 0].set_title(output_prefix)
+    plt.gcf().suptitle(output_prefix)
     plt.savefig(f'{output_prefix}_lfc.pdf', transparent=True, bbox_inches='tight')
     plt.close(plt.gcf())
 
@@ -95,7 +95,7 @@ def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.D
     val_eval_dataset = eval_dataset.query('dhs_id in @val_ids')
 
     fig, axes = plt.subplots(
-        1, 2, figsize=(10/2.54, 5/2.54),
+        1, 2, figsize=array2inch(10, 5),
         sharex=True, sharey=True
     )
 
@@ -132,7 +132,7 @@ def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.D
 
 
     # density correlation plots
-    fig, ax = plt.subplots(figsize=array2inch(5/2.54, 5/2.54))
+    fig, ax = plt.subplots(figsize=array2inch(5, 5))
     plot_density_correlation(
         eval_dataset,
         x_col='corrected_density',
