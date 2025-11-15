@@ -69,7 +69,7 @@ def main():
     parser.add_argument(
         "--model_type", 
         type=str, default="vinson",
-        choices=["vinson", "vinson_legacy", "legnet"],
+        choices=["vinson", "vinson_legacy", "legnet", "legacy_legnet"],
         help="Type of model to use for prediction"
     )
     parser.add_argument("--output", type=str, required=True, help="Path to save model predictions (.npy file)")
@@ -89,7 +89,7 @@ def main():
         )
     )
 
-    if args.model_type in ("vinson_legacy", 'legnet'):
+    if args.model_type in ("vinson_legacy", 'legnet_legacy'):
         print('legacy')
         motif_embedding = pd.read_table('/home/jvierstra/proj/vinson/data/embeddings_clustername.tsv', index_col=0)
         adata.obsm['motif_embeddings'] = motif_embedding.loc[adata.obs_names]
