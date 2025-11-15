@@ -132,11 +132,11 @@ def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.D
 
 
     # density correlation plots
-    fig, ax = plt.subplots(figsize=array2inch(5, 5))
+    fig, ax = plt.subplots(figsize=array2inch(5/2.54, 5/2.54))
     plot_density_correlation(
         eval_dataset,
-        x_col='pred_corrected_density',
-        y_col='bg_corrected_density',
+        x_col='corrected_density',
+        y_col='pred_corrected_density',
         xlim=(0, 2),
         ylim=(0, 2),
         ax=ax
