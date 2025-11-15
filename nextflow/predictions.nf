@@ -50,6 +50,7 @@ process visualize_predictions {
         --npy_prediction ${predict_np} \
         --output ./ \
         --adata ${params.zarr_anndata} \
+        --train_adata ${params.train_anndata} \
         --annotation_data ${params.annotation_data} \
         --model_config ${model_config}
     """

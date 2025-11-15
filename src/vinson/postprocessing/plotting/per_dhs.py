@@ -129,15 +129,17 @@ def obs_pred_barplot_by_ann(
     if not separate_axes:
         ax1 = axes[0, 0]
         ax2 = ax1
+        offset = 0.5
     else:
         ax1 = axes[0, 0]
         ax2 = axes[1, 0]
+        offset = 0
 
     barplot_by_ann_with_offset(
         df,
         obs_col,
         annotation_data,
-        offset=-0.5,
+        offset=-offset,
         color='#E7E7E7',
         edgecolor='annotation',
         linewidth=0.5,
@@ -149,7 +151,7 @@ def obs_pred_barplot_by_ann(
         df,
         pred_col,
         annotation_data,
-        offset=0.5,
+        offset=offset,
         color='annotation',
         edgecolor='annotation',
         linewidth=0.5,
@@ -157,6 +159,9 @@ def obs_pred_barplot_by_ann(
         ax=ax2,
         **kwargs,
     )
-    ax2.legend(frameon=False, fontsize='small', loc='upper right')
 
+    if separate_axes:
+        ax1.legend(frameon=False, fontsize='small', loc='upper left', bbox_to_anchor=(1, 1))
+        ax1.set_xticks([])
+    ax2.legend(frameon=False, fontsize='small', loc='upper left', bbox_to_anchor=(1, 1))
     return axes
