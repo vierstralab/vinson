@@ -65,6 +65,8 @@ workflow {
         | generate_sample_validation_data // prefix, dhs_dataset
         | join(meta.map(it -> tuple(it[0], it[3], it[4], it[5]))) // prefix, dhs_dataset, checkpoint, model_config, model_type
         | predict
+    
+    annotate_with_predictions(params.validation_samples_file)
 }
 
 workflow dhsValidation {
@@ -72,6 +74,8 @@ workflow dhsValidation {
         | splitCsv(header:true, sep:'\t')
         | map(row -> row.dhs_id)
         | generate_dhs_validation_data
+    
+    //annotate_with_predictions(params.validation_samples_file)
 }
 
 

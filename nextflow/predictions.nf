@@ -60,17 +60,19 @@ process visualize_predictions {
 process annotate_with_predictions {
     conda "${params.conda}"
     publishDir "${params.outdir}/"
-    label "ldsc"
+
+    input:
+        path samples_file
 
     output:
         path name
 
     script:
-    name = "${file(params.samples_file).baseName}.annotated_with_predictions.tsv"
+    name = "${samples_file.baseName}.annotated_with_predictions.tsv"
     """
     python3 $moduleDir/bin/annotate_meta.py \
-        ${params.samples_file} \
-        ${params.outdir}/predictions \
+        ${samples_file} \
+        ${params.outdir}/ \
         ${name}
     """
 }
@@ -94,7 +96,7 @@ workflow {
         | predict
         | visualize_predictions
     
-    annotate_with_predictions()
+    annotate_with_predictions(params.samples_file)
     
 }
 
