@@ -1,4 +1,4 @@
-include { predict } from "./predictions"
+include { predict; annotate_with_predictions } from "./predictions"
 
 
 process generate_sample_validation_data {
