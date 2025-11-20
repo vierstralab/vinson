@@ -30,7 +30,8 @@ def model_from_config(config, checkpoint_path=None):
             model = VariantEmbedModel.load_from_checkpoint(
                 checkpoint_path,
                 trunk=trunk_model, 
-                embed=embed_model)
+                embed=embed_model
+            )
         else:
             model = EmbedModel.load_from_checkpoint(
                 checkpoint_path,

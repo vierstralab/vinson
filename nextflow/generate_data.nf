@@ -2,25 +2,25 @@ include { predict; annotate_with_predictions } from "./predictions"
 
 
 process generate_sample_validation_data {
-
     conda "${params.conda}"
     publishDir "${params.outdir}/validation_data"
     tag "${prefix}"
 
     input:
-        tuple val(prefix), val(sample_id), val(mode)
+        val meta
 
     output:
-        tuple val(prefix), path(name)
+        tuple val(meta), path(name)
 
     script:
+    prefix = "${meta.prefix}"
     name = "${prefix}.validation_data.h5"
     """
     python3 $moduleDir/bin/generate_validation_data.py \
-        ${params.zarr_anndata} \
+        ${meta.zarr_anndata} \
         ${name} \
-        --sample_ids ${sample_id} \
-        --mode ${mode}
+        --sample_ids ${meta.sample_id} \
+        --mode ${meta.mode}
     """
 }
 
@@ -29,41 +29,29 @@ process generate_dhs_validation_data {
 
     conda "${params.conda}"
     publishDir "${params.outdir}/validation_data"
+    tag "${prefix}"
 
     input:
-        val dhs_id
+        val meta
 
     output:
-        tuple val(prefix), path(name)
+        tuple val(meta), path(name)
 
     script:
-    prefix = "${dhs_id}"
+    prefix = "${meta.prefix}"
     name = "${prefix}.validation_data.h5"
     """
     python3 $moduleDir/bin/generate_validation_data.py \
-        ${params.zarr_anndata} \
+        ${meta.zarr_anndata} \
         ${name} \
-        --dhs_ids ${dhs_id}
+        --dhs_ids ${meta.dhs_id}
     """
 }
 
 workflow {
-    meta = Channel.fromPath(params.validation_samples_file)
+    data = Channel.fromPath(params.validation_samples_file)
         | splitCsv(header:true, sep:'\t')
-        | map(row -> tuple(
-            row.prefix,
-            row.sample_id,
-            row.mode,
-            file(row.checkpoint),
-            row.model_config,
-            row.model_type
-            )
-        )
-    
-    meta
-        | map(it -> tuple(it[0], it[1], it[2]))
-        | generate_sample_validation_data // prefix, dhs_dataset
-        | join(meta.map(it -> tuple(it[0], it[3], it[4], it[5]))) // prefix, dhs_dataset, checkpoint, model_config, model_type
+        | generate_sample_validation_data // meta, dhs_dataset
         | predict
     
     annotate_with_predictions(params.validation_samples_file)
@@ -72,7 +60,6 @@ workflow {
 workflow dhsValidation {
     Channel.fromPath(params.validation_dhs_file)
         | splitCsv(header:true, sep:'\t')
-        | map(row -> row.dhs_id)
         | generate_dhs_validation_data
     
     //annotate_with_predictions(params.validation_samples_file)
