@@ -32,7 +32,7 @@ process predict {
 }
 
 
-process visualize_predictions {
+process visualize_cell_selective_predictions {
     tag "${prefix}"
     conda "${params.conda}"
     publishDir "${params.outdir}/predictions/${prefix}"
@@ -47,7 +47,7 @@ process visualize_predictions {
     script:
     prefix = meta.prefix
     """
-    python3 $moduleDir/bin/plot_precomputed_data.py \
+    python3 $moduleDir/bin/plot_cell_selective_data.py \
         --prefix ${prefix} \
         --h5_data ${dhs_dataset} \
         --npy_prediction ${predict_np} \
@@ -86,7 +86,7 @@ workflow {
         | splitCsv(header:true, sep:'\t')
         | map(it -> tuple(it, file(it.dhs_dataset)))
         | predict
-        | visualize_predictions
+        | visualize_cell_selective_predictions
     
     annotate_with_predictions(params.samples_file)
     
@@ -96,5 +96,5 @@ workflow visualize {
     Channel.fromPath(params.samples_file)
         | splitCsv(header:true, sep:'\t')
         | map(it -> tuple(it, file(it.dhs_dataset), file("${params.outdir}/predictions/${row.prefix}/${row.prefix}.npy")))
-        | visualize_predictions
+        | visualize_cell_selective_predictions
 }
