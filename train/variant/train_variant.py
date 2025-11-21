@@ -39,7 +39,7 @@ def main(args):
         args.config = prev_run_config
         
     default_config_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "default_train_dhs.config.yaml"
+        os.path.dirname(os.path.abspath(__file__)), "default_train_variant.config.yaml"
     )
     config = read_configs(
         default_config_path,

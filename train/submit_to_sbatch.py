@@ -11,14 +11,24 @@ import os
 
 # Get the absolute path of the directory where this script lives
 SCRIPT_DIR = Path(__file__).resolve().parent
-TEMPLATE_PATH = SCRIPT_DIR / "dhs" / "template_submit_dhs.sbatch"
+DHS_TEMPLATE = SCRIPT_DIR / "dhs" / "template_submit_dhs.sbatch"
+VARIANT_TEMPLATE = SCRIPT_DIR / "variant" / "template_submit_variant.sbatch"
 
 # run as 
 # python submit_to_sbatch.py /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT22//epoch_1.h5ad /net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa /net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model --config  /home/sabramov/packages/vinson/train/train_dhs_new_cluster_config.yaml
 
+#python submit_to_sbatch.py /net/seq/data2/projects/sabramov/ENCODE4/ML/NOV17/variant_train_adata.h5ad /net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+         "--model_type",
+         choices=("dhs", "variant"),
+         default="dhs",
+         help="Which model to run: dhs or variant."
+     )
+
     parser.add_argument("--run_name", type=str, default=None, help="Run name, if not provided, a unique name will be generated")
     parser.add_argument("--gpus_per_node", type=int, default=8)
     parser.add_argument("--cpus_per_gpu", type=int, default=4)
@@ -39,6 +49,10 @@ if __name__ == "__main__":
     parser.add_argument("--debug", action="store_true", help="Enable debug mode.")
 
     args = parser.parse_args()
+    if args.model_type == "dhs":
+        TEMPLATE_PATH = DHS_TEMPLATE
+    else:
+        TEMPLATE_PATH = VARIANT_TEMPLATE
 
     cfg = dict(
         partition="hpcg-test",

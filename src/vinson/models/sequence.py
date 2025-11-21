@@ -415,7 +415,7 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
     
         self.loss = binomial_mixture_normed_loss
         self.embedding = embed
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["trunk", "embed"])
 
     def init_metrics(self):
         self.train_metrics = MetricCollection(
