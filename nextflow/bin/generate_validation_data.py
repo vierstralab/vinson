@@ -21,19 +21,20 @@ def get_bg_for_peaks(peaks_df: pd.DataFrame, stats_path):
     merged['has_bg'] = merged.eval('summit >= segment_start & summit < segment_end')
     tmp = merged.groupby(['#chr', 'summit'])['has_bg'].max()
     peaks_without_bg = tmp[tmp == 0]
+    merged = merged.set_index(['#chr', 'summit'])
     if len(peaks_without_bg) > 0:
         print('No bg estimate at the summit')
         print(peaks_without_bg)
-        non_merged = merged.set_index(['#chr', 'summit']).loc[peaks_without_bg.index]
+        non_merged = merged.loc[peaks_without_bg.index]
         non_merged.query('start < segment_end & end > segment_start', inplace=True)
         assert len(non_merged) == len(peaks_without_bg), f"Could not find bg for all peaks without summit bg {len(non_merged)} vs {len(peaks_without_bg)}"
         non_merged['has_bg'] = True
-        merged = pd.concat([merged.query('has_bg'), non_merged.reset_index()])
+        merged = pd.concat([merged.query('has_bg'), non_merged])
 
-    merged = merged.query('has_bg').set_index(
-        ['#chr', 'summit']
-    ).loc[peaks_df.set_index(['#chr', 'summit']).index].reset_index()
-    bg = merged.query('has_bg').eval('bg_r * bg_p / (1 - bg_p)').values
+    merged = merged.query('has_bg').loc[
+        peaks_df.set_index(['#chr', 'summit']).index
+    ].reset_index()
+    bg = merged.eval('bg_r * bg_p / (1 - bg_p)').values
     assert len(bg) == len(peaks_df), f"Background length mismatch {len(bg)} vs {len(peaks_df)}"
     return bg
 
