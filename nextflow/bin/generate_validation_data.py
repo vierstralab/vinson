@@ -35,8 +35,9 @@ def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> dict:
             'background': get_bg_for_peaks(peaks, fit_stats_file),
             'class': np.ones(len(peaks), dtype=np.int8),
             'density': peaks['summit_density'].values,
-            'indiv_id': np.full(len(peaks), sample_slice.obsm['indiv_id'], dtype=np.str_),
         }
+        if 'indiv_id' in anndata_slice.obsm:
+            data_bundle['indiv_id'] = np.full(len(peaks), sample_slice.obsm['indiv_id'], dtype=np.str_),
         data.append(data_bundle)
     
     data = {k: np.concatenate([d[k] for d in data]) for k in data[0].keys()}

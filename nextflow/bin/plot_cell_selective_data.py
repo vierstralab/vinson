@@ -21,47 +21,6 @@ def cm2inch(value):
 def array2inch(*args):
     return tuple(cm2inch(x) for x in args)
 
-def plot_density_correlation(
-    eval_dataset: pd.DataFrame,
-    x_col: str = "bg_corrected_density",
-    y_col: str = "pred_total_density",
-    max_points: int = 20_000,
-    xlim: tuple = (0, 5),
-    ylim: tuple = (0, 5),
-    ax=None
-):
-    if ax is None:
-        ax = plt.gca()
-    """Plot hexbin correlation between predicted and observed densities."""
-    df = eval_dataset.dropna(subset=[x_col, y_col]).copy()
-    df = df[np.isfinite(df[x_col]) & np.isfinite(df[y_col])]
-
-    # Subsample for performance
-    if len(df) > max_points:
-        df = df.sample(n=max_points, random_state=42)
-
-    x = df[x_col]
-    y = df[y_col]
-
-    pearson = scipy.stats.pearsonr(x, y)
-
-    hb = ax.hexbin(x, y, bins="log", cmap="Blues", extent=(*xlim, *ylim))
-    ax.set_xlim(*xlim)
-    ax.set_ylim(*ylim)
-    ax.axline((0, 0), slope=1, color="r", ls="--", lw=0.8)
-
-    # Styling
-    ax.set_xlabel("Observed corrected density")
-    ax.set_ylabel("Predicted total density")
-    ax.text(
-        0.05, 0.9,
-        f"R = {pearson.statistic:.2f}",
-        transform=ax.transAxes,
-        ha="left", va="top", fontsize="small",
-    )
-    plt.colorbar(hb, ax=ax, label="log10(N)")
-    return ax
-
 
 def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.DataFrame, train_adata):
     eval_dataset = annotate_eval_dataset_with_layers(eval_dataset)
@@ -128,20 +87,6 @@ def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.D
     axes[1].set_xlabel("Observed density\n(bg. corrected)")
     plt.suptitle(output_prefix, va='bottom', y=1.01)
     plt.savefig(f"{output_prefix}_obs_pred_scatter.pdf", transparent=True, bbox_inches="tight")
-    plt.close(fig)
-
-
-    # density correlation plots
-    fig, ax = plt.subplots(figsize=array2inch(5, 5))
-    plot_density_correlation(
-        eval_dataset,
-        x_col='corrected_density',
-        y_col='pred_corrected_density',
-        xlim=(0, 2),
-        ylim=(0, 2),
-        ax=ax
-    )
-    plt.savefig(f"{output_prefix}_corrected_density_correlation.pdf", transparent=True, bbox_inches="tight")
     plt.close(fig)
 
 
