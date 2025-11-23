@@ -13,6 +13,8 @@ def get_bg_for_peaks(peaks_df: pd.DataFrame, stats_path):
     stats = pd.read_table(stats_path).query('fit_type == "segment"')
     merged = peaks_df[['#chr', 'summit']].merge(stats, on="#chr", how="left")
     merged = merged.query('summit >= start & summit < end')
+    if len(merged) != len(peaks_df):
+        print(merged[~merged['summit'].isin(peaks_df['summit'])])
     bg = merged.eval('bg_r * bg_p / (1 - bg_p)').values
     assert len(bg) == len(peaks_df), f"Background length mismatch {len(bg)} vs {len(peaks_df)}"
     return bg
