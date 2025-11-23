@@ -15,7 +15,7 @@ def clipped_gmean(series, min=0.005, max=20):
     clipped = np.clip(series, min, max)
     return gmean(clipped)
 
-def annotate_eval_dataset_with_layers(eval_dataset: pd.DataFrame, annotate_counts=False, **kwargs) -> pd.DataFrame:
+def annotate_eval_dataset_with_layers(eval_dataset: pd.DataFrame, annotate_counts=False, annotate_log_density=False, **kwargs) -> pd.DataFrame:
     """
     Annotate the evaluation dataset with additional information from the AnnData object.
 
@@ -41,15 +41,18 @@ def annotate_eval_dataset_with_layers(eval_dataset: pd.DataFrame, annotate_count
         **kwargs
     )
     eval_dataset['pred_total_density'] = eval_dataset.eval('pred_corrected_density + bg_density')
-    if annotate_counts:
-        eval_dataset['counts'] = eval_dataset.eval('density / 1e6 * read_depth')
-        eval_dataset['pred_counts'] = eval_dataset.eval('pred_total_density / 1e6 * read_depth')
+
+    if annotate_log_density:
         eval_dataset["pred_log_corrected_density"] = np.log(
-        np.clip(eval_dataset['pred_corrected_density'], a_min=0.005, a_max=None)
+            np.clip(eval_dataset['pred_corrected_density'], a_min=0.005, a_max=None)
         )
         eval_dataset['log_corrected_density'] = np.log(
             np.clip(eval_dataset['corrected_density'], a_min=0.005, a_max=None)
         )
+
+    if annotate_counts:
+        eval_dataset['counts'] = eval_dataset.eval('density / 1e6 * read_depth')
+        eval_dataset['pred_counts'] = eval_dataset.eval('pred_total_density / 1e6 * read_depth')
 
         eval_dataset['log_counts'] = np.log(
             eval_dataset.eval('density * read_depth / 1e6 + 1')
