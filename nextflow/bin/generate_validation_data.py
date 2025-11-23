@@ -27,7 +27,7 @@ def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> dict:
         
         data_bundle = {
             'dhs_id': f'{sample_id}.' + peaks.index.astype(str).values,
-            'sample_id': np.full(len(peaks), sample_id, dtype=np.str_),
+            'sample_id': np.array([sample_id for _ in range(len(peaks))], dtype=np.str_),
             'read_depth': np.full(len(peaks), row['nuclear_reads'], dtype=np.float32),
             'chrom': peaks['#chr'].values,
             'summit': peaks['summit'].values,
