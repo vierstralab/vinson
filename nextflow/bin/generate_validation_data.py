@@ -24,11 +24,11 @@ def get_bg_for_peaks(peaks_df: pd.DataFrame, stats_path):
     if len(peaks_without_bg) > 0:
         print('No bg estimate at the summit')
         print(peaks_without_bg)
-        non_merged = merged.loc[peaks_without_bg.index]
+        non_merged = merged.set_index(['#chr', 'summit']).loc[peaks_without_bg.index]
         non_merged.query('start < segment_end & end > segment_start', inplace=True)
         assert len(non_merged) == len(peaks_without_bg), f"Could not find bg for all peaks without summit bg {len(non_merged)} vs {len(peaks_without_bg)}"
         non_merged['has_bg'] = True
-        merged = pd.concat([merged.query('has_bg'), non_merged])
+        merged = pd.concat([merged.query('has_bg'), non_merged.reset_index()])
 
     merged = merged.query('has_bg').set_index(
         ['#chr', 'summit']
