@@ -10,11 +10,29 @@ from vinson.utils.data_formatting import data_to_h5, sanitize_data
 
 
 def get_bg_for_peaks(peaks_df: pd.DataFrame, stats_path):
-    stats = pd.read_table(stats_path).query('fit_type == "segment"')
-    merged = peaks_df[['#chr', 'summit']].merge(stats, on="#chr", how="left")
-    merged['has_bg'] = merged.eval('summit >= start & summit < end')
+    stats = pd.read_table(stats_path).query(
+        'fit_type == "segment"'
+    ).rename(
+        columns={'start': 'segment_start', 'end': 'segment_end'}
+    )
+    merged = peaks_df[['#chr', 'start', 'end', 'summit']].merge(
+        stats, on="#chr", how="left"
+    )
+    merged['has_bg'] = merged.eval('summit >= segment_start & summit < segment_end')
     tmp = merged.groupby(['#chr', 'summit'])['has_bg'].max()
-    print(tmp[tmp == 0])
+    peaks_without_bg = tmp[tmp == 0]
+    if len(peaks_without_bg) > 0:
+        print('No bg estimate at the summit')
+        print(peaks_without_bg)
+        non_merged = merged.loc[peaks_without_bg.index]
+        non_merged.query('start < segment_end & end > segment_start', inplace=True)
+        assert len(non_merged) == len(peaks_without_bg), f"Could not find bg for all peaks without summit bg {len(non_merged)} vs {len(peaks_without_bg)}"
+        non_merged['has_bg'] = True
+        merged = pd.concat([merged.query('has_bg'), non_merged])
+
+    merged = merged.query('has_bg').set_index(
+        ['#chr', 'summit']
+    ).loc[peaks_df.set_index(['#chr', 'summit']).index].reset_index()
     bg = merged.query('has_bg').eval('bg_r * bg_p / (1 - bg_p)').values
     assert len(bg) == len(peaks_df), f"Background length mismatch {len(bg)} vs {len(peaks_df)}"
     return bg
