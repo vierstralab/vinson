@@ -36,7 +36,7 @@ def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> dict:
             'density': peaks['summit_density'].values,
         }
         if 'indiv_id' in anndata_slice.obsm:
-            data_bundle['indiv_id'] = np.full(len(peaks), sample_slice.obsm['indiv_id'][0], dtype=np.str_)
+            data_bundle['indiv_id'] = np.array([sample_slice.obsm['indiv_id'][0] for _ in range(len(peaks))], dtype=np.str_)
         else:
             print('Warning: indiv_id not found in anndata.obsm', flush=True)
         data.append(data_bundle)
