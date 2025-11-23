@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import argparse
 import anndata as ad
-from tqdm import tqdm
 
 from genome_tools.data.anndata import read_zarr_backed
 
@@ -37,10 +36,15 @@ def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> dict:
             'density': peaks['summit_density'].values,
         }
         if 'indiv_id' in anndata_slice.obsm:
-            data_bundle['indiv_id'] = np.full(len(peaks), sample_slice.obsm['indiv_id'], dtype=np.str_),
+            data_bundle['indiv_id'] = np.full(len(peaks), sample_slice.obsm['indiv_id'], dtype=np.str_)
+        else:
+            print('Warning: indiv_id not found in anndata.obsm', flush=True)
         data.append(data_bundle)
     
-    data = {k: np.concatenate([d[k] for d in data]) for k in data[0].keys()}
+    if len(data) > 1:
+        data = {k: np.concatenate([d[k] for d in data]) for k in data[0].keys()}
+    else:
+        data = data[0]
 
     return sanitize_data(data)
 
@@ -59,10 +63,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     anndata = read_zarr_backed(args.anndata_file)
-    if 'indiv_id' not in anndata.obsm:
-        anndata.obsm['indiv_id'] = pd.read_table(
-                "/net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/metadata.clustered.tsv"
-            ).set_index("sample_id").reindex(anndata.obs_names)["indiv_id"].values
 
     sample_ids = [sid for sid in args.sample_ids if check_none(sid)]
     dhs_ids = [did for did in args.dhs_ids if check_none(did)]
