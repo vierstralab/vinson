@@ -93,12 +93,12 @@ def calculate_per_dhs_fold_changes(
 
     return eval_dataset
 
-def annotate_eval_dataset_with_obs_columns(eval_dataset: pd.DataFrame, adata: ad.AnnData, cols):
+def annotate_eval_dataset_with_obs_columns(eval_dataset: pd.DataFrame, obs: pd.DataFrame, cols):
     for col in cols:
-        eval_dataset[col] = eval_dataset['sample_id'].map(adata.obs[col])
+        eval_dataset[col] = eval_dataset['sample_id'].map(obs[col])
     return eval_dataset
 
-def get_samples_used_in_training_for_dhs(train_adata, dhs_ids):
+def get_samples_used_in_training_for_dhs(train_adata: ad.AnnData, dhs_ids):
     if len(dhs_ids) == 0:
         return np.array([])
     in_training = np.zeros(train_adata.shape[0], dtype=bool)

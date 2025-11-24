@@ -22,11 +22,11 @@ def array2inch(*args):
     return tuple(cm2inch(x) for x in args)
 
 
-def main(adata, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.DataFrame, train_adata):
+def main(adata: ad.AnnData, eval_dataset: pd.DataFrame, output_prefix, annotation_data: pd.DataFrame, train_adata):
     eval_dataset = annotate_eval_dataset_with_layers(eval_dataset)
     eval_dataset = annotate_eval_dataset_with_obs_columns(
         eval_dataset,
-        adata,
+        adata.obs,
         ['SPOT3_score', 'alignment_quality', 'extended_annotation']
     )
     eval_dataset['extended_annotation'] = eval_dataset['extended_annotation'].astype(str)
