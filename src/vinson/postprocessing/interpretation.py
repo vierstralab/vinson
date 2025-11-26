@@ -221,7 +221,7 @@ class ModelWrapper(torch.nn.Module):
             references=dinucleotide_shuffle,
             additional_nonlinear_ops={
                 _Exp: _nonlinear
-            }
+            },
             **kwargs,
         )
         return attributions
