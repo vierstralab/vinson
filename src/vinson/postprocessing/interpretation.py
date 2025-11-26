@@ -3,14 +3,14 @@ import numpy as np
 from tqdm import tqdm
 import itertools
 from collections.abc import Iterable
-from tqdm import tqdm
 
 from vinson.utils.sequence_utils import force_strict_ohe
+from vinson.models.helpers import _Exp
 
 from tangermeme.ersatz import dinucleotide_shuffle as dinuc_shuffle
 from tangermeme.predict import predict as tangermeme_predict
 from tangermeme.product import _apply
-
+from tangermeme.deep_lift_shap import deep_lift_shap, _nonlinear
 
 def dinucleotide_shuffle(X, **kwargs):
     """
@@ -197,3 +197,31 @@ def apply_product(
         y = _y
 
     return y
+
+
+class ModelWrapper(torch.nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model.eval()
+        self.exp = _Exp()
+
+    def forward(self, seq, embed):
+        x = self.model(seq, embed)
+        if self.model.log_output:
+            x = self.exp(x)
+        return x
+    
+    def get_sequence_attributions(self, X, X_embed, print_convergence_deltas=True, **kwargs):
+        attributions = deep_lift_shap(
+            self,
+            X,
+            args=(X_embed,),
+            device="cuda" if torch.cuda.is_available() else "cpu",
+            print_convergence_deltas=print_convergence_deltas,
+            references=dinucleotide_shuffle,
+            additional_nonlinear_ops={
+                _Exp: _nonlinear
+            }
+            **kwargs,
+        )
+        return attributions
