@@ -7,8 +7,9 @@ import pandas as pd
 
 from torch.utils.data import DataLoader
 from vinson.utils.run import model_from_config as load_vinson_model
-from vinson.utils.run import read_configs
-from vinson.utils.run import dataset_from_h5
+from vinson.utils.helpers import read_configs
+from vinson.utils.data_formatting import extract_data_from_h5
+from vinson.datasets.sequence import SequenceEmbedDataset
 
 from genome_tools.data.anndata import read_zarr_backed
 
@@ -38,7 +39,7 @@ def load_legacy_vinson(checkpoint_path):
     ).to(device)
     pretrained_state_dict = torch.load(
         checkpoint_path,
-        map_location=torch.device("cpu"),
+        map_location=device,
     )["state_dict"]
 
     model_predict.load_state_dict(pretrained_state_dict)
@@ -48,13 +49,14 @@ def load_legacy_vinson(checkpoint_path):
 def load_and_predict(batch, model):    
     X_seq      = batch["ohe_seq"].to(device, non_blocking=True)
     X_embed    = batch["embed"].to(device, non_blocking=True)
-    y_ = model(X_seq, X_embed).squeeze().detach()
+    y_ = model(X_seq, X_embed).squeeze(-1).detach()
     return y_
 
 
 def main():
     parser = argparse.ArgumentParser(description="Predict DHS model")
     parser.add_argument("h5_data", type=str, help="Path to DHS dataset (.h5 file)")
+
     parser.add_argument("anndata", type=str, help="Path to full AnnData file")
     parser.add_argument("fasta_file", type=str, help="Path to reference FASTA file")
     parser.add_argument("model_checkpoint", type=str, help="Path to model checkpoint")
@@ -67,14 +69,14 @@ def main():
     parser.add_argument(
         "--model_type", 
         type=str, default="vinson",
-        choices=["vinson", "vinson_legacy", "legnet"],
+        choices=["vinson", "vinson_legacy", "legnet", "legacy_legnet"],
         help="Type of model to use for prediction"
     )
     parser.add_argument("--output", type=str, required=True, help="Path to save model predictions (.npy file)")
     args = parser.parse_args()
 
     adata = read_zarr_backed(args.anndata)
-
+    
     model_config = read_configs(args.model_config_path)
 
     dataset_kwargs: dict = model_config['data_params']
@@ -87,15 +89,20 @@ def main():
         )
     )
 
-    if args.model_type == "vinson_legacy":
+    if args.model_type in ("vinson_legacy", 'legnet_legacy'):
         print('legacy')
         motif_embedding = pd.read_table('/home/jvierstra/proj/vinson/data/embeddings_clustername.tsv', index_col=0)
         adata.obsm['motif_embeddings'] = motif_embedding.loc[adata.obs_names]
 
-
-    dataset = dataset_from_h5(
+    
+    data, embeddings_df = extract_data_from_h5(
         h5_file=args.h5_data,
         ref_adata=adata,
+    )
+    
+    dataset = SequenceEmbedDataset(
+        data=data,
+        embeddings_df=embeddings_df,
         fasta_file=args.fasta_file,
         genotype_file=args.genotype_file,
         **dataset_kwargs,
@@ -112,7 +119,7 @@ def main():
 
     if args.model_type == "vinson":
         model_predict = load_vinson_model(model_config, args.model_checkpoint)
-    elif args.model_type == "legnet":
+    elif args.model_type in ("legnet", "legacy_legnet"):
         model_predict = load_legnet_model(args.model_checkpoint, device)
     elif args.model_type == "vinson_legacy":
         model_predict = load_legacy_vinson(args.model_checkpoint)

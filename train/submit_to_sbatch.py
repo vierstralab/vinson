@@ -17,18 +17,17 @@ VARIANT_TEMPLATE = SCRIPT_DIR / "variant" / "template_submit_variant.sbatch"
 # run as 
 # python submit_to_sbatch.py /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT22//epoch_1.h5ad /net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa /net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model --config  /home/sabramov/packages/vinson/train/train_dhs_new_cluster_config.yaml
 
-#python submit_to_sbatch.py /net/seq/data2/projects/sabramov/ENCODE4/ML/NOV17/variant_train_adata.h5ad /net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model
+#python submit_to_sbatch.py /net/seq/data2/projects/sabramov/ENCODE4/ML/NOV17/variant_train_adata.h5ad /net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa /net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz /net/seq/data2/projects/mbrannon/variant_model_vinson --config /home/mbrannon/.local/src/vinson/train/variant/default_train_variant.config.yml --model_type variant
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-         "--model_type",
-         choices=("dhs", "variant"),
-         default="dhs",
-         help="Which model to run: dhs or variant."
-     )
-
+        "--model_type",
+        choices=("dhs", "variant"),
+        default="dhs",
+        help="Which model to run: dhs or variant."
+    )
     parser.add_argument("--run_name", type=str, default=None, help="Run name, if not provided, a unique name will be generated")
     parser.add_argument("--gpus_per_node", type=int, default=8)
     parser.add_argument("--cpus_per_gpu", type=int, default=4)

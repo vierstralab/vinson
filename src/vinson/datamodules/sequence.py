@@ -1,7 +1,8 @@
 import lightning.pytorch as L
 from torch.utils.data import DataLoader
+from vinson.datasets.sequence import SequenceEmbedDataset
+from vinson.utils.data_formatting import extract_data_from_train_anndata, extract_variant_data_from_anndata
 from vinson.datasets.sequence import SequenceEmbedDataset, VariantEmbedDataset
-from vinson.utils.data_formatting import extract_data_from_anndata, extract_var_data_from_anndata
 from itertools import cycle
 from torchdata.stateful_dataloader import StatefulDataLoader
 
@@ -87,7 +88,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
         )
         return valid_dataset
 
-#note is this used
     def train_dataloader(self):
         self.current_train_epoch = next(self.train_epoch_cycler)
         print('Loading new training dataloader for epoch:', self.current_train_epoch)
@@ -112,7 +112,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
             **self.dataloader_kwargs,
         )
 
-#note === may need to edit depending on variant anndata
     def get_data(self, suffix, dhs_split='train', sample_split='train'):
         """
         Generic method to extract data from anndata object for a given split
@@ -132,8 +131,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             full_adata.varm['split_data'] == dhs_split
         ]
 
-        data, embeddings_df = extract_data_from_anndata(adata, suffix)
-            
+        data, embeddings_df = extract_data_from_train_anndata(adata, suffix)
         return data, embeddings_df
     
     
@@ -173,4 +171,4 @@ class SeqEmbedVariantDataModule(SeqEmbedDataModule):
             self.adata.obsm["split_data"] == sample_split,
             self.adata.varm["split_data"] == dhs_split,
         ]
-        return extract_var_data_from_anndata(adata, suffix)
+        return extract_variant_data_from_anndata(adata, suffix)

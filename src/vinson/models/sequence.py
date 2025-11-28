@@ -192,8 +192,8 @@ class AbstractBaseSequenceModel(L.LightningModule):
             max_epochs = self.lr_scheduler_kwargs.get("epochs")
             if steps_per_epoch is None:
                 if has_datamodule:
-                    train_dl = self.trainer.datamodule.train_dataloader()
-                    steps_per_epoch = len(train_dl)
+                    # infer steps per epoch from datamodule
+                    steps_per_epoch = len(self.trainer.datamodule.train_dataloader()) // self.trainer.num_devices
                 else:
                     # implement checks when dataset is directly passed to trainer
                     raise ValueError("steps_per_epoch must be provided in lr_scheduler_kwargs when no datamodule is used.")
@@ -466,11 +466,12 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
             batch["bad_score"],
         )
 
+        #has predict (y), ref_counts (target), total_counts (n), bad_score (bad_score), optional: tau, reduction
         loss = self.loss(
             y, 
-            ref_counts=ref_counts,
-            total_counts=total_counts,
-            bad_score=bad_score,
+            ref_counts,
+            total_counts,
+            bad_score,
             reduction="none"
         )
 

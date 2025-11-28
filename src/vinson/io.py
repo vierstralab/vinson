@@ -20,15 +20,11 @@ class SamplesDensityExtractor:
 
     Parameters
     ----------
-    samples_file : str
-        Path to tab-delimited file containing sample metadata (used for column names).
-    filepath_pattern : str
-        Format string for bigWig file paths, with '{x}' replaced by sample name.
+    bw_files: Iterable of str
+        Paths to bigWig files containing per-sample density information.
 
     Attributes
     ----------
-    samples_df : pandas.DataFrame
-        DataFrame containing sample metadata.
     bw_filehandles : list of pyBigWig.BigWig or None
         List of open bigWig file handles for each sample (initialized on first access).
 
@@ -37,7 +33,7 @@ class SamplesDensityExtractor:
     __getitem__(x)
         Retrieve density values for all samples at a given genomic position or interval.
         Accepts either a (chrom, position) tuple or a GenomicInterval object.
-        Returns a pandas.Series indexed by sample names.
+        Returns pd.Series of density values
     __del__()
         Closes all open bigWig file handles on deletion.
 
@@ -47,30 +43,29 @@ class SamplesDensityExtractor:
     - Missing values are replaced with 0.0.
     - Designed for efficient batch extraction of per-sample genomic signal.
     """
-    def __init__(self, samples_file, filepath_pattern):
-        self.filepath_pattern = filepath_pattern
-
-        logger.info("Loading samples.")
-        self.samples_df = pd.read_table(samples_file, index_col=0)
-
+    def __init__(self, bw_files):
+        self.bw_files = pd.Series(bw_files)
         self.bw_filehandles = None
 
     def __del__(self):
         for fh in self.bw_filehandles:
             fh.close()
 
-    def __getitem__(self, x):
-        if not self.bw_filehandles:
+    def _init_filehandles(self):
+        if self.bw_filehandles is None:
             self.bw_filehandles = [
-                pbw.open(self.filepath_pattern.format(x=k))
-                for k in self.samples_df.columns
+                pbw.open(bw_file)
+                for bw_file in self.bw_files
             ]
-
+    def __getitem__(self, x):
+        self._init_filehandles()
+        
         if isinstance(x, tuple):
             chrom, mid = x
         elif isinstance(x, GenomicInterval):
             chrom = x.chrom
             mid = (x.start + x.end) // 2
+        
 
         values = pd.Series(
             np.nan_to_num(
@@ -80,7 +75,7 @@ class SamplesDensityExtractor:
                 ],
                 0.0,
             ),
-            index=self.samples_df.columns,
+            index=self.bw_files.index,
         )
 
         return values

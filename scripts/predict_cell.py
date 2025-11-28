@@ -12,7 +12,7 @@ from vinson.interpretation import dinucleotide_shuffle, force_strict_ohe
 from vinson.io import SamplesDensityExtractor
 from vinson.models.sequence import BassetTrunkEmbed, CellEmbedding, EmbedModel
 
-from vinson.vinson.utils.sequence_utils import intervals_to_ohe
+from vinson.utils.sequence_utils import intervals_to_ohe
 from vinson.models.helpers import _Exp
 import gzip
 
@@ -49,7 +49,7 @@ def main(args):
     fasta_extr = FastaExtractor(args.fasta)
     embeddings_df = pd.read_csv(args.embeddings, sep="\t", index_col=0)
     cutcounts_df = pd.read_csv(args.read_depths, sep="\t")
-    
+
     class Wrapper(torch.nn.Module):
         def __init__(self, model):
             super().__init__()

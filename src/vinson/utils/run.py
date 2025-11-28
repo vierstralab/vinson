@@ -8,7 +8,7 @@ import anndata as ad
 from vinson.models.sequence import CellEmbedding, BassetTrunkEmbed, EmbedModel, VariantEmbedModel
 from vinson.datamodules.sequence import SeqEmbedDataModule, SeqEmbedVariantDataModule
 from vinson.datasets.sequence import SequenceEmbedDataset, VariantEmbedDataset
-from vinson.utils.data_formatting import extract_data_from_h5, extract_var_data_from_h5, extract_var_data_from_anndata, extract_data_from_anndata
+from vinson.utils.data_formatting import extract_data_from_h5
 
 from lightning.pytorch.callbacks import (
     EarlyStopping,
@@ -16,6 +16,7 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 from lightning.pytorch.loggers import CSVLogger
+
 
 # dataset util functions
 def model_from_config(config, checkpoint_path=None):
@@ -29,7 +30,8 @@ def model_from_config(config, checkpoint_path=None):
             model = VariantEmbedModel.load_from_checkpoint(
                 checkpoint_path,
                 trunk=trunk_model, 
-                embed=embed_model)
+                embed=embed_model
+                )
         else:
             model = EmbedModel.load_from_checkpoint(
                 checkpoint_path,
@@ -40,24 +42,35 @@ def model_from_config(config, checkpoint_path=None):
         return model
     
     #if no checkpoint to load from
-    if config["model_type"] == 'variant':
-        model = VariantEmbedModel(
-            trunk=trunk_model, 
-            embed=embed_model)
-    # Create trunk model, maybe move to config later
+#     if config["model_type"] == 'variant':
+#         model = VariantEmbedModel(
+#             trunk=trunk_model, 
+#             embed=embed_model)
+#     # Create trunk model, maybe move to config later
+#     else:
+#         model = EmbedModel(
+#             trunk=trunk_model,
+#             embed=embed_model,
+#             regression=config["model_type"] == "regression",
+    
+#     lr_scheduler=config["hparams"].get("lr_scheduler"),
+#     lr_scheduler_kwargs=config["hparams"].get("lr_scheduler_kwargs", {}),
+#     optimizer_kwargs=config["hparams"]['optimizer_kwargs'],
+#     **config["model_kwargs"]
+# )
+    if config.get("model_type") == 'variant':
+        model = VariantEmbedModel(trunk=trunk_model, embed=embed_model)
     else:
         model = EmbedModel(
             trunk=trunk_model,
             embed=embed_model,
-            regression=config["model_type"] == "regression",
-    
-    lr_scheduler=config["hparams"].get("lr_scheduler"),
-    lr_scheduler_kwargs=config["hparams"].get("lr_scheduler_kwargs", {}),
-    optimizer_kwargs=config["hparams"]['optimizer_kwargs'],
-    **config["model_kwargs"]
-)
+            regression=config.get("model_type") == "regression",
+            lr_scheduler=config.get("hparams", {}).get("lr_scheduler"),
+            lr_scheduler_kwargs=config.get("hparams", {}).get("lr_scheduler_kwargs", {}),
+            optimizer_kwargs=config.get("hparams", {}).get("optimizer_kwargs", {}),
+            **config.get("model_kwargs", {})  # safe default
+        )
 
-    # Initialize model
     model.init_model()
     return model
 
@@ -79,7 +92,7 @@ def dataset_from_h5(
         **dataset_kwargs: Additional arguments for dataset.
     """
     if config["model_type"] == 'variant':
-        data, embeddings_df = extract_var_data_from_h5(h5_file, ref_adata=ref_adata)
+        data, embeddings_df = extract_data_from_h5(h5_file, ref_adata=ref_adata, is_variant=True)
         dataset = VariantEmbedDataset(
             data=data,
             embeddings_df=embeddings_df,
@@ -88,7 +101,7 @@ def dataset_from_h5(
             **dataset_kwargs,
         )
     else:
-        data, embeddings_df = extract_data_from_h5(h5_file, ref_adata=ref_adata)
+        data, embeddings_df = extract_data_from_h5(h5_file, ref_adata=ref_adata, is_variant=False)
         dataset = SequenceEmbedDataset(
             data=data,
             embeddings_df=embeddings_df,
@@ -118,17 +131,17 @@ def datamodule_from_config(
         **dataloader_kwargs: Additional arguments for dataloaders.
     """
     train_dataset_kwargs = {
-        **config['data_params'],
-        **config['train_augmentation_kwargs'],
+        **config.get('data_params', {}),  # optional
+        **config.get('train_augmentation_kwargs', {}),
     }
 
     valid_dataset_kwargs = {
-        **config['data_params'],
-        **config['validation_augmentation_kwargs'],
+        **config.get('data_params', {}),  # optional
+        **config.get('validation_augmentation_kwargs', {}),
     }
     
     dataloader_kwargs = {
-        'batch_size': config['hparams']['batch_size'],
+        'batch_size': config.get('hparams', {}).get('batch_size', 64),
         **dataloader_kwargs,
     }
 
@@ -140,8 +153,8 @@ def datamodule_from_config(
             genotype_file=genotype_file,
             train_dataset_kwargs=train_dataset_kwargs,
             valid_dataset_kwargs=valid_dataset_kwargs,
-            **dataloader_kwargs,
-            )
+            **dataloader_kwargs
+        )
     else:
         return SeqEmbedDataModule(
             anndata_file=anndata_file,
@@ -149,7 +162,7 @@ def datamodule_from_config(
             genotype_file=genotype_file,
             train_dataset_kwargs=train_dataset_kwargs,
             valid_dataset_kwargs=valid_dataset_kwargs,
-            **dataloader_kwargs,
+            **dataloader_kwargs
         )
 
 #functions for training

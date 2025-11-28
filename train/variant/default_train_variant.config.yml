@@ -1,4 +1,6 @@
 model_type: variant
+model_kwargs:
+  log_output: true
 train_augmentation_kwargs:
   reverse_complement: true
   jitter: 5
@@ -11,6 +13,10 @@ hparams:
   batch_size: 64
   optimizer_kwargs:
     lr: 1.0e-05
+data_params:
+  clip_density: 20
+  min_bg: 0.1
+  negatives_weight: 1
 logging_params:
   val_check_interval: 0.2
   logger_type: csv

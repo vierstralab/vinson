@@ -7,51 +7,55 @@ process predict {
     tag "${prefix}"
 
     input:
-        tuple val(prefix), path(dhs_dataset), path(checkpoint), path(model_config), val(model_type)
+        tuple val(meta), path(dhs_dataset)
     
     output:
-        tuple val(prefix), path(dhs_dataset), path(model_config), path(name)
+        tuple val(meta), path(dhs_dataset), path(name)
     
     script:
+    prefix = meta.prefix
     name = "${prefix}.npy"
+    genotype_args = meta?.genotype_file ? "--genotype_file ${meta.genotype_file}" : ""
     """
     python3 $moduleDir/bin/predict_DHS_model.py \
         ${dhs_dataset} \
-        ${params.zarr_anndata} \
-        ${params.fasta_file} \
-        ${checkpoint} \
-        ${model_config} \
-        --genotype_file ${params.genotype_file} \
+        ${meta.zarr_anndata} \
+        ${meta.fasta_file} \
+        ${meta.checkpoint} \
+        ${meta.model_config} \
+        --model_type ${meta.model_type} \
+        ${genotype_args} \
         --num_workers ${task.cpus} \
-        --model_type ${model_type} \
         --batch_size ${params.prediction_batch_size} \
         --output ${name} 
     """
 }
 
 
-process visualize_predictions {
+process visualize_cell_selective_predictions {
     tag "${prefix}"
     conda "${params.conda}"
     publishDir "${params.outdir}/predictions/${prefix}"
     label "med_mem"
 
     input:
-        tuple val(prefix), path(dhs_dataset), path(model_config), path(predict_np)
+        tuple val(meta), path(dhs_dataset), path(predict_np)
 
     output:
-        tuple val(prefix), path("*.pdf")
+        tuple val(meta), path("*.pdf")
 
     script:
+    prefix = meta.prefix
     """
-    python3 $moduleDir/bin/plot_precomputed_data.py \
+    python3 $moduleDir/bin/plot_cell_selective_data.py \
         --prefix ${prefix} \
         --h5_data ${dhs_dataset} \
         --npy_prediction ${predict_np} \
         --output ./ \
-        --adata ${params.zarr_anndata} \
+        --adata ${meta.zarr_anndata} \
+        --train_adata ${params.train_anndata} \
         --annotation_data ${params.annotation_data} \
-        --model_config ${model_config}
+        --model_config ${meta.model_config}
     """
 }
 
@@ -59,47 +63,38 @@ process visualize_predictions {
 process annotate_with_predictions {
     conda "${params.conda}"
     publishDir "${params.outdir}/"
-    label "ldsc"
+
+    input:
+        path samples_file
 
     output:
         path name
 
     script:
-    name = "${file(params.samples_file).baseName}.annotated_with_predictions.tsv"
+    name = "${samples_file.baseName}.annotated_with_predictions.tsv"
     """
     python3 $moduleDir/bin/annotate_meta.py \
-        ${params.samples_file} \
-        ${params.outdir}/predictions \
+        ${samples_file} \
+        ${params.outdir}/ \
         ${name}
     """
-}
-
-workflow test {
-    models_data = Channel.fromPath(params.test_samples_file)
-        | splitCsv(header:true, sep:'\t')
-        | map(row -> tuple(file(row.checkpoint), file(row.model_config), row.model_type))
-    
-    generate_cell_selective_data()
-        | combine(models_data)
-        | predict
-        | visualize_predictions
 }
 
 
 workflow {
     Channel.fromPath(params.samples_file)
         | splitCsv(header:true, sep:'\t')
-        | map(row -> tuple(row.prefix, file(row.dhs_dataset), file(row.checkpoint), file(row.model_config), row.model_type))
+        | map(it -> tuple(it, file(it.dhs_dataset)))
         | predict
-        | visualize_predictions
+        | visualize_cell_selective_predictions
     
-    annotate_with_predictions()
+    annotate_with_predictions(params.samples_file)
     
 }
 
 workflow visualize {
     Channel.fromPath(params.samples_file)
         | splitCsv(header:true, sep:'\t')
-        | map(row -> tuple(row.prefix, file(row.dhs_dataset), file(row.model_config), file("${params.outdir}/predictions/${row.prefix}/${row.prefix}.npy")))
-        | visualize_predictions
+        | map(it -> tuple(it, file(it.dhs_dataset), file("${params.outdir}/predictions/${row.prefix}/${row.prefix}.npy")))
+        | visualize_cell_selective_predictions
 }
