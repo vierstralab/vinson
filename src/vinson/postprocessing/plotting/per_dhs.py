@@ -79,7 +79,7 @@ def scatter_by_ann_train_val(gb, in_training, pos_tr=0.05, ax=None):
     return ax
 
 
-def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax=None, color='annotation', edgecolor='none', label=None, **kwargs):
+def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax=None, color='annotation', edgecolor='none', label=None, errors=True, **kwargs):
     n = len(annotation_data)
     if ax is None:
         ax = plt.gca()
@@ -103,7 +103,7 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
             i + offset * w,
             gb_row['median'],
             w, 
-            yerr=[[gb_row['median'] - gb_row['q1']], [gb_row['q3'] - gb_row['median']]],
+            yerr=[[gb_row['median'] - gb_row['q1']], [gb_row['q3'] - gb_row['median']]] if errors else None,
             color=gb_row['color'] if color == 'annotation' else color,
             edgecolor=gb_row['color'] if edgecolor == 'annotation' else edgecolor,
             label=label if i == 0 else None,
