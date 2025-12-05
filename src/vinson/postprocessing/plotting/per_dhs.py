@@ -127,41 +127,74 @@ def obs_pred_barplot_by_ann(
     fig, axes = plt.subplots(1 if not separate_axes else 2, 1, figsize=figsize, squeeze=False)
 
     if not separate_axes:
-        ax1 = axes[0, 0]
-        ax2 = ax1
-        offset = 0.5
+        ax = obs_pred_barplot_same_ax(
+            df, obs_col, pred_col, annotation_data, ax=axes[0, 0], **kwargs
+        )
     else:
         ax1 = axes[0, 0]
         ax2 = axes[1, 0]
         offset = 0
 
+        barplot_by_ann_with_offset(
+            df,
+            obs_col,
+            annotation_data,
+            offset=-offset,
+            color='#E7E7E7',
+            edgecolor='annotation',
+            linewidth=0.5,
+            label='Observed',
+            ax=ax1,
+            **kwargs,
+        )
+        barplot_by_ann_with_offset(
+            df,
+            pred_col,
+            annotation_data,
+            offset=offset,
+            color='annotation',
+            edgecolor='annotation',
+            linewidth=0.5,
+            label='Predicted',
+            ax=ax2,
+            **kwargs,
+        )
+
+        ax1.legend(frameon=False, fontsize='small', loc='upper left', bbox_to_anchor=(1, 1))
+        ax1.set_xticks([])
+    return axes
+
+
+def obs_pred_barplot_same_ax(
+        df, obs_col, pred_col, annotation_data, ax=None,
+        **kwargs
+):
+    if ax is None:
+        ax = plt.gca()
     barplot_by_ann_with_offset(
         df,
         obs_col,
         annotation_data,
-        offset=-offset,
+        offset=-0.5,
         color='#E7E7E7',
         edgecolor='annotation',
         linewidth=0.5,
         label='Observed',
-        ax=ax1,
+        ax=ax,
         **kwargs,
     )
     barplot_by_ann_with_offset(
         df,
         pred_col,
         annotation_data,
-        offset=offset,
+        offset=0.5,
         color='annotation',
         edgecolor='annotation',
         linewidth=0.5,
         label='Predicted',
-        ax=ax2,
+        ax=ax,
         **kwargs,
     )
 
-    if separate_axes:
-        ax1.legend(frameon=False, fontsize='small', loc='upper left', bbox_to_anchor=(1, 1))
-        ax1.set_xticks([])
-    ax2.legend(frameon=False, fontsize='small', loc='upper left', bbox_to_anchor=(1, 1))
-    return axes
+    ax.legend(frameon=False, fontsize='small', loc='upper left', bbox_to_anchor=(1, 1))
+    return ax
