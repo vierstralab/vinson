@@ -19,12 +19,16 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def load_legnet_model(checkpoint_path, device):
     try:
-        from dnase_legnet.legnet_embed_cnn import LegNetEmbedinCNN
+        from dnase_legnet.legnet_embed_cnn import LegNetEmbedInCNN
     except ImportError:
         print("Please install dnase_legnet to use LegNet models.", file=sys.stderr)
         sys.exit(1)
 
-    model = LegNetEmbedinCNN.load_from_checkpoint(checkpoint_path, map_location=device).eval()
+    model = LegNetEmbedInCNN.load_from_checkpoint(
+        checkpoint_path,
+        map_location=device,
+        inference_mode=True
+    ).eval()
     return model
 
 def load_legacy_vinson(checkpoint_path):
