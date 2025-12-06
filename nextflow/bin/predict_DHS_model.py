@@ -24,7 +24,11 @@ def load_legnet_model(checkpoint_path, device):
         print("Please install dnase_legnet to use LegNet models.", file=sys.stderr)
         sys.exit(1)
 
-    model = LegNetEmbedInCNN.load_from_checkpoint(checkpoint_path, map_location=device).eval()
+    model = LegNetEmbedInCNN.load_from_checkpoint(
+        checkpoint_path,
+        map_location=device,
+        inference_mode=True
+    ).eval()
     return model
 
 def load_legacy_vinson(checkpoint_path):
