@@ -1,3 +1,6 @@
+import sys
+sys.path.append('/home/sbushuev/dhs_project/genome-tools/')
+
 import numpy as np
 import pandas as pd
 import argparse

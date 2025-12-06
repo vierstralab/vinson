@@ -1,5 +1,7 @@
 import torch
 import sys
+sys.path.append('/home/sbushuev/dhs_project/genome-tools/')
+
 import numpy as np
 from tqdm import tqdm
 import argparse
@@ -19,12 +21,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def load_legnet_model(checkpoint_path, device):
     try:
-        from dnase_legnet.legnet_embed_cnn import LegNetEmbedinCNN
+        from dnase_legnet.legnet_embed_cnn import LegNetEmbedInCNN
     except ImportError:
         print("Please install dnase_legnet to use LegNet models.", file=sys.stderr)
         sys.exit(1)
 
-    model = LegNetEmbedinCNN.load_from_checkpoint(checkpoint_path, map_location=device).eval()
+    model = LegNetEmbedInCNN.load_from_checkpoint(checkpoint_path, map_location=device).eval()
     return model
 
 def load_legacy_vinson(checkpoint_path):
@@ -120,6 +122,8 @@ def main():
     if args.model_type == "vinson":
         model_predict = load_vinson_model(model_config, args.model_checkpoint)
     elif args.model_type in ("legnet", "legacy_legnet"):
+        model_predict = load_legnet_model(args.model_checkpoint, device)
+    elif args.model_type in ("legnet_multitask"):
         model_predict = load_legnet_model(args.model_checkpoint, device)
     elif args.model_type == "vinson_legacy":
         model_predict = load_legacy_vinson(args.model_checkpoint)

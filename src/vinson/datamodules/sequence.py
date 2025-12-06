@@ -76,6 +76,14 @@ class SeqEmbedDataModule(L.LightningDataModule):
         )
         return train_dataset
 
+    def define_steps_per_epochs(self):
+            #define num steps for OneCycleLR, ~not optimal way
+            dl = self.train_dataloader()
+            self.current_train_epoch = 'epoch_1'
+            self.train_epoch_cycler = cycle(self.epoch_names)
+            
+            return len(dl)
+
     def validation_dataset(self):
         data, embeddings_df = self.get_data(self.validation_epoch, 'val', 'train')
 
