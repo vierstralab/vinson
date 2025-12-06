@@ -125,6 +125,8 @@ def main():
         model_predict = load_vinson_model(model_config, args.model_checkpoint)
     elif args.model_type in ("legnet", "legacy_legnet"):
         model_predict = load_legnet_model(args.model_checkpoint, device)
+    elif args.model_type in ("legnet_multitask"):
+        model_predict = load_legnet_model(args.model_checkpoint, device)
     elif args.model_type == "vinson_legacy":
         model_predict = load_legacy_vinson(args.model_checkpoint)
     else:
