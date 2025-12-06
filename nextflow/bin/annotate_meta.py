@@ -1,7 +1,4 @@
 import sys
-sys.path.append('/home/sbushuev/dhs_project/genome-tools/')
-
-import sys
 import pandas as pd
 
 

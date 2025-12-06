@@ -1,6 +1,3 @@
-import sys
-sys.path.append('/home/sbushuev/dhs_project/genome-tools/')
-
 import anndata as ad
 import seaborn as sns
 import numpy as np

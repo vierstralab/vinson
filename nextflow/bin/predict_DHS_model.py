@@ -1,7 +1,5 @@
 import torch
 import sys
-sys.path.append('/home/sbushuev/dhs_project/genome-tools/')
-
 import numpy as np
 from tqdm import tqdm
 import argparse

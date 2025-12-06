@@ -34,9 +34,9 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
     optional_keys = {
         "indiv_id": np.str_,
         "dhs_weight": np.float32,
-        'mean_density': np.float32,
-        'annotation': np.str_
+        'mean_density': np.float32
     }
+
     keys = {
         **data_keys,
         **{x: y for x, y in optional_keys.items() if x in data},
@@ -98,10 +98,12 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str):
         'background': layers['mean_bg_agg_cutcounts'].data,
         'class': layers['class'].data,
         'density': layers['density'].data,
-        # 'mean_density': train_adata.var['mean_density'].values[col_idx],
     }
     if 'indiv_id' in train_adata.obsm:
         data['indiv_id'] = get_indiv_id_info(train_adata, row_idx)
+    
+    if 'mean_density' in train_adata.varm:
+        data['mean_density'] = train_adata.varm['mean_density'][col_idx]
 
     if 'dhs_weight' in train_adata.varm:
         data['dhs_weight'] = train_adata.varm['dhs_weight'][col_idx]
