@@ -79,7 +79,7 @@ def scatter_by_ann_train_val(gb, in_training, pos_tr=0.05, ax=None):
     return ax
 
 
-def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax=None, color='annotation', edgecolor='none', label=None, **kwargs):
+def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax=None, color='annotation', edgecolor='none', label=None, errors=True, **kwargs):
     n = len(annotation_data)
     if ax is None:
         ax = plt.gca()
@@ -103,7 +103,7 @@ def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax
             i + offset * w,
             gb_row['median'],
             w, 
-            yerr=[[gb_row['median'] - gb_row['q1']], [gb_row['q3'] - gb_row['median']]],
+            yerr=[[gb_row['median'] - gb_row['q1']], [gb_row['q3'] - gb_row['median']]] if errors else None,
             color=gb_row['color'] if color == 'annotation' else color,
             edgecolor=gb_row['color'] if edgecolor == 'annotation' else edgecolor,
             label=label if i == 0 else None,
@@ -127,41 +127,74 @@ def obs_pred_barplot_by_ann(
     fig, axes = plt.subplots(1 if not separate_axes else 2, 1, figsize=figsize, squeeze=False)
 
     if not separate_axes:
-        ax1 = axes[0, 0]
-        ax2 = ax1
-        offset = 0.5
+        ax = obs_pred_barplot_same_ax(
+            df, obs_col, pred_col, annotation_data, ax=axes[0, 0], **kwargs
+        )
     else:
         ax1 = axes[0, 0]
         ax2 = axes[1, 0]
         offset = 0
 
+        barplot_by_ann_with_offset(
+            df,
+            obs_col,
+            annotation_data,
+            offset=-offset,
+            color='#E7E7E7',
+            edgecolor='annotation',
+            linewidth=0.5,
+            label='Observed',
+            ax=ax1,
+            **kwargs,
+        )
+        barplot_by_ann_with_offset(
+            df,
+            pred_col,
+            annotation_data,
+            offset=offset,
+            color='annotation',
+            edgecolor='annotation',
+            linewidth=0.5,
+            label='Predicted',
+            ax=ax2,
+            **kwargs,
+        )
+
+        ax1.legend(frameon=False, fontsize='small', loc='upper left', bbox_to_anchor=(1, 1))
+        ax1.set_xticks([])
+    return axes
+
+
+def obs_pred_barplot_same_ax(
+        df, obs_col, pred_col, annotation_data, ax=None,
+        **kwargs
+):
+    if ax is None:
+        ax = plt.gca()
     barplot_by_ann_with_offset(
         df,
         obs_col,
         annotation_data,
-        offset=-offset,
+        offset=-0.5,
         color='#E7E7E7',
         edgecolor='annotation',
         linewidth=0.5,
         label='Observed',
-        ax=ax1,
+        ax=ax,
         **kwargs,
     )
     barplot_by_ann_with_offset(
         df,
         pred_col,
         annotation_data,
-        offset=offset,
+        offset=0.5,
         color='annotation',
         edgecolor='annotation',
         linewidth=0.5,
         label='Predicted',
-        ax=ax2,
+        ax=ax,
         **kwargs,
     )
 
-    if separate_axes:
-        ax1.legend(frameon=False, fontsize='small', loc='upper left', bbox_to_anchor=(1, 1))
-        ax1.set_xticks([])
-    ax2.legend(frameon=False, fontsize='small', loc='upper left', bbox_to_anchor=(1, 1))
-    return axes
+    ax.legend(frameon=False, fontsize='small', loc='upper left', bbox_to_anchor=(1, 1))
+    return ax
