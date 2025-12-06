@@ -387,7 +387,14 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             self.data["read_depth"][i],
             self.data["class"][i],
         )
-        assert example_class in [-1, 1], "Class must be -1 or 1."
+
+        if 'mean_density' in self.data.keys():
+            mean_density = self.data["mean_density"][i]
+        else:
+            mean_density = np.nan
+
+        example_class = 0 if example_class == -1 else 1 # it's not compatible with torchmetrics
+        assert example_class in [0, 1], "Class must be 0 or 1."
 
         # Define region
         interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
@@ -442,6 +449,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             "ohe_seq": ohe_seq.copy(),
             "embed": embed.copy(),
             "class": example_class,
+            "mean_density": mean_density,
             "density": density,
             "bg": bg,
             "read_depth": read_depth,
