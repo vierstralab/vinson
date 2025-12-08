@@ -236,7 +236,8 @@ if __name__ == "__main__":
         val_check_interval=config["logging_params"]["val_check_interval"],
         **trainer_kwargs
     )
-
+    if args.num_workers == 1:
+        print('Using single worker for data loading. This worker will be used by training process as well. This may slow down training.')
     dataloader_kwargs = dict(
         num_workers=max(args.num_workers - 1, 1),
         pin_memory=True if args.accelerator == "gpu" else False,
