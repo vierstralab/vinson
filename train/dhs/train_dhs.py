@@ -257,6 +257,7 @@ if __name__ == "__main__":
     if config['hparams']['lr_scheduler'] == 'OneCycleLR':
         if config['hparams']['lr_scheduler_kwargs']['total_steps'] is None:
             print('Setting total_steps for OneCycleLR...')
+            datamodule.setup('fit')
             config['hparams']['lr_scheduler_kwargs']['total_steps'] = config['hparams']['epochs'] * datamodule.define_steps_per_epochs()
 
     model = model_from_config(config, checkpoint_path=checkpoint)
