@@ -253,6 +253,11 @@ if __name__ == "__main__":
         genotype_file=args.genotype_file,
         **dataloader_kwargs,
     )
+    
+    if config['hparams']['lr_scheduler'] == 'OneCycleLR':
+        if config['hparams']['lr_scheduler_kwargs']['total_steps'] is None:
+            print('Setting total_steps for OneCycleLR...')
+            config['hparams']['lr_scheduler_kwargs']['total_steps'] = config['hparams']['epochs'] * datamodule.define_steps_per_epochs()
 
     model = model_from_config(config, checkpoint_path=checkpoint)
 

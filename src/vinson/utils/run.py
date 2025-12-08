@@ -22,68 +22,66 @@ from lightning.pytorch.loggers import CSVLogger
 # dataset util functions
 def model_from_config(config, checkpoint_path=None):
     # TODO: add model configuration to config
-    model_type = config.get('model_type', 'dhs')
-    # legacy fix
-    if model_type == 'regression':
-        model_type = 'dhs'
-    assert model_type in ['dhs', 'variant', 'legnet_dhs'], f"Unsupported model type: {model_type}"
+    model_type = config.get("model_type", "dhs")
 
-    if model_type == 'legnet_dhs':
+    # legacy fix
+    if model_type == "regression":
+        model_type = "dhs"
+
+    if model_type not in {"dhs", "variant", "legnet_dhs"}:
+        raise ValueError(f"Unsupported model type: {model_type}")
+    if model_type == "legnet_dhs":
         try:
             from dnase_legnet.legnet_embed_cnn import LegNetEmbedInCNN
         except ImportError:
             print("Please install dnase_legnet to use LegNet models.", file=sys.stderr)
             sys.exit(1)
-        if checkpoint_path is not None:
-            model = LegNetEmbedInCNN.load_from_checkpoint(
+
+        if checkpoint_path:
+            return LegNetEmbedInCNN.load_from_checkpoint(
                 checkpoint_path,
                 inference_mode=False
             )
-        else:
-            model = LegNetEmbedInCNN(
-                model_kws=config['model_arch'], 
-                hparams=config['hparams'],
-                **config['model_kwargs']
-            )
-        return model
+
+        return LegNetEmbedInCNN(
+            model_kws=config["model_arch"],
+            hparams=config["hparams"],
+            **config["model_kwargs"],
+        )
+
+    # --- STANDARD EMBED/TRUNK PATH ---
+    embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
+    trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
+
+    # --- CHECKPOINT LOADING ---
+    if checkpoint_path:
+        load_cls = VariantEmbedModel if model_type == "variant" else EmbedModel
+        return load_cls.load_from_checkpoint(
+            checkpoint_path,
+            trunk=trunk_model,
+            embed=embed_model,
+        )
+
+    # --- MODEL INITIALIZATION (NO CHECKPOINT) ---
+    if model_type == "variant":
+        model = VariantEmbedModel(trunk=trunk_model, embed=embed_model)
+
     else:
-        embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
-        trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
+        # dhs model
+        hparams = config["hparams"]
+        model = EmbedModel(
+            trunk=trunk_model,
+            embed=embed_model,
+            regression=False,   # model_type == "dhs"
+            lr_scheduler=hparams.get("lr_scheduler"),
+            lr_scheduler_kwargs=hparams.get("lr_scheduler_kwargs", {}),
+            optimizer_kwargs=hparams["optimizer_kwargs"],
+            **config["model_kwargs"],
+        )
 
-        if checkpoint_path is not None:
-            if model_type == 'variant':
-                model = VariantEmbedModel.load_from_checkpoint(
-                    checkpoint_path,
-                    trunk=trunk_model, 
-                    embed=embed_model
-                )
-            else:
-                model = EmbedModel.load_from_checkpoint(
-                    checkpoint_path,
-                    trunk=trunk_model,
-                    embed=embed_model,
-                )
-            return model
-        #if no checkpoint to load from
-        if config["model_type"] == 'variant':
-            model = VariantEmbedModel(
-                trunk=trunk_model, 
-                embed=embed_model)
-        # Create trunk model, maybe move to config later
-        else:
-            model = EmbedModel(
-                trunk=trunk_model,
-                embed=embed_model,
-                regression=model_type == "regression",
-                lr_scheduler=config["hparams"].get("lr_scheduler"),
-                lr_scheduler_kwargs=config["hparams"].get("lr_scheduler_kwargs", {}),
-                optimizer_kwargs=config["hparams"]['optimizer_kwargs'],
-                **config["model_kwargs"]
-            )
-
-        # Initialize model
-        model.init_model()
+    model.init_model()
     return model
+
 
 #take in config to determine model type
 def dataset_from_h5(
