@@ -163,7 +163,7 @@ if __name__ == "__main__":
         "--num_workers",
         type=int,
         default=8,
-        help="Number of worker processes for data loading.",
+        help="Per device number of worker processes for data loading. One worker will be reserved for training script.",
     )
     parser.add_argument(
         "--accelerator",
@@ -238,7 +238,7 @@ if __name__ == "__main__":
     )
 
     dataloader_kwargs = dict(
-        num_workers=args.num_workers,
+        num_workers=max(args.num_workers - 1, 1),
         pin_memory=True if args.accelerator == "gpu" else False,
         drop_last=True,
         worker_init_fn=set_worker_seed,

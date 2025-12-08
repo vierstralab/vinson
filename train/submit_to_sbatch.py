@@ -21,7 +21,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_name", type=str, default=None, help="Run name, if not provided, a unique name will be generated")
     parser.add_argument("--gpus_per_node", type=int, default=8)
-    parser.add_argument("--cpus_per_gpu", type=int, default=4)
+    parser.add_argument("--cpus_per_gpu", type=int, default=4, help='Number of CPU cores per GPU. One cpu per gpu will be reserved for training, the rest for the data loading.')
     parser.add_argument("--mem", type=str, default='0', help='Memory per node')
     parser.add_argument("--nodelist", type=str, default=None, help='Names of nodes to use. Formatted according to sbatch --nodelist option.')
     parser.add_argument("--config", type=str, default=None, help='Path to custom config file')
