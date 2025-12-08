@@ -22,7 +22,9 @@ from lightning.pytorch.loggers import CSVLogger
 # dataset util functions
 def model_from_config(config, checkpoint_path=None):
     # TODO: add model configuration to config
-    if config['model_type'] == 'legnet_dhs':
+    model_type = config.get('model_type', 'dhs')
+    assert model_type in ['dhs', 'variant', 'legnet_dhs'], f"Unsupported model type: {model_type}"
+    if model_type == 'legnet_dhs':
         try:
             from dnase_legnet.legnet_embed_cnn import LegNetEmbedInCNN
         except ImportError:
@@ -40,25 +42,23 @@ def model_from_config(config, checkpoint_path=None):
                 hparams=config['hparams'],
                 **config['model_kwargs']
             )
-            return model
     else:
         embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
         trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
 
-    if checkpoint_path is not None:
-        #variant model option
-        if config["model_type"] == 'variant':
-            model = VariantEmbedModel.load_from_checkpoint(
-                checkpoint_path,
-                trunk=trunk_model, 
-                embed=embed_model
-            )
-        else:
-            model = EmbedModel.load_from_checkpoint(
-                checkpoint_path,
-                trunk=trunk_model,
-                embed=embed_model,
-            )
+        if checkpoint_path is not None:
+            if model_type == 'variant':
+                model = VariantEmbedModel.load_from_checkpoint(
+                    checkpoint_path,
+                    trunk=trunk_model, 
+                    embed=embed_model
+                )
+            else:
+                model = EmbedModel.load_from_checkpoint(
+                    checkpoint_path,
+                    trunk=trunk_model,
+                    embed=embed_model,
+                )
             
         return model
     
