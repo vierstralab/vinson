@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import lightning as L
 import anndata as ad
+import sys
 
 from vinson.models.sequence import CellEmbedding, BassetTrunkEmbed, EmbedModel, VariantEmbedModel
 from vinson.datamodules.sequence import SeqEmbedDataModule, SeqEmbedVariantDataModule
@@ -21,8 +22,28 @@ from lightning.pytorch.loggers import CSVLogger
 # dataset util functions
 def model_from_config(config, checkpoint_path=None):
     # TODO: add model configuration to config
-    embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
-    trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
+    if config['model_type'] == 'legnet_dhs':
+        try:
+            from dnase_legnet.legnet_embed_cnn import LegNetEmbedInCNN
+        except ImportError:
+            print("Please install dnase_legnet to use LegNet models.", file=sys.stderr)
+            sys.exit(1)
+        if checkpoint_path is not None:
+            model = LegNetEmbedInCNN.load_from_checkpoint(
+                checkpoint_path,
+                inference_mode=False
+            )
+            return model
+        else:
+            model = LegNetEmbedInCNN(
+                model_kws=config['model_arch'], 
+                hparams=config['hparams'],
+                **config['model_kwargs']
+            )
+            return model
+    else:
+        embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
+        trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
 
     if checkpoint_path is not None:
         #variant model option
