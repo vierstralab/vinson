@@ -39,13 +39,13 @@ def model_from_config(config, checkpoint_path=None):
                 checkpoint_path,
                 inference_mode=False
             )
-            return model
         else:
             model = LegNetEmbedInCNN(
                 model_kws=config['model_arch'], 
                 hparams=config['hparams'],
                 **config['model_kwargs']
             )
+        return model
     else:
         embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
         trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
@@ -63,29 +63,26 @@ def model_from_config(config, checkpoint_path=None):
                     trunk=trunk_model,
                     embed=embed_model,
                 )
-            
-        return model
-    
-    #if no checkpoint to load from
-    if config["model_type"] == 'variant':
-        model = VariantEmbedModel(
-            trunk=trunk_model, 
-            embed=embed_model)
-    # Create trunk model, maybe move to config later
-    else:
-        model = EmbedModel(
-            trunk=trunk_model,
-            embed=embed_model,
-            regression=config["model_type"] == "regression",
-    
-    lr_scheduler=config["hparams"].get("lr_scheduler"),
-    lr_scheduler_kwargs=config["hparams"].get("lr_scheduler_kwargs", {}),
-    optimizer_kwargs=config["hparams"]['optimizer_kwargs'],
-    **config["model_kwargs"]
-)
+            return model
+        #if no checkpoint to load from
+        if config["model_type"] == 'variant':
+            model = VariantEmbedModel(
+                trunk=trunk_model, 
+                embed=embed_model)
+        # Create trunk model, maybe move to config later
+        else:
+            model = EmbedModel(
+                trunk=trunk_model,
+                embed=embed_model,
+                regression=model_type == "regression",
+                lr_scheduler=config["hparams"].get("lr_scheduler"),
+                lr_scheduler_kwargs=config["hparams"].get("lr_scheduler_kwargs", {}),
+                optimizer_kwargs=config["hparams"]['optimizer_kwargs'],
+                **config["model_kwargs"]
+            )
 
-    # Initialize model
-    model.init_model()
+        # Initialize model
+        model.init_model()
     return model
 
 #take in config to determine model type
