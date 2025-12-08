@@ -23,7 +23,11 @@ from lightning.pytorch.loggers import CSVLogger
 def model_from_config(config, checkpoint_path=None):
     # TODO: add model configuration to config
     model_type = config.get('model_type', 'dhs')
+    # legacy fix
+    if model_type == 'regression':
+        model_type = 'dhs'
     assert model_type in ['dhs', 'variant', 'legnet_dhs'], f"Unsupported model type: {model_type}"
+
     if model_type == 'legnet_dhs':
         try:
             from dnase_legnet.legnet_embed_cnn import LegNetEmbedInCNN
