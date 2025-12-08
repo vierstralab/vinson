@@ -49,11 +49,12 @@ def model_from_config(config, checkpoint_path=None):
 
         return LegNetEmbedInCNN(
             model_kws=config["model_arch"],
-            hparams={
-                "lr_scheduler": scheduler_name,
-                "lr_scheduler_kwargs": scheduler_kwargs,
-                "optimizer_kwargs": optimizer_kwargs,
-            },
+            hparams=config['hparams'],
+            # hparams={
+            #     "lr_scheduler": scheduler_name,
+            #     "lr_scheduler_kwargs": scheduler_kwargs,
+            #     "optimizer_kwargs": optimizer_kwargs,
+            # },
             **config["model_kwargs"],
         )
 
