@@ -476,6 +476,21 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
         )
 
         loss *= batch["weight"]
+        
+        # ---- ADD THIS BLOCK ----
+        if torch.isnan(loss).any() or torch.isinf(loss).any():
+            # Print detailed info for debugging
+            print(f"[WARNING] NaN/Inf loss detected at batch {batch_idx}", flush=True)
+            print("  y:", y.detach().cpu().numpy())
+            print("  ref_counts:", ref_counts.detach().cpu().numpy())
+            print("  total_counts:", total_counts.detach().cpu().numpy())
+            print("  bad_score:", bad_score.detach().cpu().numpy())
+            print("  weights:", batch["weight"].detach().cpu().numpy())
+        
+            # Graceful fallback: replace NaN/Inf with large constant so model can continue
+            loss = torch.nan_to_num(loss, nan=1e6, posinf=1e6, neginf=1e6)
+        # ------------------------
+        
         loss = loss.mean()
 
         return loss, y, (ref_counts, total_counts, bad_score)

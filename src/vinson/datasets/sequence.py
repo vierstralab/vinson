@@ -205,109 +205,132 @@ class BaseSequenceDataset(Dataset):
 
         assert 'INDIV' in indiv_id, f"INDIV_ID format incorrect ({indiv_id}, {type(indiv_id)})."
         
-        variants = variants[variants["indiv_id"] == f"{indiv_id}.bed.gz"]
+        # variants = variants[variants["indiv_id"] == f"{indiv_id}.bed.gz"]
+        if variants["indiv_id"].str.endswith(".bed.gz").any():
+            key = f"{indiv_id}.bed.gz"
+        else:
+            key = indiv_id
+        
+        variants = variants[variants["indiv_id"] == key]
 
-        extra_columns = ('gt',)
+
+        extra_columns = ("gt",)
         if "phase_set" not in variants.columns:
             if "phase_block" in variants.columns:
                 variants = variants.rename(columns={"phase_block": "phase_set"})
             else:
-                # raise AssertionError(
-                #     "Phased genotype data required – expected a 'phase_set' or 'phase_block' column."
-                # )
-                #shouldnt be assertion error because non variants use this
                 variants["phase_set"] = None
-                #should be able to use nonphased variants
+    
+        # If reference_variant is provided, attach gt and phase_set to it
         if reference_variant is not None:
             try:
                 row = variants.set_index(["chrom", "start", "ref", "alt"]).loc[
-                    (reference_variant.chrom,
-                     reference_variant.start,
-                     reference_variant.ref,
-                     reference_variant.alt)
+                    (reference_variant.chrom, reference_variant.start, reference_variant.ref, reference_variant.alt)
                 ]
             except KeyError:
                 raise ValueError(
-                        "Query variant not found in genotyping file "
-                        f"({str(interval)}/{indiv_id}/{reference_variant.pos}/{reference_variant.alt})"
-                    )
+                    f"Query variant not found in genotyping file "
+                    f"({interval}/{indiv_id}/{reference_variant.start}/{reference_variant.alt})"
+                )
             reference_variant.gt = row["gt"]
             phase_val = row.get("phase_set", None)
-            reference_variant.phase_set = phase_val if not pd.isna(phase_val) and phase_val != "." else None
-        variants = df_to_variant_intervals(
-            variants, extra_columns=extra_columns
-        )
-        #add for same position
+            reference_variant.phase_set = None if pd.isna(phase_val) or phase_val == "." else phase_val
+            extra_columns = ("gt", "phase_set")  # Include phase_set for VariantInterval conversion
+    
+        # Convert variants to VariantInterval objects
+        variants = df_to_variant_intervals(variants, extra_columns=extra_columns)
+    
+        # Group variants by position
         variants_by_pos = {}
         for v in variants:
-            if v.start in variants_by_pos:
-                variants_by_pos[v.start].append(v)
-            else:
-                variants_by_pos[v.start] = [v]
-
-        #go by position instead
+            variants_by_pos.setdefault(v.start, []).append(v)
+    
         ambiguous_positions = set()
         for pos, vars_at_pos in variants_by_pos.items():
             rel_pos = pos - interval.start
             if len(vars_at_pos) > 1:
-                # multiple variants at same position → warn & treat as unphased
+                # Multiple variants at the same position → ambiguous
                 warnings.warn(
-                    f"Multiple variants at position {pos} for {indiv_id}: {[str(v) for v in vars_at_pos]}. "
-                    "Treating as unphased / ambiguous."
-                )
+                        f"Multiple variants at position {pos} for {indiv_id}: "
+                        f"{[str(v) for v in vars_at_pos]}. Treating as ambiguous."
+                    )
                 ambiguous_positions.add(pos)
-                # combine alleles into IUPAC
-                combined_ref = vars_at_pos[0].ref  # pick first as placeholder
-                combined_alt = "".join(set(v.alt for v in vars_at_pos))
-                base = get_iupac_char_from_alleles(combined_ref, combined_alt)
-                seq_iupac = replace_at(seq_iupac, rel_pos, base)
-                seq_ref = replace_at(seq_ref, rel_pos, combined_ref)
-                seq_alt = replace_at(seq_alt, rel_pos, combined_alt)
-            else:
-                v = vars_at_pos[0]
-                # phased variant logic
-                if 'phase_set' in extra_columns and reference_variant is not None and reference_variant.phase_set == getattr(v, 'phase_set', None):
-                    base = get_iupac_char_from_alleles(v.ref, v.alt)
-                    seq_iupac = replace_at(seq_iupac, rel_pos, base)
-                    if v.gt == "1|0":
-                        seq_ref = replace_at(seq_ref, rel_pos, v.alt)
-                        seq_alt = replace_at(seq_alt, rel_pos, v.ref)
-                    elif v.gt == "0|1":
-                        seq_ref = replace_at(seq_ref, rel_pos, v.ref)
-                        seq_alt = replace_at(seq_alt, rel_pos, v.alt)
+                ref_base = vars_at_pos[0].ref
+        
+                # Collect SNP-safe alleles only; indels collapse to ref
+                alt_alleles = set()
+                for v in vars_at_pos:
+                    if len(v.ref) == 1 and len(v.alt) == 1:
+                        alt_alleles.add(v.alt)
                     else:
-                        raise ValueError(f'Phased genotype not recognized! {v}')
+                        alt_alleles.add(ref_base)
+        
+                iupac_base = get_iupac_char_from_alleles(
+                    ref_base, "".join(sorted(alt_alleles))
+                )
+        
+                # Replace exactly ONE base (never insert)
+                seq_iupac = replace_at(seq_iupac, rel_pos, iupac_base)
+                seq_ref   = replace_at(seq_ref,   rel_pos, ref_base)
+                seq_alt   = replace_at(seq_alt,   rel_pos, ref_base)
+        
+                continue
+            
+            v = vars_at_pos[0]
+
+            # IUPAC always reflects ambiguity
+            iupac_base = get_iupac_char_from_alleles(v.ref, v.alt)
+            seq_iupac = replace_at(seq_iupac, rel_pos, iupac_base)
+        
+            phased_match = (
+                reference_variant is not None
+                and v.gt in ("0|1", "1|0")
+                and reference_variant.phase_set == getattr(v, "phase_set", None)
+            )
+        
+            # ------------------------------
+            # Phased heterozygous
+            # ------------------------------
+            if phased_match:
+                if v.gt == "1|0":
+                    seq_ref = replace_at(seq_ref, rel_pos, v.alt)
+                    seq_alt = replace_at(seq_alt, rel_pos, v.ref)
+                elif v.gt == "0|1":
+                    seq_ref = replace_at(seq_ref, rel_pos, v.ref)
+                    seq_alt = replace_at(seq_alt, rel_pos, v.alt)
                 else:
-                    # unphased logic
-                    assert v.gt[0] in ("0", "1") and v.gt[2] in ("0", "1"), f"Genotype format not recognized! {v} {v.gt}"
-                    variant_is_het = (v.gt[0] == "1" and v.gt[2] == "0") or (v.gt[0] == "0" and v.gt[2] == "1")
-                    if variant_is_het:
-                        base = get_iupac_char_from_alleles(v.ref, v.alt)
-                        seq_iupac = replace_at(seq_iupac, rel_pos, base)
-                        seq_ref = replace_at(seq_ref, rel_pos, v.ref)
-                        seq_alt = replace_at(seq_alt, rel_pos, v.alt)
-                    elif v.gt[0] == "1":
-                        base = v.alt
-                        seq_iupac = replace_at(seq_iupac, rel_pos, base)
-                        seq_ref = replace_at(seq_ref, rel_pos, base)
-                        seq_alt = replace_at(seq_alt, rel_pos, base)
-                    else:
-                        base = v.ref
-                        seq_iupac = replace_at(seq_iupac, rel_pos, base)
-                        seq_ref = replace_at(seq_ref, rel_pos, base)
-                        seq_alt = replace_at(seq_alt, rel_pos, base)
+                    raise ValueError(f"Unrecognized phased genotype: {v.gt}")
 
-
-        if reference_variant is not None:
+            else:
+                # Unphased / heterozygous / homozygous
+                # if v.gt[0] == "1" and v.gt[2] == "0" or v.gt[0] == "0" and v.gt[2] == "1":
+                #     seq_ref = replace_at(seq_ref, rel_pos, v.ref)
+                #     seq_alt = replace_at(seq_alt, rel_pos, v.alt)
+                # else:
+                #     base_seq = v.alt if v.gt[0] == "1" else v.ref
+                #     seq_ref = replace_at(seq_ref, rel_pos, base_seq)
+                #     seq_alt = replace_at(seq_alt, rel_pos, base_seq)
+                is_het = v.gt[0] != v.gt[2]
+                base_ref = v.ref
+                base_alt = v.alt if is_het else (v.alt if v.gt[0] == "1" else v.ref)
+        
+                seq_ref = replace_at(seq_ref, rel_pos, base_ref)
+                seq_alt = replace_at(seq_alt, rel_pos, base_alt)
+    
+        # Check reference variant at the end
+        if reference_variant is not None and reference_variant.start not in ambiguous_positions:
             if reference_variant.gt == "1|0":
                 seq_ref, seq_alt = seq_alt, seq_ref
-        
+    
             rel_pos = reference_variant.start - interval.start
-            if reference_variant.start not in ambiguous_positions:
-                # only enforce ValueError if this position is NOT ambiguous
-                if (seq_ref[rel_pos] != reference_variant.ref) or (seq_alt[rel_pos] != reference_variant.alt):
-                    raise ValueError("Expected ref & alt alleles not found in correct position in sequences!", reference_variant, variants)
-
+            if (seq_ref[rel_pos] != reference_variant.ref) or (seq_alt[rel_pos] != reference_variant.alt):
+                raise ValueError(
+                    f"Expected ref & alt alleles not found in correct position "
+                    f"(reference_variant={reference_variant}, indiv_id={indiv_id})",
+                    reference_variant,
+                    variants,
+                )
+    
         return len(variants), seq_iupac, seq_ref, seq_alt
 
 
@@ -593,15 +616,15 @@ class VariantEmbedDataset(BaseSequenceDataset):
         self._init_fileread()
 
         chrom, pos, ref, alt, ref_counts, total_counts, bad, lfc, sample_id = (
-            self.data["chrom"][i].astype(str),
+            self.data["chrom"][i],
             self.data["pos"][i],
-            self.data["ref"][i].astype(str),
-            self.data["alt"][i].astype(str),
-            self.data["ref_counts"][i].astype(np.float32),
-            self.data["total_counts"][i].astype(np.float32),
-            self.data["BAD"][i].astype(np.float32),
-            self.data["logit_es"][i].astype(np.float32),
-            self.data["sample_id"][i].astype(str),
+            self.data["ref"][i],
+            self.data["alt"][i],
+            self.data["ref_counts"][i],
+            self.data["total_counts"][i],
+            self.data["BAD"][i],
+            self.data["logit_es"][i],
+            self.data["sample_id"][i],
         )
 
         variant = GenomicInterval(chrom, pos, pos)
@@ -612,6 +635,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
             interval.shift(shift, inplace=True)
 
         rel_pos = pos - interval.start
+        
 
         # Inject genotypes if genotype files provided
         if self.include_genotypes:
@@ -626,6 +650,11 @@ class VariantEmbedDataset(BaseSequenceDataset):
         else:
             dna_seq_ref = self.fasta_extr[interval]
             dna_seq_alt = dna_seq_ref[:rel_pos] + alt + dna_seq_ref[rel_pos + 1 :]
+        if len(dna_seq_ref) != 1344 or len(dna_seq_alt) != 1344:
+            warnings.warn(
+            f"[DEBUG WARNING] idx={i}, chrom={chrom}, pos={pos}, "
+            f"ref_seq length={len(dna_seq_ref)} alt_len expected seqlen={len(dna_seq_alt)}, relpos {rel_pos}, alt {alt}, ref {ref} indiv {indiv_id}"
+        )
 
         try:
             ohe_seq_ref, ohe_seq_alt = (

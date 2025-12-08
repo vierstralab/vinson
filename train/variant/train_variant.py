@@ -2,6 +2,7 @@ import os
 import sys
 import random
 import numpy as np
+import anndata as ad
 from argparse import ArgumentParser
 
 
@@ -117,6 +118,16 @@ if __name__ == "__main__":
         type=str,
         help="Unique identifier for the training run. Generated if not provided.",
     )
+    parser.add_argument(
+        "--exclude_indiv_ids",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated list of indiv_id values to exclude, "
+            "or path to a text file with one indiv_id per line."
+        ),
+    )
+
     parser.add_argument(
         "--config",
         type=str,

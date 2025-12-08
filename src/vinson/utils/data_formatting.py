@@ -9,17 +9,6 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
     """Ensure that all data arrays are contiguous and correct dtype."""
     
     if is_variant:
-        # data_keys = {
-        #     "chrom": np.str_,
-        #     "pos": np.int32,
-        #     "ref": np.str_,
-        #     "alt": np.str_,
-        #     "ref_counts": np.float32,
-        #     "total_counts": np.float32,
-        #     "BAD": np.float32,
-        #     "sample_id": np.str_,
-        #     "logit_es": np.float32,
-        # }
         data_keys = {
             "chrom": np.str_,
             "pos": np.int32,
