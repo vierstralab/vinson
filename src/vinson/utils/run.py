@@ -22,7 +22,11 @@ from lightning.pytorch.loggers import CSVLogger
 # dataset util functions
 def model_from_config(config, checkpoint_path=None):
     # TODO: add model configuration to config
-    model_type = config.get("model_type", "dhs")
+    model_type = config['model_type']
+    hparams = config["hparams"]
+    scheduler_name = hparams.get("lr_scheduler")
+    scheduler_kwargs = hparams.get("lr_scheduler_kwargs", {})
+    optimizer_kwargs = hparams["optimizer_kwargs"]
 
     # legacy fix
     if model_type == "regression":
@@ -45,7 +49,11 @@ def model_from_config(config, checkpoint_path=None):
 
         return LegNetEmbedInCNN(
             model_kws=config["model_arch"],
-            hparams=config["hparams"],
+            hparams={
+                "lr_scheduler": scheduler_name,
+                "lr_scheduler_kwargs": scheduler_kwargs,
+                "optimizer_kwargs": optimizer_kwargs,
+            },
             **config["model_kwargs"],
         )
 
@@ -68,14 +76,13 @@ def model_from_config(config, checkpoint_path=None):
 
     else:
         # dhs model
-        hparams = config["hparams"]
         model = EmbedModel(
             trunk=trunk_model,
             embed=embed_model,
-            regression=False,   # model_type == "dhs"
-            lr_scheduler=hparams.get("lr_scheduler"),
-            lr_scheduler_kwargs=hparams.get("lr_scheduler_kwargs", {}),
-            optimizer_kwargs=hparams["optimizer_kwargs"],
+            regression=True,
+            lr_scheduler=scheduler_name,
+            lr_scheduler_kwargs=scheduler_kwargs,
+            optimizer_kwargs=optimizer_kwargs,
             **config["model_kwargs"],
         )
 

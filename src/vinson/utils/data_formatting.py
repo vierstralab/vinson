@@ -41,11 +41,12 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
         **{x: y for x, y in optional_keys.items() if x in data},
     }
     for key, dtype in keys.items():
+        arr = np.asarray(data[key])
         if dtype == np.str_:
-            mask = pd.isna(data[key]) | np.isin(data[key], ['None', 'nan'])
-            data[key][mask] = ''
-        data[key] = np.ascontiguousarray(data[key].astype(dtype))
-
+            mask = pd.isna(arr) | np.isin(arr, ['None', 'nan'])
+            arr[mask] = ''
+        data[key] = np.ascontiguousarray(arr.astype(dtype))
+    
     if 'background' in data:
         data['background'] = np.nan_to_num(data['background'])
 
