@@ -391,12 +391,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         if 'mean_density' in self.data.keys():
             mean_density = self.data["mean_density"][i]
         else:
-            mean_density = 0
-
-        if 'annotation' in self.data.keys():
-            annotation = self.data["annotation"][i] #np.array([], dtype=object)
-        else:
-            annotation = ''
+            mean_density = np.nan
 
         example_class = 0 if example_class == -1 else 1 # it's not compatible with torchmetrics
         assert example_class in [0, 1], "Class must be 0 or 1."
@@ -462,7 +457,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             "chrom": chrom,
             "summit": summit,
             "sample_id": sample_id,
-            "annotation": annotation
         }
 
 

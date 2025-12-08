@@ -17,7 +17,6 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
             "total_counts": np.float32,
             "BAD": np.float32,
             "sample_id": np.str_,
-            "annotation": np.str_,
             "logit_es": np.float32,
         }
     else:
@@ -42,9 +41,9 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
         **{x: y for x, y in optional_keys.items() if x in data},
     }
     for key, dtype in keys.items():
-        # if dtype == np.str_:
-        #     mask = pd.isna(data[key]) | np.isin(data[key], ['None', 'nan'])
-        #     data[key][mask] = ''
+        if dtype == np.str_:
+            mask = pd.isna(data[key]) | np.isin(data[key], ['None', 'nan'])
+            data[key][mask] = ''
         data[key] = np.ascontiguousarray(data[key].astype(dtype))
 
     if 'background' in data:
@@ -69,7 +68,6 @@ def extract_data_from_h5(h5_file, ref_adata: ad.AnnData, is_variant=False):
             data[key] = f[key][()]
 
         data = sanitize_data(data, is_variant=is_variant)
-        data['annotation'] = ref_adata.obs['core_ontology_term'][data['sample_id']].values
     return data, ref_adata.obsm["motif_embeddings"]
 
 
@@ -87,7 +85,7 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str):
     
     layers = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
 
-    row_idx, col_idx, layers = update_layers_dict(layers, train_adata, suffix)
+    row_idx, col_idx = update_layers_dict(layers, train_adata, suffix)
 
     data = {
         'read_depth': train_adata.obs['nuclear_reads'].values[row_idx],
@@ -221,4 +219,4 @@ def update_layers_dict(layers: dict, train_adata: ad.AnnData, suffix: str):
     
     class_coo = layers["class"]
     row_idx, col_idx = class_coo.row, class_coo.col
-    return row_idx, col_idx, layers
+    return row_idx, col_idx
