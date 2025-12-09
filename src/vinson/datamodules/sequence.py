@@ -92,14 +92,12 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
         # Create new dataset
         data = self.train_data[epoch]
-        print('Creating train dataset for epoch:', epoch, flush=True)
         train_dataset = SequenceEmbedDataset(
             data=data,
             fasta_file=self.fasta_file,
             genotype_file=self.genotype_file,
             **self.train_dataset_kwargs,
         )
-        print('Finished train dataset for epoch:', epoch, flush=True)
         return train_dataset
 
     def validation_dataset(self):
@@ -118,11 +116,13 @@ class SeqEmbedDataModule(L.LightningDataModule):
         print('Loading new training dataloader for epoch:', self.current_train_epoch)
         # Cycle to next file index
         # Create new dataloader
-        return DataLoader(
+        data_loader = DataLoader(
             self.train_dataset(),
             shuffle=True,
             **self.dataloader_kwargs,
         )
+        print('Finished training dataloader for epoch:', self.current_train_epoch, flush=True)
+        return data_loader
     
     def teardown(self, stage: str):
         print("Teardown datamodule and free memory")

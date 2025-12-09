@@ -367,14 +367,14 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             - 'sample_id': str, sample identifier
         """
         self._init_fileread()
-        data_slice = self.data[i]
-        chrom = data_slice['chrom']
-        summit = data_slice['summit']
-        sample_id = data_slice['sample_id']
-        density = data_slice['density']
-        bg = data_slice['background']
-        read_depth = data_slice['read_depth']
-        example_class = data_slice['class']
+        data_slice = self.data.data
+        chrom = data_slice['chrom'][i]
+        summit = data_slice['summit'][i]
+        sample_id = data_slice['sample_id'][i]
+        density = data_slice['density'][i]
+        bg = data_slice['background'][i]
+        read_depth = data_slice['read_depth'][i]
+        example_class = data_slice['class'][i]
 
         if 'mean_density' in self.data.keys():
             mean_density = self.data["mean_density"][i]
