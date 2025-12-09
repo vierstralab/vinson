@@ -99,14 +99,13 @@ def main():
         adata.obsm['motif_embeddings'] = motif_embedding.loc[adata.obs_names]
 
     
-    data, embeddings_df = extract_data_from_h5(
+    vinson_data = extract_data_from_h5(
         h5_file=args.h5_data,
         ref_adata=adata,
     )
     
     dataset = SequenceEmbedDataset(
-        data=data,
-        embeddings_df=embeddings_df,
+        data=vinson_data,
         fasta_file=args.fasta_file,
         genotype_file=args.genotype_file,
         **dataset_kwargs,

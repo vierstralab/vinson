@@ -261,7 +261,7 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str) -> V
 
 
 def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=None, use_sample_peaks=False,
-                                     extra_layers=()) -> dict:
+                                     extra_layers=()) -> VinsonData:
     """
     This function can also be used to extract data into training anndata object.
     """
