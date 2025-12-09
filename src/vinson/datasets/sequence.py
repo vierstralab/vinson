@@ -306,7 +306,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
 
     def __init__(
         self,
-        data: dict,
+        data: VinsonData,
         fasta_file: str,
         genotype_file: str = None,
         negatives_weight: float = 1.0,

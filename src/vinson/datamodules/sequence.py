@@ -99,6 +99,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             genotype_file=self.genotype_file,
             **self.train_dataset_kwargs,
         )
+        print('Finished train dataset for epoch:', epoch)
         return train_dataset
 
     def validation_dataset(self):

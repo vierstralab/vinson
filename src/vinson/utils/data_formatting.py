@@ -3,7 +3,6 @@ import anndata as ad
 import h5py
 import pandas as pd
 import dask.array as da
-import gc
 
 
 class VinsonData:
