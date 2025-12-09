@@ -38,11 +38,15 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
         **data_keys,
         **{x: y for x, y in optional_keys.items() if x in data},
     }
+    encodings = {}
     for key, dtype in keys.items():
         data[key] = np.asarray(data[key], dtype=dtype)
         if dtype == np.str_:
             mask = pd.isna(data[key]) | np.isin(data[key], ['None', 'nan'])
             data[key][mask] = ''
+            enc, inverse = np.unique(data[key], return_inverse=True)
+            encodings[key] = np.array(enc, dtype=np.str_)
+            data[key] = inverse.astype(np.int32)
 
         if not data[key].flags["C_CONTIGUOUS"]:
             data[key] = np.ascontiguousarray(data[key])
@@ -50,7 +54,7 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
     if 'background' in data:
         data['background'] = np.nan_to_num(data['background'], copy=False)
 
-    return data
+    return dict(data=data, encodings=encodings)
 
 
 def data_to_h5(h5_file: str, data: dict):
@@ -188,7 +192,8 @@ def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=No
             data[key] = data[key][sample_peaks_mask]
 
     data = sanitize_data(data)
-    return data
+    embeddings_df = adata_slice.obsm['motif_embeddings']
+    return data, embeddings_df
 
 
 def slice_adata(adata, dhs_ids, sample_ids) -> ad.AnnData:

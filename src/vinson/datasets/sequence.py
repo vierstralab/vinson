@@ -25,7 +25,10 @@ class BaseSequenceDataset(Dataset):
     Parameters
     ----------
     data : dict
-        Dictionary containing sample metadata. Must include keys like 'chrom'.
+        Dictionary containing sample metadata. {
+            data: {'chrom': ..., 'summit': ..., etc.}, # Sample data. int or float np.arrays
+            encodings: {'chrom': np.array, ...} # Encoding for categorical variables.
+        } 
     embeddings_df : pd.DataFrame
         DataFrame of cell-type/state embeddings indexed by sample ID.
     fasta_file : str
@@ -63,7 +66,8 @@ class BaseSequenceDataset(Dataset):
         seqlen=1344,
     ):
         self.fasta_file = fasta_file
-        self.data = data
+        self.data = data.data
+        self.encodings = data.encodings
         self.reverse_complement = reverse_complement
         self.jitter = jitter
         self.noise = noise
@@ -338,8 +342,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         self.clip_density = clip_density
         self.min_bg = min_bg
         self.negatives_weight = negatives_weight
-        
-        #moved from base dataset
+
         assert set(
             [
                 "chrom", "summit", "class", 
@@ -387,6 +390,8 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             self.data["read_depth"][i],
             self.data["class"][i],
         )
+        chrom = self.encodings['chrom'][chrom]
+        sample_id = self.encodings['sample_id'][sample_id]
 
         if 'mean_density' in self.data.keys():
             mean_density = self.data["mean_density"][i]
@@ -406,7 +411,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
 
         # indiv_id is expected to be in self.data if genotypes are included
         if self.include_genotypes:
-            indiv_id = self.data['indiv_id'][i]
+            indiv_id = self.encodings['indiv_id'][self.data['indiv_id'][i]]
             _, dna_seq, _, _ = self.get_sample_sequence(
                 interval,
                 indiv_id
