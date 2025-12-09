@@ -377,7 +377,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         example_class = data_slice['class']
         print('Slicing works batch index:', i, flush=True)
 
-        if 'mean_density' in self.data.keys():
+        if 'mean_density' in data_slice.keys():
             mean_density = data_slice["mean_density"]
         else:
             mean_density = np.nan
@@ -403,6 +403,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         else:
             dna_seq = self.fasta_extr[interval]
         
+        print('Extracted sample sequence batch index:', i, flush=True)
 
         # One-hot encode DNA sequence
         #added upper for mouse fasta
