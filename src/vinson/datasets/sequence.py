@@ -267,6 +267,7 @@ class BaseSequenceDataset(Dataset):
                     seq_iupac = replace_at(seq_iupac, rel_pos, base)
                     seq_ref = replace_at(seq_ref, rel_pos, base)
                     seq_alt = replace_at(seq_alt, rel_pos, base)
+        print('Processed variant intervals:', interval, 'indiv_id:', indiv_id, flush=True)
 
         if reference_variant is not None:
             if reference_variant.gt == "1|0":
