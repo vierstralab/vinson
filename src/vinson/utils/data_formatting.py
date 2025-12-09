@@ -77,10 +77,10 @@ class VinsonData:
         return cls(data, encodings, embeddings_df, is_variant=is_variant)
 
 
-def sanitize_data(data: dict, encodings_dict: dict = None, is_variant=False) -> tuple:
+def sanitize_data(data: dict, encodings: dict = None, is_variant=False) -> tuple:
     """Ensure that all data arrays are contiguous and of the correct dtype."""
-    if encodings_dict is None:
-        encodings_dict = {}
+    if encodings is None:
+        encodings = {}
     if is_variant:
         data_keys = {
             "chrom": np.str_,
@@ -112,11 +112,10 @@ def sanitize_data(data: dict, encodings_dict: dict = None, is_variant=False) -> 
         **data_keys,
         **{x: y for x, y in optional_keys.items() if x in data},
     }
-    encodings = {}
     for key, dtype in keys.items():
         if dtype == np.str_:
-            if key in encodings_dict:
-                encodings[key] = np.asarray(encodings_dict[key], dtype=np.int32)
+            if key in encodings:
+                encodings[key] = np.asarray(encodings[key], dtype=np.int32)
                 mask = pd.isna(encodings[key]) | np.isin(encodings[key], ['None', 'nan'])
                 encodings[key][mask] = ''
             else:
