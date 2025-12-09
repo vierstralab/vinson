@@ -209,7 +209,7 @@ if __name__ == "__main__":
     if args.num_workers == 1:
         print('Using single worker for data loading. This worker will be used by training process as well. This may slow down training.')
     dataloader_kwargs = dict(
-        num_workers=max(args.num_workers - 1, 1),
+        num_workers=max(args.num_workers - 1, 0),
         pin_memory=True if args.accelerator == "gpu" else False,
         drop_last=True,
         worker_init_fn=set_worker_seed,
