@@ -39,13 +39,11 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
         **{x: y for x, y in optional_keys.items() if x in data},
     }
     for key, dtype in keys.items():
-        data[key] = np.asarray(data[key])
         if dtype == np.str_:
             mask = pd.isna(data[key]) | np.isin(data[key], ['None', 'nan'])
             data[key][mask] = ''
 
-        if data[key].dtype != dtype:
-            data[key] = data[key].astype(dtype, copy=True)
+        data[key] = np.asarray(data[key], dtype=dtype)
 
         if not data[key].flags["C_CONTIGUOUS"]:
             data[key] = np.ascontiguousarray(data[key])
