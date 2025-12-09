@@ -210,7 +210,7 @@ def compute_if_dask(array):
 
 
 def get_indiv_id_info(train_adata: ad.AnnData, row_idx: np.ndarray):
-    return train_adata.obsm['indiv_id'].values[row_idx]
+    return train_adata.obsm['indiv_id'][row_idx]
 
 def get_examples_indices_from_layer(layer_coo):
     row_idx, col_idx = layer_coo.row, layer_coo.col
