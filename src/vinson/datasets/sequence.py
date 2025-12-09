@@ -179,7 +179,7 @@ class BaseSequenceDataset(Dataset):
     def get_sample_sequence(
             self,
             interval: GenomicInterval,
-            indiv_id,
+            indiv_id: str,
             reference_variant: VariantInterval=None
         ):
         """
@@ -187,7 +187,9 @@ class BaseSequenceDataset(Dataset):
         Returns:
             tuple: (base_sequence str, variants List[Variant])
         """
+        print('Getting sample sequence for interval:', interval, 'indiv_id:', indiv_id, flush=True)
         seq = self.fasta_extr[interval]
+        print('Got sample sequence for interval:', interval, 'indiv_id:', indiv_id, flush=True)
         seq_iupac = seq_ref = seq_alt = str(seq) # modify all 3 regardless
 
         try:
@@ -196,7 +198,7 @@ class BaseSequenceDataset(Dataset):
                 raise ValueError
         except ValueError:
             return 0, seq_iupac, seq_ref, seq_alt
-
+        print('Extracted variants from tabix:', interval, 'indiv_id:', indiv_id, flush=True)
         assert 'INDIV' in indiv_id, f"INDIV_ID format incorrect ({indiv_id}, {type(indiv_id)})."
         
         variants = variants[variants["indiv_id"] == f"{indiv_id}.bed.gz"]
@@ -225,6 +227,7 @@ class BaseSequenceDataset(Dataset):
                     "Query variant not found in genotyping file "
                     f"({str(interval)}/{indiv_id}/{reference_variant.pos}/{reference_variant.alt})"
                 )
+        print('Convert df to variant_intervals:', interval, 'indiv_id:', indiv_id, flush=True)
         variants = df_to_variant_intervals(
             variants, extra_columns=extra_columns
         )
