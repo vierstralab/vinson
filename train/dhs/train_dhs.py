@@ -16,7 +16,7 @@ import gc
 
 from vinson.utils.helpers import read_configs, save_config, generate_run_name
 from vinson.utils.run import datamodule_from_config, model_from_config, set_global_seed, set_worker_seed
-from vinson.utils.helpers import get_number_of_train_examples
+from vinson.utils.data_formatting import get_number_of_train_examples
 
 torch.set_float32_matmul_precision('high')
 
