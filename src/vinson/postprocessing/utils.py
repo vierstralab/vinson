@@ -101,6 +101,7 @@ def annotate_eval_dataset_with_obs_columns(eval_dataset: pd.DataFrame, obs: pd.D
 def get_samples_used_in_training_for_dhs(train_adata: ad.AnnData, dhs_ids):
     if len(dhs_ids) == 0:
         return np.array([])
+    dhs_ids = np.asarray(dhs_ids, dtype=str)
     in_training = np.zeros(train_adata.shape[0], dtype=bool)
     for epoch_name in train_adata.uns['epoch_names']:
         example_class = train_adata[:, dhs_ids].layers[f'class.{epoch_name}']
