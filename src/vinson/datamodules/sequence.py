@@ -7,7 +7,7 @@ from itertools import cycle
 from torchdata.stateful_dataloader import StatefulDataLoader
 
 import anndata as ad
-
+from tqdm import tqdm
 import gc
 
 # TODO: move all logging to one helper file
@@ -63,7 +63,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
         self.train_data = {
             name: self.get_data(adata, name, dhs_split='train', sample_split='train')
-            for name in self.epoch_names
+            for name in tqdm(self.epoch_names, 'Loading training data for epochs')
         }
 
         self.validation_epoch = self.epoch_names[0]
