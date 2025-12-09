@@ -284,11 +284,8 @@ class SequenceEmbedDataset(BaseSequenceDataset):
     
     Parameters
     ----------
-    data : dict
-        Dictionary containing sample metadata. Must include:
-        'chrom', 'summit', 'class', 'density', 'sample_id', 'background', 'read_depth'.
-    embeddings_df : pd.DataFrame
-        DataFrame of cell-type/state embeddings indexed by sample ID.
+    data : VinsonData 
+        VinsonData object containing dict of sample metadata, encodings, embeddings
     fasta_file : str
         Path to reference genome FASTA file.
     genotype_file : str, optional
@@ -311,7 +308,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
     def __init__(
         self,
         data: dict,
-        embeddings_df: pd.DataFrame,
         fasta_file: str,
         genotype_file: str = None,
         negatives_weight: float = 1.0,
@@ -323,7 +319,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
     ):
         super().__init__(
             data=data,
-            embeddings_df=embeddings_df,
             fasta_file=fasta_file,
             genotype_file=genotype_file,
             reverse_complement=reverse_complement,
@@ -460,11 +455,8 @@ class VariantEmbedDataset(BaseSequenceDataset):
 
     Parameters
     ----------
-    data : dict
-        Dictionary containing variant metadata. Must include:
-        'chrom', 'pos', 'ref', 'alt', 'ref_counts', 'total_counts', 'BAD', 'sample_id', 'logit_es'.
-    embeddings_df : pd.DataFrame
-        DataFrame of cell-type/state embeddings indexed by sample ID.
+    data : VinsonData
+        VinsonData containing dict of variant metadata, categorical encodings and embeddings.
     fasta_file : str
         Path to reference genome FASTA file.
     genotype_file : str

@@ -62,17 +62,25 @@ class SeqEmbedDataModule(L.LightningDataModule):
         
         self.epoch_names = adata.uns['epoch_names']
 
-        self.train_data = {
-            name: self.get_data(adata, name, dhs_split='train', sample_split='train')
-            for name in tqdm(self.epoch_names, 'Loading training data for epochs')
-        }
-
         self.validation_epoch = self.epoch_names[0]
 
-        self.validation_data = {
-            name: self.get_data(adata, name, dhs_split='val', sample_split='train')
-            for name in [self.validation_epoch]
-        }
+        layer_names = list(adata.layers)
+        self.train_data = {}
+        for name in tqdm(self.epoch_names, desc='Loading training data for epochs'):
+            self.train_data[name] = self.get_data(adata, name, dhs_split='train', sample_split='train')
+            if name == self.validation_epoch:
+                self.validation_data = {
+                    self.validation_epoch: self.get_data(
+                        adata,
+                        self.validation_epoch,
+                        dhs_split='val',
+                        sample_split='train'
+                    )
+                }
+            for layer in layer_names:
+                if layer.split('.')[1] == name:
+                    del adata.layers[layer]
+                    gc.collect()
         
         self.train_epoch_cycler = cycle(self.epoch_names)
 
