@@ -368,7 +368,9 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         """
         self._init_fileread()
         data_slice = self.data.data
+        print('Fetching sample index:', i, flush=True)
         chrom = self.data.encodings['chrom'][data_slice['chrom'][i]]
+        print('Decoding chrom finished:', i, flush=True)
         summit = data_slice['summit'][i]
         sample_id = self.data.encodings['sample_id'][data_slice['sample_id'][i]]
         density = data_slice['density'][i]
