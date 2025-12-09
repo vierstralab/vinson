@@ -366,7 +366,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             - 'sample_id': str, sample identifier
         """
         self._init_fileread()
-        print('Started processing batch index:', i, flush=True)
         data_slice = self.data[i]
         chrom = data_slice['chrom']
         summit = data_slice['summit']
@@ -375,7 +374,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         bg = data_slice['background']
         read_depth = data_slice['read_depth']
         example_class = data_slice['class']
-        print('Slicing works batch index:', i, flush=True)
 
         if 'mean_density' in data_slice.keys():
             mean_density = data_slice["mean_density"]
@@ -396,15 +394,12 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         # indiv_id is expected to be in self.data if genotypes are included
         if self.include_genotypes:
             indiv_id = data_slice['indiv_id']
-            print('Getting sample sequence batch index:', i, flush=True)
             _, dna_seq, _, _ = self.get_sample_sequence(
                 interval,
                 indiv_id
             )
         else:
             dna_seq = self.fasta_extr[interval]
-        
-        print('Extracted sample sequence batch index:', i, flush=True)
 
         # One-hot encode DNA sequence
         #added upper for mouse fasta
@@ -418,29 +413,21 @@ class SequenceEmbedDataset(BaseSequenceDataset):
                 f"Error converting DNA to one-hot encoding ({chrom}:{summit} -- {sample_id})"
             )
             raise e
-        print('One-hot encoding done batch index:', i, flush=True)
         # Get embeddings
         embed = self.get_embedding_vec(sample_id)
-        print('Extracted embeddings batch index:', i, flush=True)
        
         # Adjust values as needed
         density = np.clip(density, None, self.clip_density)
 
-        print('Clipped values batch index:', i, flush=True)
         if 'dhs_weight' in data_slice:
-            print('Get weight from data slice batch index:', i, flush=True)
-            print(data_slice)
             weight = data_slice['dhs_weight']
         else:
-            print('Using weight of 1', i, flush=True)
             weight = np.float32(1.0)
 
-        print('Weights multiplied batch index:', i, flush=True)
         weight_mult = 1.0 if example_class == 1 else self.negatives_weight
         weight = weight * weight_mult
 
         bg = np.clip(bg, self.min_bg, None)
-        print('Finished processing batch index:', i, flush=True)
 
         return {
             "ohe_seq": ohe_seq,

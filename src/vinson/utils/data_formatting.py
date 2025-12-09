@@ -64,6 +64,10 @@ class VinsonData:
     def keys(self):
         """Return keys of the data dictionary."""
         return self.data.keys()
+    
+    def __contains__(self, key):
+        """Check if key is in the data dictionary."""
+        return key in self.data.keys()
 
     def __getitem__(self, i) -> dict:
         """Get data dict for a given index."""
