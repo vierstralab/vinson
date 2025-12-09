@@ -12,10 +12,11 @@ from lightning.pytorch.callbacks import (
 )
 
 import anndata as ad
+import gc
 
 from vinson.utils.helpers import read_configs, save_config, generate_run_name
-from vinson.utils.run import datamodule_from_config, model_from_config
-from vinson.utils.run import set_global_seed, set_worker_seed
+from vinson.utils.run import datamodule_from_config, model_from_config, set_global_seed, set_worker_seed
+from vinson.utils.helpers import get_number_of_train_examples
 
 torch.set_float32_matmul_precision('high')
 
@@ -231,12 +232,7 @@ if __name__ == "__main__":
     if config['hparams']['lr_scheduler'] == 'OneCycleLR':
         if config['hparams']['lr_scheduler_kwargs'].get('total_steps') is None:
             print('Setting total_steps for OneCycleLR...')
-            adata = ad.read_h5ad(args.anndata_file)
-            if 'n_examples' in adata.uns:
-                n_examples = adata.uns['n_examples']
-            else:
-                # fallback estimate
-                n_examples = 125_000_000 * len(adata.uns['epoch_names'])
+            n_examples = get_number_of_train_examples(args.anndata_file)
             config['hparams']['lr_scheduler_kwargs']['total_steps'] = round(n_examples / datamodule.dataloader_kwargs['batch_size'] / trainer.num_devices)
 
     print('Initializing model...', flush=True)
