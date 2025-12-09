@@ -1,7 +1,5 @@
 import os
 import sys
-import random
-import numpy as np
 from argparse import ArgumentParser
 
 import torch
@@ -197,6 +195,7 @@ if __name__ == "__main__":
         config["logging_params"]["val_check_interval"] = 1.0
 
     # Initialize trainer
+    print('Initializing trainer...', flush=True)
     trainer = init_multigpu_trainer(
         outdir,
         accelerator=args.accelerator,
@@ -218,6 +217,7 @@ if __name__ == "__main__":
     )
 
     # Setup dataloaders
+    print('Initializing datamodule...', flush=True)
     datamodule = datamodule_from_config(
         config,
         anndata_file=args.anndata_file,
@@ -229,10 +229,12 @@ if __name__ == "__main__":
     if config['hparams']['lr_scheduler'] == 'OneCycleLR':
         if config['hparams']['lr_scheduler_kwargs']['total_steps'] is None:
             print('Setting total_steps for OneCycleLR...')
-            config['hparams']['lr_scheduler_kwargs']['total_steps'] = config['hparams']['epochs'] * datamodule.define_steps_per_epochs()
+            config['hparams']['lr_scheduler_kwargs']['total_steps'] = config['hparams']['epochs'] * datamodule.get_train_steps_per_epoch()
 
+    print('Initializing model...', flush=True)
     model = model_from_config(config, checkpoint_path=checkpoint)
 
+    print('Training...', flush=True)
     # Start training
     fit_model(
         model,

@@ -77,7 +77,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         )
         return train_dataset
 
-    def define_train_steps_per_epochs(self):
+    def get_train_steps_per_epoch(self):
         #define num steps for OneCycleLR, ~not optimal way
         self.setup('fit')
         _, col_idx = get_examples_indices_from_layer(
