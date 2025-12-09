@@ -37,8 +37,17 @@ class VinsonData:
     def __repr__(self):
         return f"VinsonData with keys: {list(self.data.keys())}. Encoded columns: {list(self.encodings.keys())}."
     
-    def decode(self, key: str, indices: np.ndarray) -> np.ndarray:
-        """Decode encoded values for a given key."""
+    def decode(self, key: str) -> np.ndarray:
+        return self._decode(key, self.data[key])
+    
+    def _decode(self, key: str, indices: np.ndarray) -> np.ndarray:
+        """
+        Decode encoded values for a given key.
+        
+        Parameters:
+            key (str): Key of the data dictionary to decode.
+            indices (np.ndarray): Encoded indices to decode.
+        """
         if key not in self.encodings:
             raise ValueError(f"Key {key} is not encoded.")
         return self.encodings[key][indices]
@@ -63,7 +72,7 @@ class VinsonData:
         return_dict = {}
         for key in self.data:
             if key in self.encodings:
-                return_dict[key] = self.decode(key, self.data[key][i])
+                return_dict[key] = self._decode(key, self.data[key][i])
             else:
                 return_dict[key] = self.data[key][i]
         return return_dict

@@ -103,7 +103,7 @@ class BaseSequenceDataset(Dataset):
         """
         Return the number of samples in the dataset.
         """
-        return len(self.data['chrom'])
+        return len(self.data)
 
     def get_embedding_vec(self, sample_id) -> np.ndarray:
         """
@@ -368,7 +368,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             - 'sample_id': str, sample identifier
         """
         self._init_fileread()
- 
+        print(i, type(i))
         data_slice = self.data[i]
         chrom = data_slice['chrom']
         summit = data_slice['summit']
