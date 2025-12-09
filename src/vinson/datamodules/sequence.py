@@ -1,7 +1,7 @@
 import lightning.pytorch as L
 from torch.utils.data import DataLoader
 from vinson.datasets.sequence import SequenceEmbedDataset
-from vinson.utils.data_formatting import extract_data_from_train_anndata, extract_variant_data_from_anndata, get_examples_indices_from_layer
+from vinson.utils.data_formatting import extract_data_from_train_anndata, extract_variant_data_from_anndata
 from vinson.datasets.sequence import SequenceEmbedDataset, VariantEmbedDataset
 from itertools import cycle
 from torchdata.stateful_dataloader import StatefulDataLoader
@@ -47,29 +47,43 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.train_dataset_kwargs = train_dataset_kwargs
         self.valid_dataset_kwargs = valid_dataset_kwargs
         self.dataloader_kwargs = dataloader_kwargs
+        self.train_data = None
+        self.validation_data = None
         
-        self.adata = None
         self.current_train_epoch = self.validation_epoch = self.epoch_names = None
         self.train_epoch_cycler = None
 
     def setup(self, stage):
         # changes epochs
-        self.adata = ad.read_h5ad(self.anndata_file)
-        if "epoch_names" not in self.adata.uns:
+        adata = ad.read_h5ad(self.anndata_file)
+        if "epoch_names" not in adata.uns:
             raise KeyError("AnnData missing 'epoch_names' in .uns")
-        self.epoch_names = self.adata.uns['epoch_names']
-        self.train_epoch_cycler = cycle(self.epoch_names)
+        
+        self.epoch_names = adata.uns['epoch_names']
+
+        self.train_data = {
+            name: self.get_data(adata, name, dhs_split='train', sample_split='train')
+            for name in self.epoch_names
+        }
+
         self.validation_epoch = self.epoch_names[0]
+
+        self.validation_data = {
+            name: self.get_data(adata, name, dhs_split='val', sample_split='train')
+            for name in [self.validation_epoch]
+        }
+        
+        self.train_epoch_cycler = cycle(self.epoch_names)
+
         logger.info(f"Finished setup. Available epochs: {self.epoch_names}")
 
     def train_dataset(self, epoch=None):
         if epoch is None:
             epoch = self.current_train_epoch
-        data = self.get_data(epoch, 'train', 'train')
 
         # Create new dataset
         train_dataset = SequenceEmbedDataset(
-            data=data,
+            data=self.train_data[epoch],
             fasta_file=self.fasta_file,
             genotype_file=self.genotype_file,
             **self.train_dataset_kwargs,
@@ -79,14 +93,12 @@ class SeqEmbedDataModule(L.LightningDataModule):
     def get_train_steps_per_epoch(self):
         #define num steps for OneCycleLR, ~not optimal way
         self.setup('fit')
-        _, col_idx = get_examples_indices_from_layer(
-            self.adata.layers[f'class.{self.epoch_names[0]}'].tocoo()
-        )
+        n = len(self.train_dataset[self.epoch_names[0]])
         
-        return len(col_idx) // self.dataloader_kwargs['batch_size']
+        return len(n) // self.dataloader_kwargs['batch_size']
 
     def validation_dataset(self):
-        data = self.get_data(self.validation_epoch, 'val', 'train')
+        data = self.validation_data[self.validation_epoch]
 
         valid_dataset = SequenceEmbedDataset(
             data=data,
@@ -120,11 +132,13 @@ class SeqEmbedDataModule(L.LightningDataModule):
             **self.dataloader_kwargs,
         )
 
-    def get_data(self, suffix, dhs_split='train', sample_split='train'):
+    @staticmethod
+    def get_data(full_adata: ad.AnnData, suffix, dhs_split='train', sample_split='train'):
         """
         Generic method to extract data from anndata object for a given split
 
         Args:
+            full_adata (ad.AnnData): Full AnnData object containing all data
             suffix (str): suffix of the epoch to extract. Gets added to layer names as `{layer}.{suffix}`
             dhs_split (str): which DHS split to use (train/val/test)
             sample_split (str): which sample split to use (train/val/test)
@@ -133,7 +147,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
             data (dict): dictionary with extracted data
             embeddings_df (pd.DataFrame): DataFrame with extracted embeddings
         """
-        full_adata = self.adata #self.read_adata()
         adata = full_adata[
             full_adata.obsm['split_data'] == sample_split,
             full_adata.varm['split_data'] == dhs_split
@@ -170,10 +183,11 @@ class SeqEmbedVariantDataModule(SeqEmbedDataModule):
             **self.valid_dataset_kwargs,
         )
 
-    def get_data(self, suffix, dhs_split="train", sample_split="train"):
+    @staticmethod
+    def get_data(full_adata: ad.AnnData, suffix, dhs_split="train", sample_split="train"):
         """Extract variant-level data from AnnData."""
-        adata = self.adata[
-            self.adata.obsm["split_data"] == sample_split,
-            self.adata.varm["split_data"] == dhs_split,
+        adata = full_adata[
+            full_adata.obsm["split_data"] == sample_split,
+            full_adata.varm["split_data"] == dhs_split,
         ]
         return extract_variant_data_from_anndata(adata, suffix)
