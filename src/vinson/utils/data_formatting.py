@@ -27,6 +27,11 @@ class VinsonData:
         self.encodings = encodings
         self.embeddings_df = embeddings_df
         self.is_variant = is_variant
+
+        first_key = next(iter(self.data))
+        self.length = len(self.data[first_key])
+        for key, value in self.data.items():
+            assert len(value) == self.length, f"All data arrays must have the same length. Key {key} has length {len(value)}, expected {self.length}."
     
     def __repr__(self):
         return f"VinsonData with keys: {list(self.data.keys())}. Encoded columns: {list(self.encodings.keys())}."
@@ -40,8 +45,7 @@ class VinsonData:
     
     def __len__(self):
         """Return number of samples in the dataset."""
-        first_key = next(iter(self.data))
-        return len(self.data[first_key])
+        return self.length
     
     def keys(self):
         """Return keys of the data dictionary."""
