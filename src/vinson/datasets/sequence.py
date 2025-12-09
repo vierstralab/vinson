@@ -429,8 +429,8 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         bg = np.clip(bg, self.min_bg, None)
 
         return {
-            "ohe_seq": ohe_seq,
-            "embed": embed,
+            "ohe_seq": ohe_seq.copy(),
+            "embed": embed.copy(),
             "class": example_class,
             "mean_density": mean_density,
             "density": density,
