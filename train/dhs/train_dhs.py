@@ -227,7 +227,7 @@ if __name__ == "__main__":
     )
     
     if config['hparams']['lr_scheduler'] == 'OneCycleLR':
-        if config['hparams']['lr_scheduler_kwargs']['total_steps'] is None:
+        if config['hparams']['lr_scheduler_kwargs'].get('total_steps') is None:
             print('Setting total_steps for OneCycleLR...')
             config['hparams']['lr_scheduler_kwargs']['total_steps'] = config['hparams']['epochs'] * datamodule.get_train_steps_per_epoch() // trainer.num_devices
 
