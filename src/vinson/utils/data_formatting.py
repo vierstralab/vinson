@@ -70,8 +70,8 @@ class VinsonData:
     def __getitem__(self, i):
         """Get data array for a given index."""
         return_dict = {}
-        for key in self.data:
-            return_dict[key] = self.data[key][i]
+        for key, value in self.data.items():
+            return_dict[key] = value[i]
             if key in self.encodings:
                 return_dict[key] = self._decode(key, return_dict[key])
                 

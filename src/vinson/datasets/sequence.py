@@ -367,7 +367,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             - 'sample_id': str, sample identifier
         """
         self._init_fileread()
-        print(i, type(i))
         data_slice = self.data[i]
         chrom = data_slice['chrom']
         summit = data_slice['summit']
