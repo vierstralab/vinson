@@ -368,9 +368,9 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         """
         self._init_fileread()
         data_slice = self.data.data
-        chrom = data_slice['chrom'][i]
+        chrom = self.data.encodings['chrom'][data_slice['chrom'][i]]
         summit = data_slice['summit'][i]
-        sample_id = data_slice['sample_id'][i]
+        sample_id = self.data.encodings['sample_id'][data_slice['sample_id'][i]]
         density = data_slice['density'][i]
         bg = data_slice['background'][i]
         read_depth = data_slice['read_depth'][i]
@@ -394,9 +394,10 @@ class SequenceEmbedDataset(BaseSequenceDataset):
 
         # indiv_id is expected to be in self.data if genotypes are included
         if self.include_genotypes:
+            indiv_id = self.data.encodings['indiv_id'][data_slice['indiv_id'][i]]
             _, dna_seq, _, _ = self.get_sample_sequence(
                 interval,
-                data_slice['indiv_id']
+                indiv_id
             )
         else:
             dna_seq = self.fasta_extr[interval]
