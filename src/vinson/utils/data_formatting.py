@@ -39,6 +39,7 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
         **{x: y for x, y in optional_keys.items() if x in data},
     }
     for key, dtype in keys.items():
+        data[key] = np.asarray(data[key])
         if dtype == np.str_:
             mask = pd.isna(data[key]) | np.isin(data[key], ['None', 'nan'])
             data[key][mask] = ''
@@ -82,8 +83,8 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str):
     """
     
     layers = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
-
-    row_idx, col_idx, layers = update_layers_dict(layers, train_adata, suffix)
+    update_layers_dict(layers, train_adata, suffix)
+    row_idx, col_idx = get_examples_indices_from_layer(layers["class"])
 
     data = {
         'read_depth': train_adata.obs['nuclear_reads'].values[row_idx],
@@ -120,7 +121,8 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str):
     """
     
     layers = {"ref_counts": None, "total_counts": None, "BAD": None, "logit_es": None}
-    row_idx, col_idx = update_layers_dict(layers, train_adata, suffix)
+    update_layers_dict(layers, train_adata, suffix)
+    row_idx, col_idx = get_examples_indices_from_layer(layers["ref_counts"])
 
     data = {
         'chrom': train_adata.var['#chr'].values[col_idx],
@@ -214,5 +216,3 @@ def update_layers_dict(layers: dict, train_adata: ad.AnnData, suffix: str):
     for layer_name in layers:
         epoch_layer_name = f"{layer_name}.{suffix}"
         layers[layer_name] = train_adata.layers[epoch_layer_name].tocoo()
-    
-    return get_examples_indices_from_layer(layers["class"])
