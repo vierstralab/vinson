@@ -87,7 +87,7 @@ def calculate_per_dhs_fold_changes(
         ).astype(int)
         average_log_data = log_data @ sample_by_annotation / sample_by_annotation.sum(axis=0)
         
-        eval_dataset[col + '_log2_fc'] = eval_dataset['_tmp_log_data'] - eval_dataset['dhs_id'].map(average_log_data.mean(axis=1))
+        eval_dataset[col + '_log2_fc'] = eval_dataset['_tmp_log_data'] - eval_dataset['dhs_id'].astype(str).map(average_log_data.mean(axis=1))
     
         del eval_dataset['_tmp_log_data']
 
