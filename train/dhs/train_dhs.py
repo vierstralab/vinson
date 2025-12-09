@@ -237,7 +237,7 @@ if __name__ == "__main__":
             else:
                 # fallback estimate
                 n_examples = 125_000_000 * len(adata.uns['epoch_names'])
-            config['hparams']['lr_scheduler_kwargs']['total_steps'] = (n_examples / datamodule.dataloader_kwargs['batch_size']) // trainer.num_devices
+            config['hparams']['lr_scheduler_kwargs']['total_steps'] = round(n_examples / datamodule.dataloader_kwargs['batch_size'] / trainer.num_devices)
 
     print('Initializing model...', flush=True)
     model = model_from_config(config, checkpoint_path=checkpoint)
