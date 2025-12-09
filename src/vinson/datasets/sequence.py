@@ -187,9 +187,7 @@ class BaseSequenceDataset(Dataset):
         Returns:
             tuple: (base_sequence str, variants List[Variant])
         """
-        print('Getting sample sequence for interval:', interval, 'indiv_id:', indiv_id, flush=True)
         seq = self.fasta_extr[interval]
-        print('Got sample sequence for interval:', interval, 'indiv_id:', indiv_id, flush=True)
         seq_iupac = seq_ref = seq_alt = str(seq) # modify all 3 regardless
 
         try:
@@ -198,7 +196,6 @@ class BaseSequenceDataset(Dataset):
                 raise ValueError
         except ValueError:
             return 0, seq_iupac, seq_ref, seq_alt
-        print('Extracted variants from tabix:', interval, 'indiv_id:', indiv_id, flush=True)
         assert 'INDIV' in indiv_id, f"INDIV_ID format incorrect ({indiv_id}, {type(indiv_id)})."
         
         variants = variants[variants["indiv_id"] == f"{indiv_id}.bed.gz"]
@@ -227,7 +224,7 @@ class BaseSequenceDataset(Dataset):
                     "Query variant not found in genotyping file "
                     f"({str(interval)}/{indiv_id}/{reference_variant.pos}/{reference_variant.alt})"
                 )
-        print('Convert df to variant_intervals:', interval, 'indiv_id:', indiv_id, flush=True)
+
         variants = df_to_variant_intervals(
             variants, extra_columns=extra_columns
         )
@@ -267,7 +264,6 @@ class BaseSequenceDataset(Dataset):
                     seq_iupac = replace_at(seq_iupac, rel_pos, base)
                     seq_ref = replace_at(seq_ref, rel_pos, base)
                     seq_alt = replace_at(seq_alt, rel_pos, base)
-        print('Processed variant intervals:', interval, 'indiv_id:', indiv_id, flush=True)
 
         if reference_variant is not None:
             if reference_variant.gt == "1|0":
@@ -422,9 +418,10 @@ class SequenceEmbedDataset(BaseSequenceDataset):
                 f"Error converting DNA to one-hot encoding ({chrom}:{summit} -- {sample_id})"
             )
             raise e
-
+        print('One-hot encoding done batch index:', i, flush=True)
         # Get embeddings
         embed = self.get_embedding_vec(sample_id)
+        print('Got embeddings batch index:', i, flush=True)
        
         # Adjust values as needed
         density = np.clip(density, None, self.clip_density)
