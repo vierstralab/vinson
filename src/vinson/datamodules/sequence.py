@@ -120,6 +120,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             shuffle=True,
             **self.dataloader_kwargs,
         )
+        print('Finished creating train dataloader for epoch:', self.current_train_epoch, flush=True)
         return data_loader
     
     def teardown(self, stage: str):

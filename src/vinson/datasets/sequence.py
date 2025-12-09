@@ -303,7 +303,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         Standard deviation of Gaussian noise added to embeddings.
 
     """
-
     def __init__(
         self,
         data: VinsonData,
@@ -407,15 +406,14 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         #added upper for mouse fasta
         try:
             ohe_seq = one_hot_encode(dna_seq.upper(), dtype=np.float32)
+            # Reverse complete (augmentation)
+            if self.reverse_complement and np.random.choice(2) == 1:
+                ohe_seq = np.flip(ohe_seq, [0, 1])
         except ValueError as e:
             logger.error(
                 f"Error converting DNA to one-hot encoding ({chrom}:{summit} -- {sample_id})"
             )
             raise e
-
-        # Reverse complete (augmentation)
-        if self.reverse_complement and np.random.choice(2) == 1:
-            ohe_seq = np.flip(ohe_seq, [0, 1])
 
         # Get embeddings
         embed = self.get_embedding_vec(sample_id)
@@ -434,8 +432,8 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         bg = np.clip(bg, self.min_bg, None)
 
         return {
-            "ohe_seq": ohe_seq.copy(),
-            "embed": embed.copy(),
+            "ohe_seq": ohe_seq,
+            "embed": embed,
             "class": example_class,
             "mean_density": mean_density,
             "density": density,
