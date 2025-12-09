@@ -122,6 +122,7 @@ def sanitize_data(data: dict, encodings: dict = None, is_variant=False) -> tuple
         if dtype == np.str_:
             if key in encodings:
                 data[key] = np.asarray(data[key], dtype=np.int32)
+                encodings[key] = np.array(encodings[key], dtype=np.str_)
                 mask = pd.isna(encodings[key]) | np.isin(encodings[key], ['None', 'nan'])
                 encodings[key][mask] = ''
             else:
