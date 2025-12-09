@@ -52,7 +52,7 @@ class VinsonData:
         return self.data.keys()
 
     def __getitem__(self, i):
-        """Get data array for a given key."""
+        """Get data array for a given index."""
         return_dict = {}
         for key in self.data:
             if key in self.encodings:
