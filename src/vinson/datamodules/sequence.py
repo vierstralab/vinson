@@ -1,7 +1,7 @@
 import lightning.pytorch as L
 from torch.utils.data import DataLoader
 from vinson.datasets.sequence import SequenceEmbedDataset
-from vinson.utils.data_formatting import extract_data_from_train_anndata, extract_variant_data_from_anndata
+from vinson.utils.data_formatting import extract_data_from_train_anndata, extract_variant_data_from_anndata, get_examples_indices_from_layer
 from vinson.datasets.sequence import SequenceEmbedDataset, VariantEmbedDataset
 from itertools import cycle
 from torchdata.stateful_dataloader import StatefulDataLoader
@@ -9,7 +9,6 @@ from torchdata.stateful_dataloader import StatefulDataLoader
 import anndata as ad
 
 import gc
-import torch
 
 # TODO: move all logging to one helper file
 import logging
@@ -63,8 +62,10 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.validation_epoch = self.epoch_names[0]
         logger.info(f"Finished setup. Available epochs: {self.epoch_names}")
 
-    def train_dataset(self):
-        data, embeddings_df = self.get_data(self.current_train_epoch, 'train', 'train')
+    def train_dataset(self, epoch=None):
+        if epoch is None:
+            epoch = self.current_train_epoch
+        data, embeddings_df = self.get_data(epoch, 'train', 'train')
 
         # Create new dataset
         train_dataset = SequenceEmbedDataset(
@@ -76,13 +77,14 @@ class SeqEmbedDataModule(L.LightningDataModule):
         )
         return train_dataset
 
-    def define_steps_per_epochs(self):
-            #define num steps for OneCycleLR, ~not optimal way
-            dl = self.train_dataloader()
-            self.current_train_epoch = 'epoch_1'
-            self.train_epoch_cycler = cycle(self.epoch_names)
-            
-            return len(dl)
+    def define_train_steps_per_epochs(self):
+        #define num steps for OneCycleLR, ~not optimal way
+        self.setup('fit')
+        _, col_idx = get_examples_indices_from_layer(
+            self.adata.layers[f'class.{self.epoch_names[0]}'].tocoo()
+        )
+        
+        return len(col_idx) // (self.trainer.num_devices * self.dataloader_kwargs['batch_size'])
 
     def validation_dataset(self):
         data, embeddings_df = self.get_data(self.validation_epoch, 'val', 'train')
@@ -141,9 +143,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
         data, embeddings_df = extract_data_from_train_anndata(adata, suffix)
         return data, embeddings_df
-    
-    
-    
+
+
 class SeqEmbedVariantDataModule(SeqEmbedDataModule):
     """
     Variant version of SeqEmbedDataModule.
@@ -152,7 +153,6 @@ class SeqEmbedVariantDataModule(SeqEmbedDataModule):
       - Uses extract_var_data_from_anndata
       - Uses VariantEmbedDataset instead of SequenceEmbedDataset
     """
-    
     def train_dataset(self):
         data, embeddings_df = self.get_data(self.current_train_epoch, "train", "train")
         return VariantEmbedDataset(

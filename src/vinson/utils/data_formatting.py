@@ -33,20 +33,17 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
     optional_keys = {
         "indiv_id": np.str_,
         "dhs_weight": np.float32,
-        'mean_density': np.float32
     }
-
     keys = {
         **data_keys,
         **{x: y for x, y in optional_keys.items() if x in data},
     }
     for key, dtype in keys.items():
-        arr = np.asarray(data[key])
         if dtype == np.str_:
-            mask = pd.isna(arr) | np.isin(arr, ['None', 'nan'])
-            arr[mask] = ''
-        data[key] = np.ascontiguousarray(arr.astype(dtype))
-    
+            mask = pd.isna(data[key]) | np.isin(data[key], ['None', 'nan'])
+            data[key][mask] = ''
+        data[key] = np.ascontiguousarray(data[key].astype(dtype))
+
     if 'background' in data:
         data['background'] = np.nan_to_num(data['background'])
 
@@ -86,7 +83,7 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str):
     
     layers = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
 
-    row_idx, col_idx = update_layers_dict(layers, train_adata, suffix)
+    row_idx, col_idx, layers = update_layers_dict(layers, train_adata, suffix)
 
     data = {
         'read_depth': train_adata.obs['nuclear_reads'].values[row_idx],
@@ -100,9 +97,6 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str):
     }
     if 'indiv_id' in train_adata.obsm:
         data['indiv_id'] = get_indiv_id_info(train_adata, row_idx)
-    
-    if 'mean_density' in train_adata.varm:
-        data['mean_density'] = train_adata.varm['mean_density'][col_idx]
 
     if 'dhs_weight' in train_adata.varm:
         data['dhs_weight'] = train_adata.varm['dhs_weight'][col_idx]
@@ -209,8 +203,11 @@ def compute_if_dask(array):
 
 
 def get_indiv_id_info(train_adata: ad.AnnData, row_idx: np.ndarray):
-    return train_adata.obsm['indiv_id'][row_idx]
+    return train_adata.obsm['indiv_id'].values[row_idx]
 
+def get_examples_indices_from_layer(layer_coo):
+    row_idx, col_idx = layer_coo.row, layer_coo.col
+    return row_idx, col_idx
 
 def update_layers_dict(layers: dict, train_adata: ad.AnnData, suffix: str):
     assert len(layers) > 0, "Must provide at least one layer to extract"
@@ -218,6 +215,4 @@ def update_layers_dict(layers: dict, train_adata: ad.AnnData, suffix: str):
         epoch_layer_name = f"{layer_name}.{suffix}"
         layers[layer_name] = train_adata.layers[epoch_layer_name].tocoo()
     
-    class_coo = layers["class"]
-    row_idx, col_idx = class_coo.row, class_coo.col
-    return row_idx, col_idx
+    return get_examples_indices_from_layer(layers["class"])
