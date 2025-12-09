@@ -78,7 +78,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
                     )
                 }
             for layer in layer_names:
-                if layer.split('.')[1] == name:
+                if layer.endswith(name):
                     del adata.layers[layer]
                     gc.collect()
         
