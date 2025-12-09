@@ -84,7 +84,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             self.adata.layers[f'class.{self.epoch_names[0]}'].tocoo()
         )
         
-        return len(col_idx) // (self.trainer.num_devices * self.dataloader_kwargs['batch_size'])
+        return len(col_idx) // self.dataloader_kwargs['batch_size']
 
     def validation_dataset(self):
         data, embeddings_df = self.get_data(self.validation_epoch, 'val', 'train')

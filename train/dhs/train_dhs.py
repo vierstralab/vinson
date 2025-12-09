@@ -229,7 +229,7 @@ if __name__ == "__main__":
     if config['hparams']['lr_scheduler'] == 'OneCycleLR':
         if config['hparams']['lr_scheduler_kwargs']['total_steps'] is None:
             print('Setting total_steps for OneCycleLR...')
-            config['hparams']['lr_scheduler_kwargs']['total_steps'] = config['hparams']['epochs'] * datamodule.get_train_steps_per_epoch()
+            config['hparams']['lr_scheduler_kwargs']['total_steps'] = config['hparams']['epochs'] * datamodule.get_train_steps_per_epoch() // trainer.num_devices
 
     print('Initializing model...', flush=True)
     model = model_from_config(config, checkpoint_path=checkpoint)
