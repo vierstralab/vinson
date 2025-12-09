@@ -92,14 +92,14 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
         # Create new dataset
         data = self.train_data[epoch]
-        print('Creating train dataset for epoch:', epoch)
+        print('Creating train dataset for epoch:', epoch, flush=True)
         train_dataset = SequenceEmbedDataset(
             data=data,
             fasta_file=self.fasta_file,
             genotype_file=self.genotype_file,
             **self.train_dataset_kwargs,
         )
-        print('Finished train dataset for epoch:', epoch)
+        print('Finished train dataset for epoch:', epoch, flush=True)
         return train_dataset
 
     def validation_dataset(self):
