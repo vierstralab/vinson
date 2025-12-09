@@ -43,10 +43,15 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
         if dtype == np.str_:
             mask = pd.isna(data[key]) | np.isin(data[key], ['None', 'nan'])
             data[key][mask] = ''
-        data[key] = np.ascontiguousarray(data[key].astype(dtype))
+        else:
+            if data[key].dtype != dtype:
+                data[key] = data[key].astype(dtype, copy=True)
+
+        if not data[key].flags["C_CONTIGUOUS"]:
+            data[key] = np.ascontiguousarray(data[key])
 
     if 'background' in data:
-        data['background'] = np.nan_to_num(data['background'])
+        data['background'] = np.nan_to_num(data['background'], copy=False)
 
     return data
 
