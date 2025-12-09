@@ -133,13 +133,13 @@ def sanitize_data(data: dict, encodings: dict = None, is_variant=False) -> tuple
         if dtype == np.str_:
             if key in encodings:
                 data[key] = np.asarray(data[key], dtype=np.int32)
-                encodings[key] = np.array(encodings[key], dtype=np.str_)
+                encodings[key] = np.asarray(encodings[key], dtype=np.str_)
                 mask = pd.isna(encodings[key]) | np.isin(encodings[key], ['None', 'nan'])
                 encodings[key][mask] = ''
             else:
                 enc, inverse = np.unique(data[key], return_inverse=True)
-                data[key] = inverse.astype(np.int32)
-                encodings[key] = enc.astype(np.str_)
+                data[key] = np.asarray(inverse, dtype=np.int32)
+                encodings[key] = np.asarray(enc, dtype=np.str_)
         else:
             data[key] = np.asarray(data[key], dtype=dtype)
         if not data[key].flags["C_CONTIGUOUS"]:
