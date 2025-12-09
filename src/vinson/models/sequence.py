@@ -183,30 +183,8 @@ class AbstractBaseSequenceModel(L.LightningModule):
 
         if lr_scheduler is None:
             return optimizer
-        
-        scheduler_kwargs = self.lr_scheduler_kwargs # to avoid modifying original dict
 
-        if self.lr_scheduler == "OneCycleLR":
-            has_datamodule = hasattr(self.trainer, "datamodule") and self.trainer.datamodule is not None
-            steps_per_epoch = self.lr_scheduler_kwargs.get("steps_per_epoch")
-            max_epochs = self.lr_scheduler_kwargs.get("epochs")
-            if steps_per_epoch is None:
-                if has_datamodule:
-                    # infer steps per epoch from datamodule
-                    steps_per_epoch = len(self.trainer.datamodule.train_dataloader()) // self.trainer.num_devices
-                else:
-                    # implement checks when dataset is directly passed to trainer
-                    raise ValueError("steps_per_epoch must be provided in lr_scheduler_kwargs when no datamodule is used.")
-
-            if max_epochs is None:
-                max_epochs = getattr(self.trainer, "max_epochs", None)
-
-            scheduler_kwargs = {
-                **scheduler_kwargs,
-                "steps_per_epoch": steps_per_epoch,
-                "epochs": max_epochs,
-            }
-        scheduler = lr_scheduler(optimizer, **scheduler_kwargs)
+        scheduler = lr_scheduler(optimizer, **self.lr_scheduler)
 
         return {
             "optimizer": optimizer,
