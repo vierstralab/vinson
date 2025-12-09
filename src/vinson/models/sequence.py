@@ -184,7 +184,7 @@ class AbstractBaseSequenceModel(L.LightningModule):
         if lr_scheduler is None:
             return optimizer
 
-        scheduler = lr_scheduler(optimizer, **self.lr_scheduler)
+        scheduler = lr_scheduler(optimizer, **self.lr_scheduler_kwargs)
 
         return {
             "optimizer": optimizer,
