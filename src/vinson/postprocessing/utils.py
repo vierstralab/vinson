@@ -105,6 +105,6 @@ def get_samples_used_in_training_for_dhs(train_adata: ad.AnnData, dhs_ids):
     in_training = np.zeros(train_adata.shape[0], dtype=bool)
     for epoch_name in train_adata.uns['epoch_names']:
         example_class = train_adata[:, dhs_ids].layers[f'class.{epoch_name}']
-        in_training |= example_class.toarray()[:, 0] != 0
+        in_training |= example_class.getnnz(axis=1) > 0
     return train_adata.obs_names[in_training]
 
