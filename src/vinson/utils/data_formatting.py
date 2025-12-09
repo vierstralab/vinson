@@ -71,10 +71,10 @@ class VinsonData:
         """Get data array for a given index."""
         return_dict = {}
         for key in self.data:
+            return_dict[key] = self.data[key][i]
             if key in self.encodings:
-                return_dict[key] = self._decode(key, self.data[key][i])
-            else:
-                return_dict[key] = self.data[key][i]
+                return_dict[key] = self._decode(key, return_dict[key])
+                
         return return_dict
 
     def write_h5(self, h5_file: str):
@@ -83,7 +83,7 @@ class VinsonData:
         with h5py.File(h5_file, 'w') as f:
             for key, value in self.data.items():
                 if key in self.encodings:
-                    value = np.astype(self.decode(key, value), strings_dtype)
+                    value = np.astype(self.decode(key), strings_dtype)
                 f.create_dataset(key, data=value, compression="gzip")
 
     @classmethod

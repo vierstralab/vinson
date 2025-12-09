@@ -15,7 +15,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-
 class BaseSequenceDataset(Dataset):
     """
     Base PyTorch Dataset for genomic sequence and embedding data.
