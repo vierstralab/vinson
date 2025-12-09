@@ -15,38 +15,9 @@ from lightning.pytorch.callbacks import (
 
 from vinson.utils.helpers import read_configs, save_config, generate_run_name
 from vinson.utils.run import datamodule_from_config, model_from_config
-
+from vinson.utils.run import set_global_seed, set_worker_seed
 
 torch.set_float32_matmul_precision('high')
-
-
-def set_global_seed(seed=42):
-    # Python's built-in random module
-    random.seed(seed)
-
-    # Numpy's random module
-    np.random.seed(seed)
-
-    # PyTorch seed for CPU
-    torch.manual_seed(seed)
-
-    # PyTorch seed for all GPU devices (if using CUDA)
-    torch.cuda.manual_seed_all(seed)
-
-    # Make sure to disable CuDNN's non-deterministic optimizations
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-
-def set_worker_seed(worker_id):
-    # Set seed for Python and NumPy in each worker
-    worker_seed = torch.initial_seed() % 2**32
-    np.random.seed(worker_seed)
-    random.seed(worker_seed)
-
-# class IterateDataModule(L.Callback):
-#     def on_train_epoch_end(self, trainer, pl_module):
-#         trainer.datamodule.iterate_train_dataset()
 
 
 def init_multigpu_trainer(
@@ -258,7 +229,6 @@ if __name__ == "__main__":
     if config['hparams']['lr_scheduler'] == 'OneCycleLR':
         if config['hparams']['lr_scheduler_kwargs']['total_steps'] is None:
             print('Setting total_steps for OneCycleLR...')
-            datamodule.setup('fit')
             config['hparams']['lr_scheduler_kwargs']['total_steps'] = config['hparams']['epochs'] * datamodule.define_steps_per_epochs()
 
     model = model_from_config(config, checkpoint_path=checkpoint)
