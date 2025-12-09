@@ -42,6 +42,20 @@ class VinsonData:
         """Return number of samples in the dataset."""
         first_key = next(iter(self.data))
         return len(self.data[first_key])
+    
+    def keys(self):
+        """Return keys of the data dictionary."""
+        return self.data.keys()
+
+    def __getitem__(self, i):
+        """Get data array for a given key."""
+        return_dict = {}
+        for key in self.data:
+            if key in self.encodings:
+                return_dict[key] = self.encodings[key][self.data[key][i]]
+            else:
+                return_dict[key] = self.data[key][i]
+        return return_dict
 
     def write_h5(self, h5_file: str):
         """Convert data dictionary to H5 file."""

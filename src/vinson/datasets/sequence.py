@@ -60,12 +60,10 @@ class BaseSequenceDataset(Dataset):
         seqlen=1344,
     ):
         self.fasta_file = fasta_file
-        self.data = data.data
-        self.encodings = data.encodings
+        self.data = data
         self.reverse_complement = reverse_complement
         self.jitter = jitter
         self.noise = noise
-        self.embeddings_df = data.embeddings_df
         self.genotype_file = genotype_file
         
         assert seqlen % 2 == 0, "Error 'seqlen' must be a even number!"
@@ -122,7 +120,7 @@ class BaseSequenceDataset(Dataset):
             The embedding vector that sample.
         """
         # Cell type/state embeddings
-        x = self.embeddings_df.loc[sample_id].to_numpy(dtype=np.float32)
+        x = self.data.embeddings_df.loc[sample_id].to_numpy(dtype=np.float32)
 
         # Add a little Gaussian noise to embeddings
         if self.noise > 0:
@@ -375,18 +373,15 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             - 'sample_id': str, sample identifier
         """
         self._init_fileread()
-        chrom, summit, sample_id, density, bg, read_depth, example_class = (
-            self.data["chrom"][i],
-            self.data["summit"][i],
-            self.data["sample_id"][i],
-            self.data["density"][i],
-            self.data["background"][i],
-            self.data["read_depth"][i],
-            self.data["class"][i],
-        )
-        # Decode categorical variables
-        chrom = self.encodings['chrom'][chrom]
-        sample_id = self.encodings['sample_id'][sample_id]
+ 
+        data_slice = self.data[i]
+        chrom = data_slice['chrom']
+        summit = data_slice['summit']
+        sample_id = data_slice['sample_id']
+        density = data_slice['density']
+        bg = data_slice['background']
+        read_depth = data_slice['read_depth']
+        example_class = data_slice['class']
 
         if 'mean_density' in self.data.keys():
             mean_density = self.data["mean_density"][i]
@@ -406,10 +401,9 @@ class SequenceEmbedDataset(BaseSequenceDataset):
 
         # indiv_id is expected to be in self.data if genotypes are included
         if self.include_genotypes:
-            indiv_id = self.encodings['indiv_id'][self.data['indiv_id'][i]]
             _, dna_seq, _, _ = self.get_sample_sequence(
                 interval,
-                indiv_id
+                data_slice['indiv_id']
             )
         else:
             dna_seq = self.fasta_extr[interval]
