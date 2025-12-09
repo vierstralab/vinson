@@ -128,7 +128,8 @@ def sanitize_data(data: dict, encodings: dict = None, is_variant=False) -> tuple
                 enc, inverse = np.unique(data[key], return_inverse=True)
                 data[key] = inverse.astype(np.int32)
                 encodings[key] = enc
-        data[key] = np.asarray(data[key], dtype=dtype)
+        else:
+            data[key] = np.asarray(data[key], dtype=dtype)
         if not data[key].flags["C_CONTIGUOUS"]:
             data[key] = np.ascontiguousarray(data[key])
 
