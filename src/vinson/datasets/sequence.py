@@ -396,6 +396,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         # indiv_id is expected to be in self.data if genotypes are included
         if self.include_genotypes:
             indiv_id = data_slice['indiv_id']
+            print('Getting sample sequence batch index:', i, flush=True)
             _, dna_seq, _, _ = self.get_sample_sequence(
                 interval,
                 indiv_id
