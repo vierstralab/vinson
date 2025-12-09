@@ -36,6 +36,12 @@ class VinsonData:
     
     def __repr__(self):
         return f"VinsonData with keys: {list(self.data.keys())}. Encoded columns: {list(self.encodings.keys())}."
+    
+    def decode(self, key: str, indices: np.ndarray) -> np.ndarray:
+        """Decode encoded values for a given key."""
+        if key not in self.encodings:
+            raise ValueError(f"Key {key} is not encoded.")
+        return self.encodings[key][indices]
 
     def to_df(self) -> pd.DataFrame:
         """Convert data dictionary to pandas DataFrame."""
@@ -57,7 +63,7 @@ class VinsonData:
         return_dict = {}
         for key in self.data:
             if key in self.encodings:
-                return_dict[key] = self.encodings[key][self.data[key][i]]
+                return_dict[key] = self.decode(key, self.data[key][i])
             else:
                 return_dict[key] = self.data[key][i]
         return return_dict
@@ -68,7 +74,7 @@ class VinsonData:
         with h5py.File(h5_file, 'w') as f:
             for key, value in self.data.items():
                 if key in self.encodings:
-                    value = np.astype(self.encodings[key][value], strings_dtype)
+                    value = np.astype(self.decode(key, value), strings_dtype)
                 f.create_dataset(key, data=value, compression="gzip")
 
     @classmethod
@@ -163,13 +169,13 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str) -> Vin
 
     encoded = {}
     encoding_sources = {
-        "sample_id": train_adata.obs_names.values,
-        "dhs_id": train_adata.var_names.values,
-        "chrom": train_adata.var["#chr"].values,
+        "sample_id": train_adata.obs_names,
+        "dhs_id": train_adata.var_names,
+        "chrom": train_adata.var["#chr"],
     }
 
     if "indiv_id" in train_adata.obsm:
-        encoding_sources["indiv_id"] = train_adata.obsm["indiv_id"][row_idx]
+        encoding_sources["indiv_id"] = train_adata.obsm["indiv_id"]
 
     for key, arr in encoding_sources.items():
         enc, inv = np.unique(arr, return_inverse=True)
