@@ -3,7 +3,7 @@ import anndata as ad
 import h5py
 import pandas as pd
 import dask.array as da
-
+import gc
 
 class VinsonData:
     """
@@ -124,7 +124,6 @@ def sanitize_data(data: dict, is_variant=False) -> tuple:
 
     if 'background' in data:
         data['background'] = np.nan_to_num(data['background'], copy=False)
-
     return data, encodings
 
 
@@ -153,9 +152,9 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str) -> Vin
         embeddings_df (pd.DataFrame): DataFrame containing motif embeddings.
     """
     
-    layers = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
-    update_layers_dict(layers, train_adata, suffix)
-    row_idx, col_idx = get_examples_indices_from_layer(layers["class"])
+    data = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
+    update_layers_dict(data, train_adata, suffix)
+    row_idx, col_idx = get_examples_indices_from_layer(data["class"])
 
     data = {
         'read_depth': train_adata.obs['nuclear_reads'].values[row_idx],
@@ -163,9 +162,9 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str) -> Vin
         'dhs_id': train_adata.var_names[col_idx],
         'chrom': train_adata.var['#chr'].values[col_idx],
         'summit': train_adata.var['dhs_summit'].values[col_idx],
-        'background': layers['mean_bg_agg_cutcounts'].data,
-        'class': layers['class'].data,
-        'density': layers['density'].data,
+        'background': data['mean_bg_agg_cutcounts'].data,
+        'class': data['class'].data,
+        'density': data['density'].data,
     }
     if 'indiv_id' in train_adata.obsm:
         data['indiv_id'] = get_indiv_id_info(train_adata, row_idx)

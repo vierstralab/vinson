@@ -49,6 +49,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.dataloader_kwargs = dataloader_kwargs
         self.train_data = None
         self.validation_data = None
+        self.train_size = None
         
         self.current_train_epoch = self.validation_epoch = self.epoch_names = None
         self.train_epoch_cycler = None
@@ -89,13 +90,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
             **self.train_dataset_kwargs,
         )
         return train_dataset
-
-    def get_train_steps_per_epoch(self):
-        #define num steps for OneCycleLR, ~not optimal way
-        self.setup('fit')
-        n = len(self.train_dataset[self.epoch_names[0]])
-        
-        return len(n) // self.dataloader_kwargs['batch_size']
 
     def validation_dataset(self):
         data = self.validation_data[self.validation_epoch]

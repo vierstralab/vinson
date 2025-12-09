@@ -11,6 +11,8 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 
+import anndata as ad
+
 from vinson.utils.helpers import read_configs, save_config, generate_run_name
 from vinson.utils.run import datamodule_from_config, model_from_config
 from vinson.utils.run import set_global_seed, set_worker_seed
@@ -229,7 +231,13 @@ if __name__ == "__main__":
     if config['hparams']['lr_scheduler'] == 'OneCycleLR':
         if config['hparams']['lr_scheduler_kwargs'].get('total_steps') is None:
             print('Setting total_steps for OneCycleLR...')
-            config['hparams']['lr_scheduler_kwargs']['total_steps'] = config['hparams']['epochs'] * datamodule.get_train_steps_per_epoch() // trainer.num_devices
+            adata = ad.read_h5ad(args.anndata_file)
+            if 'n_examples' in adata.uns:
+                n_examples = adata.uns['n_examples']
+            else:
+                # fallback estimate
+                n_examples = 125_000_000 * len(adata.uns['epoch_names'])
+            config['hparams']['lr_scheduler_kwargs']['total_steps'] = (n_examples / datamodule.dataloader_kwargs['batch_size']) // trainer.num_devices
 
     print('Initializing model...', flush=True)
     model = model_from_config(config, checkpoint_path=checkpoint)
