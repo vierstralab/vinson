@@ -43,9 +43,9 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
         if dtype == np.str_:
             mask = pd.isna(data[key]) | np.isin(data[key], ['None', 'nan'])
             data[key][mask] = ''
-        else:
-            if data[key].dtype != dtype:
-                data[key] = data[key].astype(dtype, copy=True)
+
+        if data[key].dtype != dtype:
+            data[key] = data[key].astype(dtype, copy=True)
 
         if not data[key].flags["C_CONTIGUOUS"]:
             data[key] = np.ascontiguousarray(data[key])
