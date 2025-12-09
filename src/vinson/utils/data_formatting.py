@@ -5,7 +5,60 @@ import pandas as pd
 import dask.array as da
 
 
-def sanitize_data(data: dict, is_variant=False) -> dict:
+class VinsonData:
+    """
+    Class for handling Vinson data formatting and conversion.
+
+    Parameters
+    ----------
+    data : dict
+        Dictionary containing sample metadata. {
+            'chrom': ..., 'summit': ..., etc.
+        }
+    encodings : dict
+        Dictionary containing encodings for categorical variables. {
+            'chrom': np.array, ...
+        }
+    embeddings_df : pd.DataFrame
+        DataFrame of cell-type/state embeddings indexed by sample ID.
+    """
+    def __init__(self, data: dict, encodings: dict, embeddings_df: pd.DataFrame, is_variant=False):
+        self.data = data
+        self.encodings = encodings
+        self.embeddings_df = embeddings_df
+        self.is_variant = is_variant
+    
+    def __repr__(self):
+        return f"VinsonData with keys: {list(self.data.keys())}. Encoded columns: {list(self.encodings.keys())}."
+
+    def to_df(self) -> pd.DataFrame:
+        """Convert data dictionary to pandas DataFrame."""
+        data_df = pd.DataFrame(self.data)
+        for key, enc in self.encodings.items():
+            data_df[key] = pd.Categorical.from_codes(data_df[key], enc)
+        return data_df
+    
+    def __len__(self):
+        """Return number of samples in the dataset."""
+        first_key = next(iter(self.data))
+        return len(self.data[first_key])
+
+    def write_h5(self, h5_file: str):
+        """Convert data dictionary to H5 file."""
+        strings_dtype = h5py.string_dtype(encoding='utf-8')
+        with h5py.File(h5_file, 'w') as f:
+            for key, value in self.data.items():
+                if key in self.encodings:
+                    value = np.astype(self.encodings[key][value], strings_dtype)
+                f.create_dataset(key, data=value, compression="gzip")
+
+    @classmethod
+    def from_raw(cls, raw_data: dict, embeddings_df: pd.DataFrame, is_variant=False):
+        data, encodings = sanitize_data(raw_data, is_variant=is_variant)
+        return cls(data, encodings, embeddings_df, is_variant=is_variant)
+
+
+def sanitize_data(data: dict, is_variant=False) -> tuple:
     """Ensure that all data arrays are contiguous and of the correct dtype."""
     if is_variant:
         data_keys = {
@@ -54,29 +107,23 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
     if 'background' in data:
         data['background'] = np.nan_to_num(data['background'], copy=False)
 
-    return dict(data=data, encodings=encodings)
+    return data, encodings
 
 
-def data_to_h5(h5_file: str, data: dict):
-    strings_dtype = h5py.string_dtype(encoding='utf-8')
-    with h5py.File(h5_file, 'w') as f:
-        for key, value in data.items():
-            if np.issubdtype(value.dtype, np.str_):
-                value = value.astype(strings_dtype)
-            f.create_dataset(key, data=value, compression="gzip")
-
-
-def extract_data_from_h5(h5_file, ref_adata: ad.AnnData, is_variant=False):
+def extract_data_from_h5(h5_file, ref_adata: ad.AnnData, is_variant=False) -> VinsonData:
     with h5py.File(h5_file, 'r') as f:
         data = {}
         for key in f.keys():
             data[key] = f[key][()]
 
-        data = sanitize_data(data, is_variant=is_variant)
-    return data, ref_adata.obsm["motif_embeddings"]
+    return VinsonData.from_raw(
+        data,
+        ref_adata.obsm['motif_embeddings'],
+        is_variant=is_variant
+    )
 
 
-def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str):
+def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str) -> VinsonData:
     """
     Convert train AnnData object to H5 format and extract embeddings.
     Args:
@@ -108,13 +155,15 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str):
     if 'dhs_weight' in train_adata.varm:
         data['dhs_weight'] = train_adata.varm['dhs_weight'][col_idx]
 
-    data = sanitize_data(data)
-
     embeddings_df = train_adata.obsm['motif_embeddings']
-    return data, embeddings_df
+    return VinsonData.from_raw(
+        data,
+        embeddings_df,
+        is_variant=False
+    )
 
 
-def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str):
+def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str) -> VinsonData:
     """
     Convert AnnData object to H5 format and extract embeddings.
     Args:
@@ -145,11 +194,11 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str):
     if 'indiv_id' in train_adata.obsm:
         data['indiv_id'] = get_indiv_id_info(train_adata, row_idx)
 
-
-    data = sanitize_data(data, is_variant=True)
-
-    embeddings_df = train_adata.obsm['motif_embeddings']
-    return data, embeddings_df
+    return VinsonData.from_raw(
+        data,
+        train_adata.obsm['motif_embeddings'],
+        is_variant=True
+    )
 
 
 def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=None, use_sample_peaks=False,
@@ -191,9 +240,12 @@ def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=No
         for key in data:
             data[key] = data[key][sample_peaks_mask]
 
-    data = sanitize_data(data)
     embeddings_df = adata_slice.obsm['motif_embeddings']
-    return data, embeddings_df
+    return VinsonData.from_raw(
+        data,
+        embeddings_df,
+        is_variant=False
+    )
 
 
 def slice_adata(adata, dhs_ids, sample_ids) -> ad.AnnData:

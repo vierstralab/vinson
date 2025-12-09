@@ -65,12 +65,11 @@ class SeqEmbedDataModule(L.LightningDataModule):
     def train_dataset(self, epoch=None):
         if epoch is None:
             epoch = self.current_train_epoch
-        data, embeddings_df = self.get_data(epoch, 'train', 'train')
+        data = self.get_data(epoch, 'train', 'train')
 
         # Create new dataset
         train_dataset = SequenceEmbedDataset(
             data=data,
-            embeddings_df=embeddings_df,
             fasta_file=self.fasta_file,
             genotype_file=self.genotype_file,
             **self.train_dataset_kwargs,
@@ -87,11 +86,10 @@ class SeqEmbedDataModule(L.LightningDataModule):
         return len(col_idx) // self.dataloader_kwargs['batch_size']
 
     def validation_dataset(self):
-        data, embeddings_df = self.get_data(self.validation_epoch, 'val', 'train')
+        data = self.get_data(self.validation_epoch, 'val', 'train')
 
         valid_dataset = SequenceEmbedDataset(
             data=data,
-            embeddings_df=embeddings_df,
             fasta_file=self.fasta_file,
             genotype_file=self.genotype_file,
             **self.valid_dataset_kwargs,
@@ -141,8 +139,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             full_adata.varm['split_data'] == dhs_split
         ]
 
-        data, embeddings_df = extract_data_from_train_anndata(adata, suffix)
-        return data, embeddings_df
+        return extract_data_from_train_anndata(adata, suffix)
 
 
 class SeqEmbedVariantDataModule(SeqEmbedDataModule):

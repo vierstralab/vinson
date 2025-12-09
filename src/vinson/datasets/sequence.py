@@ -7,6 +7,7 @@ import gzip
 from genome_tools import GenomicInterval, VariantInterval, df_to_variant_intervals
 from genome_tools.data.extractors import FastaExtractor, TabixExtractor
 
+from vinson.utils.data_formatting import VinsonData
 from vinson.utils.sequence_utils import one_hot_encode, get_iupac_char_from_alleles
 from vinson.utils.helpers import replace_at
 import logging
@@ -24,13 +25,7 @@ class BaseSequenceDataset(Dataset):
 
     Parameters
     ----------
-    data : dict
-        Dictionary containing sample metadata. {
-            data: {'chrom': ..., 'summit': ..., etc.}, # Sample data. int or float np.arrays
-            encodings: {'chrom': np.array, ...} # Encoding for categorical variables.
-        } 
-    embeddings_df : pd.DataFrame
-        DataFrame of cell-type/state embeddings indexed by sample ID.
+    data : VinsonData containing dict of sample metadata, encodings, embeddings
     fasta_file : str
         Path to reference genome FASTA file.
     genotype_file : str, optional
@@ -56,8 +51,7 @@ class BaseSequenceDataset(Dataset):
 
     def __init__(
         self,
-        data: dict,
-        embeddings_df: pd.DataFrame,
+        data: VinsonData,
         fasta_file: str,
         genotype_file: str = None,
         reverse_complement=False,
@@ -71,7 +65,7 @@ class BaseSequenceDataset(Dataset):
         self.reverse_complement = reverse_complement
         self.jitter = jitter
         self.noise = noise
-        self.embeddings_df = embeddings_df
+        self.embeddings_df = data.embeddings_df
         self.genotype_file = genotype_file
         
         assert seqlen % 2 == 0, "Error 'seqlen' must be a even number!"
@@ -80,7 +74,7 @@ class BaseSequenceDataset(Dataset):
         self.fasta_extr: FastaExtractor = None
         self.genotype_extr: TabixExtractor = None
         if self.genotype_file is not None:
-            assert 'indiv_id' in data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
+            assert 'indiv_id' in self.data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
 
             self.include_genotypes = True
         else:
@@ -390,6 +384,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             self.data["read_depth"][i],
             self.data["class"][i],
         )
+        # Decode categorical variables
         chrom = self.encodings['chrom'][chrom]
         sample_id = self.encodings['sample_id'][sample_id]
 
@@ -492,8 +487,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
 
     def __init__(
         self,
-        data: dict,
-        embeddings_df: pd.DataFrame,
+        data: VinsonData,
         fasta_file: str,
         genotype_file: str = None,
         flip_alleles=True,
@@ -503,7 +497,6 @@ class VariantEmbedDataset(BaseSequenceDataset):
     ):
         super().__init__(
             data=data,
-            embeddings_df=embeddings_df,
             fasta_file=fasta_file,
             genotype_file=genotype_file,
             reverse_complement=reverse_complement,
@@ -529,7 +522,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
         ).issubset(self.data.keys())
 
         if self.genotype_file is not None:
-            assert 'indiv_id' in data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
+            assert 'indiv_id' in self.data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
 
             self.include_genotypes = True
         else:
@@ -585,6 +578,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
             self.data["logit_es"][i].astype(np.float32),
             self.data["sample_id"][i].astype(str),
         )
+        # FIXME: Decode categorical variables
 
         variant = GenomicInterval(chrom, pos, pos)
         interval = variant.widen(self.seqlen // 2)
