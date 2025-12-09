@@ -5,6 +5,7 @@ import pandas as pd
 import dask.array as da
 import gc
 
+
 class VinsonData:
     """
     Class for handling Vinson data formatting and conversion.
@@ -76,8 +77,10 @@ class VinsonData:
         return cls(data, encodings, embeddings_df, is_variant=is_variant)
 
 
-def sanitize_data(data: dict, is_variant=False) -> tuple:
+def sanitize_data(data: dict, encodings_dict: dict = None, is_variant=False) -> tuple:
     """Ensure that all data arrays are contiguous and of the correct dtype."""
+    if encodings_dict is None:
+        encodings_dict = {}
     if is_variant:
         data_keys = {
             "chrom": np.str_,
@@ -111,14 +114,16 @@ def sanitize_data(data: dict, is_variant=False) -> tuple:
     }
     encodings = {}
     for key, dtype in keys.items():
-        data[key] = np.asarray(data[key], dtype=dtype)
         if dtype == np.str_:
-            mask = pd.isna(data[key]) | np.isin(data[key], ['None', 'nan'])
-            data[key][mask] = ''
-            enc, inverse = np.unique(data[key], return_inverse=True)
-            encodings[key] = np.array(enc, dtype=np.str_)
-            data[key] = inverse.astype(np.int32)
-
+            if key in encodings_dict:
+                encodings[key] = np.asarray(encodings_dict[key], dtype=np.int32)
+                mask = pd.isna(encodings[key]) | np.isin(encodings[key], ['None', 'nan'])
+                encodings[key][mask] = ''
+            else:
+                enc, inverse = np.unique(data[key], return_inverse=True)
+                data[key] = inverse.astype(np.int32)
+                encodings[key] = enc
+        data[key] = np.asarray(data[key], dtype=dtype)
         if not data[key].flags["C_CONTIGUOUS"]:
             data[key] = np.ascontiguousarray(data[key])
 
@@ -155,27 +160,46 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str) -> Vin
     data = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
     update_layers_dict(data, train_adata, suffix)
     row_idx, col_idx = get_examples_indices_from_layer(data["class"])
+    encodings = {}
+
+    encoded = {}
+    encoding_sources = {
+        "sample_id": train_adata.obs_names.values,
+        "dhs_id": train_adata.var_names.values,
+        "chrom": train_adata.var["#chr"].values,
+    }
+
+    if "indiv_id" in train_adata.obsm:
+        encoding_sources["indiv_id"] = train_adata.obsm["indiv_id"][row_idx]
+
+    for key, arr in encoding_sources.items():
+        enc, inv = np.unique(arr, return_inverse=True)
+        encodings[key] = enc
+        encoded[key] = inv
 
     data = {
         'read_depth': train_adata.obs['nuclear_reads'].values[row_idx],
-        'sample_id': train_adata.obs_names[row_idx],
-        'dhs_id': train_adata.var_names[col_idx],
-        'chrom': train_adata.var['#chr'].values[col_idx],
+        'sample_id': encoded["sample_id"][row_idx],
+        'dhs_id': encoded["dhs_id"][col_idx],
+        'chrom': encoded["chrom"][col_idx],
         'summit': train_adata.var['dhs_summit'].values[col_idx],
         'background': data['mean_bg_agg_cutcounts'].data,
         'class': data['class'].data,
         'density': data['density'].data,
     }
-    if 'indiv_id' in train_adata.obsm:
-        data['indiv_id'] = get_indiv_id_info(train_adata, row_idx)
+    if 'indiv_id' in encoded:
+        data['indiv_id'] = encoded["indiv_id"][row_idx]
 
     if 'dhs_weight' in train_adata.varm:
         data['dhs_weight'] = train_adata.varm['dhs_weight'][col_idx]
+    
+    data, encodings = sanitize_data(data, encodings, is_variant=False)
 
     embeddings_df = train_adata.obsm['motif_embeddings']
-    return VinsonData.from_raw(
+    return VinsonData(
         data,
-        embeddings_df,
+        encodings=encodings,
+        embeddings_df=embeddings_df,
         is_variant=False
     )
 
@@ -209,7 +233,7 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str) -> V
     }
 
     if 'indiv_id' in train_adata.obsm:
-        data['indiv_id'] = get_indiv_id_info(train_adata, row_idx)
+        data['indiv_id'] = train_adata.obsm['indiv_id'][row_idx]
 
     return VinsonData.from_raw(
         data,
@@ -223,6 +247,7 @@ def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=No
     """
     This function can also be used to extract data into training anndata object.
     """
+    # FIXME: Not optimized yet
     adata_slice = slice_adata(backed_anndata, dhs_ids, sample_ids) # sample x dhs
 
     sample_names = np.array(adata_slice.obs_names)
@@ -279,9 +304,6 @@ def compute_if_dask(array):
         array = array.compute()
     return array
 
-
-def get_indiv_id_info(train_adata: ad.AnnData, row_idx: np.ndarray):
-    return train_adata.obsm['indiv_id'][row_idx]
 
 def get_examples_indices_from_layer(layer_coo):
     row_idx, col_idx = layer_coo.row, layer_coo.col
