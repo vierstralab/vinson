@@ -366,6 +366,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             - 'sample_id': str, sample identifier
         """
         self._init_fileread()
+        print('Started processing batch index:', i, flush=True)
         data_slice = self.data[i]
         chrom = data_slice['chrom']
         summit = data_slice['summit']
@@ -374,9 +375,10 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         bg = data_slice['background']
         read_depth = data_slice['read_depth']
         example_class = data_slice['class']
+        print('Slicing works batch index:', i, flush=True)
 
         if 'mean_density' in self.data.keys():
-            mean_density = self.data["mean_density"][i]
+            mean_density = data_slice["mean_density"]
         else:
             mean_density = np.nan
 
@@ -430,6 +432,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         weight = weight * weight_mult
 
         bg = np.clip(bg, self.min_bg, None)
+        print('Finished processing batch index:', i, flush=True)
 
         return {
             "ohe_seq": ohe_seq,

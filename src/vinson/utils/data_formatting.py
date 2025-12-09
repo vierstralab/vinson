@@ -65,8 +65,8 @@ class VinsonData:
         """Return keys of the data dictionary."""
         return self.data.keys()
 
-    def __getitem__(self, i):
-        """Get data array for a given index."""
+    def __getitem__(self, i) -> dict:
+        """Get data dict for a given index."""
         return_dict = {}
         for key, value in self.data.items():
             return_dict[key] = value[i]
