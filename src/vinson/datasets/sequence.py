@@ -118,7 +118,6 @@ class BaseSequenceDataset(Dataset):
             The embedding vector that sample.
         """
         # Cell type/state embeddings
-        print(sample_id, type(sample_id), flush=True)
         x = self.data.embeddings_df.loc[sample_id].to_numpy(dtype=np.float32)
 
         # Add a little Gaussian noise to embeddings
