@@ -322,7 +322,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         loss, *_ = self.step(batch, batch_idx)
 
         self.log(
-            "loss", loss, on_step=True, on_epoch=False, sync_dist=True
+            "loss", loss, on_step=True, on_epoch=False, sync_dist=True, prog_bar=True
         )
 
         return loss

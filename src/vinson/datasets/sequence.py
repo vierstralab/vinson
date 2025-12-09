@@ -367,16 +367,14 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             - 'sample_id': str, sample identifier
         """
         self._init_fileread()
-        data_slice = self.data.data
-        print('Fetching sample index:', i, flush=True)
-        chrom = self.data.encodings['chrom'][data_slice['chrom'][i]]
-        print('Decoding chrom finished:', i, flush=True)
-        summit = data_slice['summit'][i]
-        sample_id = self.data.encodings['sample_id'][data_slice['sample_id'][i]]
-        density = data_slice['density'][i]
-        bg = data_slice['background'][i]
-        read_depth = data_slice['read_depth'][i]
-        example_class = data_slice['class'][i]
+        data_slice = self.data[i]
+        chrom = data_slice['chrom']
+        summit = data_slice['summit']
+        sample_id = data_slice['sample_id']
+        density = data_slice['density']
+        bg = data_slice['background']
+        read_depth = data_slice['read_depth']
+        example_class = data_slice['class']
 
         if 'mean_density' in self.data.keys():
             mean_density = self.data["mean_density"][i]
@@ -396,7 +394,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
 
         # indiv_id is expected to be in self.data if genotypes are included
         if self.include_genotypes:
-            indiv_id = self.data.encodings['indiv_id'][data_slice['indiv_id'][i]]
+            indiv_id = data_slice['indiv_id']
             _, dna_seq, _, _ = self.get_sample_sequence(
                 interval,
                 indiv_id
@@ -632,14 +630,3 @@ class VariantEmbedDataset(BaseSequenceDataset):
             "chrom": chrom,
             "pos": pos,
         }
-
-    def __len__(self):
-        """
-        Return the number of variants in the dataset.
-
-        Returns
-        -------
-        int
-            Number of variants.
-        """
-        return self.data["chrom"].shape[0]

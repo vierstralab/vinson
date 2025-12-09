@@ -113,7 +113,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         self.current_train_epoch = next(self.train_epoch_cycler)
-        print('Loading new training dataloader for epoch:', self.current_train_epoch)
         # Cycle to next file index
         # Create new dataloader
         data_loader = DataLoader(
@@ -121,7 +120,6 @@ class SeqEmbedDataModule(L.LightningDataModule):
             shuffle=True,
             **self.dataloader_kwargs,
         )
-        print('Finished training dataloader for epoch:', self.current_train_epoch, len(data_loader), flush=True)
         return data_loader
     
     def teardown(self, stage: str):

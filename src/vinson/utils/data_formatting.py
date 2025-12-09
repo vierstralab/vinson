@@ -28,8 +28,7 @@ class VinsonData:
         self.embeddings_df = embeddings_df
         self.is_variant = is_variant
 
-        first_key = next(iter(self.data))
-        self.length = len(self.data[first_key])
+        self.length = len(self.data['chrom'])
         for key, value in self.data.items():
             assert len(value) == self.length, f"All data arrays must have the same length. Key {key} has length {len(value)}, expected {self.length}."
     
