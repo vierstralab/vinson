@@ -119,6 +119,7 @@ class BaseSequenceDataset(Dataset):
             The embedding vector that sample.
         """
         # Cell type/state embeddings
+        print(sample_id, type(sample_id), flush=True)
         x = self.data.embeddings_df.loc[sample_id].to_numpy(dtype=np.float32)
 
         # Add a little Gaussian noise to embeddings
@@ -421,16 +422,18 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         print('One-hot encoding done batch index:', i, flush=True)
         # Get embeddings
         embed = self.get_embedding_vec(sample_id)
-        print('Got embeddings batch index:', i, flush=True)
+        print('Extracted embeddings batch index:', i, flush=True)
        
         # Adjust values as needed
         density = np.clip(density, None, self.clip_density)
 
+        print('Clipped values batch index:', i, flush=True)
         if 'dhs_weight' in self.data:
-            weight = self.data['dhs_weight'][i]
+            weight = data_slice['dhs_weight']
         else:
             weight = np.float32(1.0)
 
+        print('Weights multiplied batch index:', i, flush=True)
         weight_mult = 1.0 if example_class == 1 else self.negatives_weight
         weight = weight * weight_mult
 
