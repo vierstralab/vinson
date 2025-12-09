@@ -13,7 +13,7 @@ class VinsonData:
     ----------
     data : dict
         Dictionary containing sample metadata. {
-            'chrom': ..., 'summit': ..., etc.
+            'chrom': np.array, 'summit': np.array, etc.
         }
     encodings : dict
         Dictionary containing encodings for categorical variables. {

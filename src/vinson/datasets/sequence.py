@@ -80,7 +80,6 @@ class BaseSequenceDataset(Dataset):
             )
             self.include_genotypes = False
 
-
     def __del__(self):
         """
         Clean up open file handles for FASTA extractor.
@@ -428,9 +427,12 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         density = np.clip(density, None, self.clip_density)
 
         print('Clipped values batch index:', i, flush=True)
-        if 'dhs_weight' in self.data:
+        if 'dhs_weight' in data_slice:
+            print('Get weight from data slice batch index:', i, flush=True)
+            print(data_slice)
             weight = data_slice['dhs_weight']
         else:
+            print('Using weight of 1', i, flush=True)
             weight = np.float32(1.0)
 
         print('Weights multiplied batch index:', i, flush=True)
