@@ -42,7 +42,7 @@ target/
 profile_default/
 ipython_config.py
 
-
+.vscode
 /models/
 data/
 slurm*

@@ -336,8 +336,8 @@ def update_layers_dict(layers: dict, train_adata: ad.AnnData, suffix: str):
 
 def get_number_of_train_examples(anndata_file):
     adata = ad.read_h5ad(anndata_file)
-    if 'n_examples' in adata.uns:
-        n_examples = adata.uns['n_examples']
+    if 'n_training_examples' in adata.uns:
+        n_examples = adata.uns['n_training_examples']
     else:
         n_examples = 0
         for epoch in adata.uns['epoch_names']:
