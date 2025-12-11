@@ -40,24 +40,7 @@ def model_from_config(config, checkpoint_path=None):
             )
             
         return model
-    
-    #if no checkpoint to load from
-#     if config["model_type"] == 'variant':
-#         model = VariantEmbedModel(
-#             trunk=trunk_model, 
-#             embed=embed_model)
-#     # Create trunk model, maybe move to config later
-#     else:
-#         model = EmbedModel(
-#             trunk=trunk_model,
-#             embed=embed_model,
-#             regression=config["model_type"] == "regression",
-    
-#     lr_scheduler=config["hparams"].get("lr_scheduler"),
-#     lr_scheduler_kwargs=config["hparams"].get("lr_scheduler_kwargs", {}),
-#     optimizer_kwargs=config["hparams"]['optimizer_kwargs'],
-#     **config["model_kwargs"]
-# )
+ 
     if config.get("model_type") == 'variant':
         model = VariantEmbedModel(trunk=trunk_model, embed=embed_model)
     else:
@@ -214,7 +197,7 @@ def init_multigpu_trainer(
     trainer = L.Trainer(
         logger=logger,
         callbacks=callbacks,
-        max_epochs=20,
+        max_epochs=10,
         accelerator=accelerator,
         strategy=strategy,
         num_nodes=nodes,

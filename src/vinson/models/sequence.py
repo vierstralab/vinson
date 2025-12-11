@@ -467,6 +467,7 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
         )
 
         #has predict (y), ref_counts (target), total_counts (n), bad_score (bad_score), optional: tau, reduction
+        
         loss = self.loss(
             y, 
             ref_counts,
@@ -474,24 +475,43 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
             bad_score,
             reduction="none"
         )
-
+        
+        # multiply by weights
         loss *= batch["weight"]
-        
-        # ---- ADD THIS BLOCK ----
-        if torch.isnan(loss).any() or torch.isinf(loss).any():
-            # Print detailed info for debugging
-            print(f"[WARNING] NaN/Inf loss detected at batch {batch_idx}", flush=True)
-            print("  y:", y.detach().cpu().numpy())
-            print("  ref_counts:", ref_counts.detach().cpu().numpy())
-            print("  total_counts:", total_counts.detach().cpu().numpy())
-            print("  bad_score:", bad_score.detach().cpu().numpy())
-            print("  weights:", batch["weight"].detach().cpu().numpy())
-        
-            # Graceful fallback: replace NaN/Inf with large constant so model can continue
-            loss = torch.nan_to_num(loss, nan=1e6, posinf=1e6, neginf=1e6)
-        # ------------------------
-        
+
+        # --- Detect NaN/Inf and print detailed info ---
+        nan_indices = torch.where(torch.isnan(loss) | torch.isinf(loss))[0]
+        if len(nan_indices) > 0:
+            print(f"[WARNING] NaN/Inf loss detected at batch {batch_idx}")
+            print("Indices with NaN/Inf:", nan_indices.tolist())
+    
+            for idx in nan_indices:
+                idx = idx.item()  # make Python int
+                print(f"\nVariant at batch idx {idx}:")
+                print(f"  y = {y[idx].item()}")
+                print(f"  ref_counts = {ref_counts[idx].item()}")
+                print(f"  total_counts = {total_counts[idx].item()}")
+                print(f"  bad_score = {bad_score[idx].item()}")
+                print(f"  weight = {batch['weight'][idx].item()}")
+    
+                # print variant metadata if present
+                for key in ["chrom", "pos", "ref", "alt", "gt"]:
+                    if key in batch:
+                        val = batch[key][idx]
+                        # convert single-element tensor to Python scalar
+                        if torch.is_tensor(val) and val.numel() == 1:
+                            val = val.item()
+                        print(f"  {key} = {val}")
+    
+            # Optionally: replace NaN/Inf with large number to continue training
+            #loss = torch.nan_to_num(loss, nan=1e6, posinf=1e6, neginf=1e6)
+            raise RuntimeError(
+                f"NaN/Inf loss encountered at batch {batch_idx}. "
+                "See diagnostic output above."
+            )
+    
         loss = loss.mean()
+
 
         return loss, y, (ref_counts, total_counts, bad_score)
 

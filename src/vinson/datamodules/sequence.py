@@ -173,11 +173,4 @@ class SeqEmbedVariantDataModule(SeqEmbedDataModule):
             self.adata.varm["split_data"] == dhs_split,
         ]
 
-        
-        # if exclude_ids and "indiv_id" in adata.obsm:
-        #     indiv_ids = adata.obsm["indiv_id"]  # assumes (n_obs, 1)
-        #     keep_mask = ~np.isin(indiv_ids, exclude_ids)
-        #     adata = adata[keep_mask].copy()  # only keep allowed samples
-
-            
         return extract_variant_data_from_anndata(adata, suffix)

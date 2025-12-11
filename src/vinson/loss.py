@@ -1,5 +1,6 @@
 import torch
 from torch.nn.functional import softplus
+import math
 
 
 def mse_loss(input, target, reduction="mean"):
@@ -312,7 +313,7 @@ def binomial_mixture_normed_loss(
     d = torch.log(bad_score)
 
     # Initial roots: logit of empirical probability ± log_bad_score
-    logit_p = torch.logit(target / n)
+    logit_p = torch.logit(target / n, eps=1e-6)
     initial_roots = torch.stack(
         [logit_p - 2 * d, logit_p - d, logit_p, logit_p + d, logit_p + 2 * d], dim=0
     )
@@ -332,6 +333,13 @@ def binomial_mixture_normed_loss(
     min_nll = torch.min(nll_at_roots, dim=0)[0]
 
     nll_at_input, _, _ = binomial_mixture_nll_grad_hess(input, target, n, d, tau)
+
+    #optional min nll fix
+    if tau <= 0:
+        edge = (target == 0) | (target == n)
+        if edge.any():
+            min_nll_edge = -math.log(2.0)
+            min_nll = torch.where(edge, min_nll.new_tensor(min_nll_edge), min_nll)
 
     normalized_nll = nll_at_input - min_nll
 
