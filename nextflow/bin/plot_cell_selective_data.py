@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 import argparse
-import scipy
 
 from genome_tools.data.anndata import read_zarr_backed
 
@@ -113,7 +112,8 @@ if __name__ == '__main__':
     else:
         raise ValueError('Annotation data file must be provided for plotting')
 
-    eval_dataset, embeds = extract_data_from_h5(args.h5_data, adata) # Maybe embeds are not needed here
+    eval_dataset = extract_data_from_h5(args.h5_data, adata) # Maybe embeds are not needed here
+    eval_dataset = eval_dataset.to_df()
     log_output = read_configs(args.model_config)['model_kwargs'].get('log_output', False)
 
     if not log_output:
@@ -122,8 +122,6 @@ if __name__ == '__main__':
     else:
         eval_dataset['pred_log_density'] = np.load(args.npy_prediction)
         eval_dataset['pred_corrected_density'] = np.exp(eval_dataset['pred_log_density'])
-
-    eval_dataset = pd.DataFrame(eval_dataset)
     
     main(
         adata=adata,

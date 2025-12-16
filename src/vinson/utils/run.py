@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import lightning as L
 import anndata as ad
+import sys
 
 from vinson.models.sequence import CellEmbedding, BassetTrunkEmbed, EmbedModel, VariantEmbedModel
 from vinson.datamodules.sequence import SeqEmbedDataModule, SeqEmbedVariantDataModule
@@ -21,41 +22,87 @@ from lightning.pytorch.loggers import CSVLogger
 # dataset util functions
 def model_from_config(config, checkpoint_path=None):
     # TODO: add model configuration to config
+    model_type = config['model_type']
+    hparams = config["hparams"]
+    scheduler_name = hparams.get("lr_scheduler")
+    scheduler_kwargs = hparams.get("lr_scheduler_kwargs", {})
+    optimizer_kwargs = hparams["optimizer_kwargs"]
+    trunk_weights = config.get("trunk_weights", None)
+
+    # legacy fix
+    if model_type == "regression":
+        model_type = "dhs"
+
+    if model_type not in {"dhs", "variant", "legnet_dhs"}:
+        raise ValueError(f"Unsupported model type: {model_type}")
+    if model_type == "legnet_dhs":
+        try:
+            from dnase_legnet.legnet_embed_cnn import LegNetEmbedInCNN
+        except ImportError:
+            print("Please install dnase_legnet to use LegNet models.", file=sys.stderr)
+            sys.exit(1)
+
+        if checkpoint_path:
+            return LegNetEmbedInCNN.load_from_checkpoint(
+                checkpoint_path,
+                inference_mode=False
+            )
+
+        return LegNetEmbedInCNN(
+            model_kws=config["model_arch"],
+            hparams=config['hparams'],
+            # hparams={
+            #     "lr_scheduler": scheduler_name,
+            #     "lr_scheduler_kwargs": scheduler_kwargs,
+            #     "optimizer_kwargs": optimizer_kwargs,
+            # },
+            **config["model_kwargs"],
+        )
+
+    # --- STANDARD EMBED/TRUNK PATH ---
     embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
     trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
 
-    if checkpoint_path is not None:
-        #variant model option
-        if config["model_type"] == 'variant':
-            model = VariantEmbedModel.load_from_checkpoint(
-                checkpoint_path,
-                trunk=trunk_model, 
-                embed=embed_model
-                )
-        else:
-            model = EmbedModel.load_from_checkpoint(
-                checkpoint_path,
-                trunk=trunk_model,
-                embed=embed_model,
-            )
-            
-        return model
- 
-    if config.get("model_type") == 'variant':
+    # --- CHECKPOINT LOADING ---
+    if checkpoint_path:
+        load_cls = VariantEmbedModel if model_type == "variant" else EmbedModel
+        return load_cls.load_from_checkpoint(
+            checkpoint_path,
+            trunk=trunk_model,
+            embed=embed_model,
+        )
+
+    # --- MODEL INITIALIZATION (NO CHECKPOINT) ---
+    if model_type == "variant":
         model = VariantEmbedModel(trunk=trunk_model, embed=embed_model)
     else:
         model = EmbedModel(
             trunk=trunk_model,
             embed=embed_model,
-            regression=config.get("model_type") == "regression",
-            lr_scheduler=config.get("hparams", {}).get("lr_scheduler"),
-            lr_scheduler_kwargs=config.get("hparams", {}).get("lr_scheduler_kwargs", {}),
-            optimizer_kwargs=config.get("hparams", {}).get("optimizer_kwargs", {}),
-            **config.get("model_kwargs", {})  # safe default
+            regression=True,
+            lr_scheduler=scheduler_name,
+            lr_scheduler_kwargs=scheduler_kwargs,
+            optimizer_kwargs=optimizer_kwargs,
+            **config["model_kwargs"],
         )
 
     model.init_model()
+
+    # ---- LOAD PRETRAINED TRUNK WEIGHTS ----
+    if trunk_weights is not None:
+        print(f"[INFO] Loading pretrained trunk weights from {trunk_weights}")
+
+        ckpt = torch.load(trunk_weights, map_location="cpu")
+        state = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
+
+        # Only load trunk + embed weights
+        trunk_state = {k: v for k, v in state.items() if k.startswith("trunk.")}
+        embed_state = {k: v for k, v in state.items() if k.startswith("embed.")}
+        model.load_state_dict({**trunk_state, **embed_state}, strict=False)
+
+
     return model
+
 
 #take in config to determine model type
 def dataset_from_h5(
@@ -182,7 +229,13 @@ def init_multigpu_trainer(
     logger = CSVLogger(os.path.join(outdir, "logs"))
 
     callbacks = [
-        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.005, patience=10),
+        EarlyStopping(
+            monitor="val_loss",
+            mode="min",
+            min_delta=0.005,
+            patience=10,
+            check_on_train_epoch_end=False,
+        ),
         ModelCheckpoint(
             monitor="val_loss",
             mode="min",
@@ -193,6 +246,19 @@ def init_multigpu_trainer(
         ),
         LearningRateMonitor(),
     ]
+
+    # callbacks = [
+    #     EarlyStopping(monitor="val_loss", mode="min", min_delta=0.005, patience=10),
+    #     ModelCheckpoint(
+    #         monitor="val_loss",
+    #         mode="min",
+    #         filename="{epoch}-{step}-{val_loss:.2f}",
+    #         dirpath=os.path.join(outdir, "checkpoints"),
+    #         save_top_k=5,
+    #         save_last=True,
+    #     ),
+    #     LearningRateMonitor(),
+    # ]
 
     trainer = L.Trainer(
         logger=logger,

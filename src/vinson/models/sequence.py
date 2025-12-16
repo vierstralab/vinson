@@ -3,6 +3,9 @@ import copy
 
 import lightning as L
 
+import csv
+import os
+
 from torchmetrics import MetricCollection
 from torchmetrics.classification import (
     BinaryAveragePrecision,
@@ -183,30 +186,8 @@ class AbstractBaseSequenceModel(L.LightningModule):
 
         if lr_scheduler is None:
             return optimizer
-        
-        scheduler_kwargs = self.lr_scheduler_kwargs # to avoid modifying original dict
 
-        if self.lr_scheduler == "OneCycleLR":
-            has_datamodule = hasattr(self.trainer, "datamodule") and self.trainer.datamodule is not None
-            steps_per_epoch = self.lr_scheduler_kwargs.get("steps_per_epoch")
-            max_epochs = self.lr_scheduler_kwargs.get("epochs")
-            if steps_per_epoch is None:
-                if has_datamodule:
-                    # infer steps per epoch from datamodule
-                    steps_per_epoch = len(self.trainer.datamodule.train_dataloader()) // self.trainer.num_devices
-                else:
-                    # implement checks when dataset is directly passed to trainer
-                    raise ValueError("steps_per_epoch must be provided in lr_scheduler_kwargs when no datamodule is used.")
-
-            if max_epochs is None:
-                max_epochs = getattr(self.trainer, "max_epochs", None)
-
-            scheduler_kwargs = {
-                **scheduler_kwargs,
-                "steps_per_epoch": steps_per_epoch,
-                "epochs": max_epochs,
-            }
-        scheduler = lr_scheduler(optimizer, **scheduler_kwargs)
+        scheduler = lr_scheduler(optimizer, **self.lr_scheduler_kwargs)
 
         return {
             "optimizer": optimizer,
@@ -344,7 +325,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         loss, *_ = self.step(batch, batch_idx)
 
         self.log(
-            "loss", loss, on_step=True, on_epoch=False, sync_dist=True, prog_bar=True
+            "loss", loss, on_step=True, on_epoch=False, sync_dist=True
         )
 
         return loss
@@ -455,7 +436,6 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
         X_embed = batch["embed"]
         y = self(X_ref, X_alt, X_embed).squeeze()
         return y
-
     
     def step(self, batch, batch_idx):
         y = self._forward_from_batch(batch)
@@ -515,26 +495,110 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
 
         return loss, y, (ref_counts, total_counts, bad_score)
 
+    def debug_training_step(self, batch, batch_idx):
+        # Print batch info
+        print(f"\n--- Batch {batch_idx} ---")
+        for k, v in batch.items():
+            if torch.is_tensor(v):
+                print(f"{k}: shape={v.shape}, min={v.min().item()}, max={v.max().item()}, NaN={torch.isnan(v).any().item()}, Inf={torch.isinf(v).any().item()}")
+            else:
+                print(f"{k}: type={type(v)}, len={len(v)}")
+        
+        # Call original step (optional, to see loss)
+        loss, *_ = self.step(batch, batch_idx)
+        print(f"Batch loss: {loss.item()}")
+        return loss
 
+    def debug_validation_step(self, batch, batch_idx):
+        print(f"\n--- Validation Batch {batch_idx} ---")
+        for k, v in batch.items():
+            if torch.is_tensor(v):
+                print(f"{k}: shape={v.shape}, min={v.min().item()}, max={v.max().item()}, NaN={torch.isnan(v).any().item()}, Inf={torch.isinf(v).any().item()}")
+            else:
+                print(f"{k}: type={type(v)}, len={len(v)}")
+        
+        loss, y_hat, y = self.step(batch, batch_idx)
+        print(f"Validation batch loss: {loss.item()}")
+        return loss
+
+
+    # def training_step(self, batch, batch_idx):
+    #     loss, *_ = self.step(batch, batch_idx)
+
+    #     self.log(
+    #         "loss", loss, on_step=True, on_epoch=False, sync_dist=True
+    #     )
+
+    #     return loss
     def training_step(self, batch, batch_idx):
         loss, *_ = self.step(batch, batch_idx)
-
-        self.log(
-            "loss", loss, on_step=True, on_epoch=False, sync_dist=True, prog_bar=True
-        )
-
+    
+        if getattr(self, "debug", False) and hasattr(self, "batch_log_file"):
+            lfc = batch.get("lfc")
+            ref_counts = batch.get("ref_counts")
+            total_counts = batch.get("total_counts")
+            bad_score = batch.get("bad_score")
+    
+            with open(self.batch_log_file, "a", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    self.current_epoch,
+                    batch_idx,
+                    loss.item(),
+                    lfc.min().item() if lfc is not None else "",
+                    lfc.max().item() if lfc is not None else "",
+                    ref_counts.min().item() if ref_counts is not None else "",
+                    ref_counts.max().item() if ref_counts is not None else "",
+                    total_counts.min().item() if total_counts is not None else "",
+                    total_counts.max().item() if total_counts is not None else "",
+                    bad_score.min().item() if bad_score is not None else "",
+                    bad_score.max().item() if bad_score is not None else "",
+                ])
+    
+        self.log("loss", loss, on_step=True, on_epoch=False, sync_dist=True)
         return loss
 
+    
     def validation_step(self, batch, batch_idx):
         loss, y_hat, y = self.step(batch, batch_idx)
-        lfc = batch["lfc"]
-
+        lfc = batch.get("lfc")
         self.valid_metrics.update(y_hat, lfc)
-
+    
+        if getattr(self, "debug", False) and hasattr(self, "batch_log_file"):
+            ref_counts = batch.get("ref_counts")
+            total_counts = batch.get("total_counts")
+            bad_score = batch.get("bad_score")
+    
+            with open(self.batch_log_file, "a", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    self.current_epoch,
+                    f"val_{batch_idx}",
+                    loss.item(),
+                    lfc.min().item() if lfc is not None else "",
+                    lfc.max().item() if lfc is not None else "",
+                    ref_counts.min().item() if ref_counts is not None else "",
+                    ref_counts.max().item() if ref_counts is not None else "",
+                    total_counts.min().item() if total_counts is not None else "",
+                    total_counts.max().item() if total_counts is not None else "",
+                    bad_score.min().item() if bad_score is not None else "",
+                    bad_score.max().item() if bad_score is not None else "",
+                ])
+    
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-
         return loss
 
+
+    # def validation_step(self, batch, batch_idx):
+    #     loss, y_hat, y = self.step(batch, batch_idx)
+    #     lfc = batch["lfc"]
+
+    #     self.valid_metrics.update(y_hat, lfc)
+
+    #     self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+
+    #     return loss
+   
 
 class VariantEmbedModelWrapper(L.LightningModule):
     """Wrapper class for VariantModel to perform only inference"""

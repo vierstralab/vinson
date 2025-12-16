@@ -62,8 +62,13 @@ def annotate_eval_dataset_with_layers(eval_dataset: pd.DataFrame, annotate_count
         )
     return eval_dataset
 
+<<<<<<< HEAD
 def get_agg_by_annotation(df, column, by='extended_annotation'):
     gb = df.groupby(by).agg(
+=======
+def get_agg_by_annotation(df: pd.DataFrame, column, by='extended_annotation'):
+    gb = df.groupby(by, observed=True).agg(
+>>>>>>> origin/development
         median=(column, 'median'),
         q1=(column, lambda x: np.percentile(x, 25)),
         q3=(column, lambda x: np.percentile(x, 75)),
@@ -87,7 +92,7 @@ def calculate_per_dhs_fold_changes(
         ).astype(int)
         average_log_data = log_data @ sample_by_annotation / sample_by_annotation.sum(axis=0)
         
-        eval_dataset[col + '_log2_fc'] = eval_dataset['_tmp_log_data'] - eval_dataset['dhs_id'].map(average_log_data.mean(axis=1))
+        eval_dataset[col + '_log2_fc'] = eval_dataset['_tmp_log_data'] - eval_dataset['dhs_id'].astype(str).map(average_log_data.mean(axis=1))
     
         del eval_dataset['_tmp_log_data']
 
@@ -98,12 +103,18 @@ def annotate_eval_dataset_with_obs_columns(eval_dataset: pd.DataFrame, obs: pd.D
         eval_dataset[col] = eval_dataset['sample_id'].map(obs[col])
     return eval_dataset
 
-def get_samples_used_in_training_for_dhs(train_adata: ad.AnnData, dhs_ids):
+def get_samples_used_in_training_for_dhs(train_adata: ad.AnnData, dhs_ids, epoch_names=None, matrix_prefix='class.'):
+    if epoch_names is None:
+        epoch_names = train_adata.uns['epoch_names']
     if len(dhs_ids) == 0:
         return np.array([])
+    dhs_ids = np.asarray(dhs_ids, dtype=str)
     in_training = np.zeros(train_adata.shape[0], dtype=bool)
-    for epoch_name in train_adata.uns['epoch_names']:
-        example_class = train_adata[:, dhs_ids].layers[f'class.{epoch_name}']
-        in_training |= example_class.toarray()[:, 0] != 0
+    for epoch_name in epoch_names:
+        layer_name = f'{matrix_prefix}{epoch_name}'
+        if layer_name not in train_adata.layers:
+            raise ValueError(f'Layer {layer_name} not found in AnnData layers. Available layers: {list(train_adata.layers.keys())}')
+        example_class = train_adata[:, dhs_ids].layers[layer_name]
+        in_training |= example_class.getnnz(axis=1) > 0
     return train_adata.obs_names[in_training]
 

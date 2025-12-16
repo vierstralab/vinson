@@ -8,6 +8,7 @@ import gzip
 from genome_tools import GenomicInterval, VariantInterval, df_to_variant_intervals
 from genome_tools.data.extractors import FastaExtractor, TabixExtractor
 
+from vinson.utils.data_formatting import VinsonData
 from vinson.utils.sequence_utils import one_hot_encode, get_iupac_char_from_alleles
 from vinson.utils.helpers import replace_at
 import logging
@@ -25,10 +26,7 @@ class BaseSequenceDataset(Dataset):
 
     Parameters
     ----------
-    data : dict
-        Dictionary containing sample metadata. Must include keys like 'chrom'.
-    embeddings_df : pd.DataFrame
-        DataFrame of cell-type/state embeddings indexed by sample ID.
+    data : VinsonData containing dict of sample metadata, encodings, embeddings
     fasta_file : str
         Path to reference genome FASTA file.
     genotype_file : str, optional
@@ -54,8 +52,7 @@ class BaseSequenceDataset(Dataset):
 
     def __init__(
         self,
-        data: dict,
-        embeddings_df: pd.DataFrame,
+        data: VinsonData,
         fasta_file: str,
         genotype_file: str = None,
         reverse_complement=False,
@@ -68,7 +65,6 @@ class BaseSequenceDataset(Dataset):
         self.reverse_complement = reverse_complement
         self.jitter = jitter
         self.noise = noise
-        self.embeddings_df = embeddings_df
         self.genotype_file = genotype_file
         
         assert seqlen % 2 == 0, "Error 'seqlen' must be a even number!"
@@ -77,15 +73,13 @@ class BaseSequenceDataset(Dataset):
         self.fasta_extr: FastaExtractor = None
         self.genotype_extr: TabixExtractor = None
         if self.genotype_file is not None:
-            assert 'indiv_id' in data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
-
+            assert 'indiv_id' in self.data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
             self.include_genotypes = True
         else:
             logger.info(
                 "No genotyping files provided -- continuing without sample genotypes."
             )
             self.include_genotypes = False
-
 
     def __del__(self):
         """
@@ -108,7 +102,7 @@ class BaseSequenceDataset(Dataset):
         """
         Return the number of samples in the dataset.
         """
-        return len(self.data['chrom'])
+        return len(self.data)
 
     def get_embedding_vec(self, sample_id) -> np.ndarray:
         """
@@ -125,7 +119,7 @@ class BaseSequenceDataset(Dataset):
             The embedding vector that sample.
         """
         # Cell type/state embeddings
-        x = self.embeddings_df.loc[sample_id].to_numpy(dtype=np.float32)
+        x = self.data.embeddings_df.loc[sample_id].to_numpy(dtype=np.float32)
 
         # Add a little Gaussian noise to embeddings
         if self.noise > 0:
@@ -185,7 +179,7 @@ class BaseSequenceDataset(Dataset):
     def get_sample_sequence(
             self,
             interval: GenomicInterval,
-            indiv_id,
+            indiv_id: str,
             reference_variant: VariantInterval=None
         ):
         """
@@ -202,7 +196,6 @@ class BaseSequenceDataset(Dataset):
                 raise ValueError
         except ValueError:
             return 0, seq_iupac, seq_ref, seq_alt
-
         assert 'INDIV' in indiv_id, f"INDIV_ID format incorrect ({indiv_id}, {type(indiv_id)})."
         
         if variants["indiv_id"].str.endswith(".bed.gz").any():
@@ -219,6 +212,7 @@ class BaseSequenceDataset(Dataset):
                 variants = variants.rename(columns={"phase_block": "phase_set"})
             else:
                 variants["phase_set"] = None
+                #assert 'phase_set' in variants.columns, "Phased genotype data required for variant-aligned sequence extraction."
     
         # If reference_variant is provided, attach gt and phase_set to it
         if reference_variant is not None:
@@ -228,6 +222,7 @@ class BaseSequenceDataset(Dataset):
                 row = variants.set_index(["chrom", "start", "ref", "alt"]).loc[
                     (reference_variant.chrom, reference_variant.start, reference_variant.ref, reference_variant.alt)
                 ]
+    
             except KeyError:
                 #if cannot find variant
                 raise ValueError(
@@ -319,7 +314,6 @@ class BaseSequenceDataset(Dataset):
                     reference_variant,
                     variants,
                 )
-    
         return len(variants), seq_iupac, seq_ref, seq_alt
 
 
@@ -330,11 +324,8 @@ class SequenceEmbedDataset(BaseSequenceDataset):
     
     Parameters
     ----------
-    data : dict
-        Dictionary containing sample metadata. Must include:
-        'chrom', 'summit', 'class', 'density', 'sample_id', 'background', 'read_depth'.
-    embeddings_df : pd.DataFrame
-        DataFrame of cell-type/state embeddings indexed by sample ID.
+    data : VinsonData 
+        VinsonData object containing dict of sample metadata, encodings, embeddings
     fasta_file : str
         Path to reference genome FASTA file.
     genotype_file : str, optional
@@ -353,11 +344,9 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         Standard deviation of Gaussian noise added to embeddings.
 
     """
-
     def __init__(
         self,
-        data: dict,
-        embeddings_df: pd.DataFrame,
+        data: VinsonData,
         fasta_file: str,
         genotype_file: str = None,
         negatives_weight: float = 1.0,
@@ -369,7 +358,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
     ):
         super().__init__(
             data=data,
-            embeddings_df=embeddings_df,
             fasta_file=fasta_file,
             genotype_file=genotype_file,
             reverse_complement=reverse_complement,
@@ -380,8 +368,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         self.clip_density = clip_density
         self.min_bg = min_bg
         self.negatives_weight = negatives_weight
-        
-        #moved from base dataset
+
         assert set(
             [
                 "chrom", "summit", "class", 
@@ -420,16 +407,22 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             - 'sample_id': str, sample identifier
         """
         self._init_fileread()
-        chrom, summit, sample_id, density, bg, read_depth, example_class = (
-            self.data["chrom"][i],
-            self.data["summit"][i],
-            self.data["sample_id"][i],
-            self.data["density"][i],
-            self.data["background"][i],
-            self.data["read_depth"][i],
-            self.data["class"][i],
-        )
-        assert example_class in [-1, 1], "Class must be -1 or 1."
+        data_slice = self.data[i]
+        chrom = data_slice['chrom']
+        summit = data_slice['summit']
+        sample_id = data_slice['sample_id']
+        density = data_slice['density']
+        bg = data_slice['background']
+        read_depth = data_slice['read_depth']
+        example_class = data_slice['class']
+
+        if 'mean_density' in data_slice.keys():
+            mean_density = data_slice["mean_density"]
+        else:
+            mean_density = np.nan
+
+        example_class = 0 if example_class == -1 else 1 # it's not compatible with torchmetrics
+        assert example_class in [0, 1], "Class must be 0 or 1."
 
         # Define region
         interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
@@ -441,37 +434,34 @@ class SequenceEmbedDataset(BaseSequenceDataset):
 
         # indiv_id is expected to be in self.data if genotypes are included
         if self.include_genotypes:
-            indiv_id = self.data['indiv_id'][i]
+            indiv_id = data_slice['indiv_id']
             _, dna_seq, _, _ = self.get_sample_sequence(
                 interval,
                 indiv_id
             )
         else:
             dna_seq = self.fasta_extr[interval]
-        
 
         # One-hot encode DNA sequence
         #added upper for mouse fasta
         try:
             ohe_seq = one_hot_encode(dna_seq.upper(), dtype=np.float32)
+            # Reverse complete (augmentation)
+            if self.reverse_complement and np.random.choice(2) == 1:
+                ohe_seq = np.flip(ohe_seq, [0, 1])
         except ValueError as e:
             logger.error(
                 f"Error converting DNA to one-hot encoding ({chrom}:{summit} -- {sample_id})"
             )
             raise e
-
-        # Reverse complete (augmentation)
-        if self.reverse_complement and np.random.choice(2) == 1:
-            ohe_seq = np.flip(ohe_seq, [0, 1])
-
         # Get embeddings
         embed = self.get_embedding_vec(sample_id)
        
         # Adjust values as needed
         density = np.clip(density, None, self.clip_density)
 
-        if 'dhs_weight' in self.data:
-            weight = self.data['dhs_weight'][i]
+        if 'dhs_weight' in data_slice:
+            weight = data_slice['dhs_weight']
         else:
             weight = np.float32(1.0)
 
@@ -484,6 +474,7 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             "ohe_seq": ohe_seq.copy(),
             "embed": embed.copy(),
             "class": example_class,
+            "mean_density": mean_density,
             "density": density,
             "bg": bg,
             "read_depth": read_depth,
@@ -500,11 +491,8 @@ class VariantEmbedDataset(BaseSequenceDataset):
 
     Parameters
     ----------
-    data : dict
-        Dictionary containing variant metadata. Must include:
-        'chrom', 'pos', 'ref', 'alt', 'ref_counts', 'total_counts', 'BAD', 'sample_id', 'logit_es'.
-    embeddings_df : pd.DataFrame
-        DataFrame of cell-type/state embeddings indexed by sample ID.
+    data : VinsonData
+        VinsonData containing dict of variant metadata, categorical encodings and embeddings.
     fasta_file : str
         Path to reference genome FASTA file.
     genotype_file : str
@@ -521,8 +509,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
 
     def __init__(
         self,
-        data: dict,
-        embeddings_df: pd.DataFrame,
+        data: VinsonData,
         fasta_file: str,
         genotype_file: str = None,
         flip_alleles=True,
@@ -532,7 +519,6 @@ class VariantEmbedDataset(BaseSequenceDataset):
     ):
         super().__init__(
             data=data,
-            embeddings_df=embeddings_df,
             fasta_file=fasta_file,
             genotype_file=genotype_file,
             reverse_complement=reverse_complement,
@@ -559,7 +545,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
         ).issubset(self.data.keys())
 
         if self.genotype_file is not None:
-            assert 'indiv_id' in data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
+            assert 'indiv_id' in self.data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
 
             self.include_genotypes = True
         else:
@@ -604,17 +590,29 @@ class VariantEmbedDataset(BaseSequenceDataset):
         """
         self._init_fileread()
 
-        chrom, pos, ref, alt, ref_counts, total_counts, bad, lfc, sample_id = (
-            self.data["chrom"][i],
-            self.data["pos"][i],
-            self.data["ref"][i],
-            self.data["alt"][i],
-            self.data["ref_counts"][i],
-            self.data["total_counts"][i],
-            self.data["BAD"][i],
-            self.data["logit_es"][i],
-            self.data["sample_id"][i],
-        )
+        # chrom, pos, ref, alt, ref_counts, total_counts, bad, lfc, sample_id = (
+        #     self.data["chrom"][i],
+        #     self.data["pos"][i],
+        #     self.data["ref"][i],
+        #     self.data["alt"][i],
+        #     self.data["ref_counts"][i],
+        #     self.data["total_counts"][i],
+        #     self.data["BAD"][i],
+        #     self.data["logit_es"][i],
+        #     self.data["sample_id"][i],
+        # )
+        data_slice = self.data[i]
+        chrom = data_slice['chrom']
+        pos = data_slice['pos']
+        ref = data_slice['ref']
+        alt = data_slice['alt']
+        ref_counts = data_slice['ref_counts']
+        total_counts = data_slice['total_counts']
+        bad = data_slice['BAD']
+        lfc = data_slice['logit_es']
+        sample_id = data_slice['sample_id']
+
+        # FIXME: Decode categorical variables
 
         variant = GenomicInterval(chrom, pos, pos)
         interval = variant.widen(self.seqlen // 2)
@@ -627,13 +625,14 @@ class VariantEmbedDataset(BaseSequenceDataset):
         
 
         # Inject genotypes if genotype files provided
+        #variant interval pos-1 because dataformatting is using end as pos
         if self.include_genotypes:
-            indiv_id = self.data["indiv_id"][i]   
+            indiv_id = data_slice['indiv_id']   
             _, _, dna_seq_ref, dna_seq_alt = self.get_sample_sequence(
                 interval, 
                 indiv_id,
                 reference_variant=VariantInterval(
-                    chrom=chrom, start=pos, end=pos + 1, ref=ref, alt=alt
+                    chrom=chrom, start=pos-1, end=pos, ref=ref, alt=alt
                 )
             )
         else:
@@ -687,14 +686,3 @@ class VariantEmbedDataset(BaseSequenceDataset):
             "chrom": chrom,
             "pos": pos,
         }
-
-    def __len__(self):
-        """
-        Return the number of variants in the dataset.
-
-        Returns
-        -------
-        int
-            Number of variants.
-        """
-        return self.data["chrom"].shape[0]

@@ -4,10 +4,99 @@ import h5py
 import pandas as pd
 import dask.array as da
 
+class VinsonData:
+    """
+    Class for handling Vinson data formatting and conversion.
 
-def sanitize_data(data: dict, is_variant=False) -> dict:
-    """Ensure that all data arrays are contiguous and correct dtype."""
+    Parameters
+    ----------
+    data : dict
+        Dictionary containing sample metadata. {
+            'chrom': np.array, 'summit': np.array, etc.
+        }
+    encodings : dict
+        Dictionary containing encodings for categorical variables. {
+            'chrom': np.array, ...
+        }
+    embeddings_df : pd.DataFrame
+        DataFrame of cell-type/state embeddings indexed by sample ID.
+    """
+    def __init__(self, data: dict, encodings: dict, embeddings_df: pd.DataFrame, is_variant=False):
+        self.data = data
+        self.encodings = encodings
+        self.embeddings_df = embeddings_df
+        self.is_variant = is_variant
+
+        self.length = len(self.data['chrom'])
+        for key, value in self.data.items():
+            assert len(value) == self.length, f"All data arrays must have the same length. Key {key} has length {len(value)}, expected {self.length}."
     
+    def __repr__(self):
+        return f"VinsonData with keys: {list(self.data.keys())}. Encoded columns: {list(self.encodings.keys())}."
+    
+    def decode(self, key: str) -> np.ndarray:
+        return self._decode(key, self.data[key])
+    
+    def _decode(self, key: str, indices: np.ndarray) -> np.ndarray:
+        """
+        Decode encoded values for a given key.
+        
+        Parameters:
+            key (str): Key of the data dictionary to decode.
+            indices (np.ndarray): Encoded indices to decode.
+        """
+        if key not in self.encodings:
+            raise ValueError(f"Key {key} is not encoded.")
+        return self.encodings[key][indices]
+
+    def to_df(self) -> pd.DataFrame:
+        """Convert data dictionary to pandas DataFrame."""
+        data_df = pd.DataFrame(self.data)
+        for key, enc in self.encodings.items():
+            data_df[key] = pd.Categorical.from_codes(data_df[key], enc)
+        return data_df
+    
+    def __len__(self):
+        """Return number of samples in the dataset."""
+        return self.length
+    
+    def keys(self):
+        """Return keys of the data dictionary."""
+        return self.data.keys()
+    
+    def __contains__(self, key):
+        """Check if key is in the data dictionary."""
+        return key in self.data.keys()
+
+    def __getitem__(self, i) -> dict:
+        """Get data dict for a given index."""
+        return_dict = {}
+        for key, value in self.data.items():
+            return_dict[key] = value[i]
+            if key in self.encodings:
+                return_dict[key] = self._decode(key, return_dict[key])
+                
+        return return_dict
+
+    def write_h5(self, h5_file: str):
+        """Convert data dictionary to H5 file."""
+        strings_dtype = h5py.string_dtype(encoding='utf-8')
+        with h5py.File(h5_file, 'w') as f:
+            for key, value in self.data.items():
+                if key in self.encodings:
+                    value = np.astype(self.decode(key), strings_dtype)
+                f.create_dataset(key, data=value, compression="gzip")
+
+    @classmethod
+    def from_raw(cls, raw_data: dict, embeddings_df: pd.DataFrame, is_variant=False):
+        data, encodings = sanitize_data(raw_data, is_variant=is_variant)
+        return cls(data, encodings, embeddings_df, is_variant=is_variant)
+
+
+def sanitize_data(data: dict, encodings: dict = None, is_variant=False) -> tuple:
+    """Ensure that all data arrays are contiguous and of the correct dtype."""
+    if encodings is None:
+        encodings = {}
     if is_variant:
         data_keys = {
             "chrom": np.str_,
@@ -31,62 +120,49 @@ def sanitize_data(data: dict, is_variant=False) -> dict:
             "class": np.int8,
             "density": np.float32,
         }
-
     optional_keys = {
         "indiv_id": np.str_,
         "dhs_weight": np.float32,
     }
-
     keys = {
         **data_keys,
-        **{k: v for k, v in optional_keys.items() if k in data},
+        **{x: y for x, y in optional_keys.items() if x in data},
     }
-
     for key, dtype in keys.items():
-        # Convert ANY incoming structure (Index, Series, list) into numpy array
-        arr = np.asarray(data[key], dtype=object)
-
-        # if dtype == np.str_:
-        #     mask = pd.isna(arr) | np.isin(arr, ['None', 'nan'])
-        #     arr[mask] = ''
-        if dtype is str:
-            # Force Python strings, preserve exact chrom names
-            arr = np.array(
-                ["" if pd.isna(x) or x in ("None", "nan") else str(x) for x in arr],
-                dtype=object,
-            )
+        if dtype == np.str_:
+            if key in encodings:
+                data[key] = np.asarray(data[key], dtype=np.int32)
+                encodings[key] = np.asarray(encodings[key], dtype=np.str_)
+                mask = pd.isna(encodings[key]) | np.isin(encodings[key], ['None', 'nan'])
+                encodings[key][mask] = ''
+            else:
+                enc, inverse = np.unique(data[key], return_inverse=True)
+                data[key] = np.asarray(inverse, dtype=np.int32)
+                encodings[key] = np.asarray(enc, dtype=np.str_)
         else:
-            arr = arr.astype(dtype, copy=False)
-
-        data[key] = np.ascontiguousarray(arr.astype(dtype))
+            data[key] = np.asarray(data[key], dtype=dtype)
+        if not data[key].flags["C_CONTIGUOUS"]:
+            data[key] = np.ascontiguousarray(data[key])
 
     if 'background' in data:
-        data['background'] = np.nan_to_num(data['background'])
-
-    return data
-
+        data['background'] = np.nan_to_num(data['background'], copy=False)
+    return data, encodings
 
 
-def data_to_h5(h5_file: str, data: dict):
-    strings_dtype = h5py.string_dtype(encoding='utf-8')
-    with h5py.File(h5_file, 'w') as f:
-        for key, value in data.items():
-            if np.issubdtype(value.dtype, np.str_):
-                value = value.astype(strings_dtype)
-            f.create_dataset(key, data=value, compression="gzip")
-
-
-def extract_data_from_h5(h5_file, ref_adata: ad.AnnData, is_variant=False):
+def extract_data_from_h5(h5_file, ref_adata: ad.AnnData, is_variant=False) -> VinsonData:
     with h5py.File(h5_file, 'r') as f:
         data = {}
         for key in f.keys():
             data[key] = f[key][()]
 
-        data = sanitize_data(data, is_variant=is_variant)
-    return data, ref_adata.obsm["motif_embeddings"]
+    return VinsonData.from_raw(
+        data,
+        ref_adata.obsm['motif_embeddings'],
+        is_variant=is_variant
+    )
 
 
-def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str):
+def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str) -> VinsonData:
     """
     Convert train AnnData object to H5 format and extract embeddings.
     Args:
@@ -98,34 +174,53 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str):
         embeddings_df (pd.DataFrame): DataFrame containing motif embeddings.
     """
     
-    layers = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
+    data = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
+    update_layers_dict(data, train_adata, suffix)
+    row_idx, col_idx = get_examples_indices_from_layer(data["class"])
+    encodings = {}
 
-    #row_idx, col_idx, layers = update_layers_dict(layers, train_adata, suffix)
-    row_idx, col_idx = update_layers_dict(layers, train_adata, suffix)
+    encoded = {}
+    encoding_sources = {
+        "sample_id": train_adata.obs_names,
+        "dhs_id": train_adata.var_names,
+        "chrom": train_adata.var["#chr"],
+    }
+
+    if "indiv_id" in train_adata.obsm:
+        encoding_sources["indiv_id"] = train_adata.obsm["indiv_id"]
+
+    for key, arr in encoding_sources.items():
+        enc, inv = np.unique(arr, return_inverse=True)
+        encodings[key] = enc
+        encoded[key] = inv
 
     data = {
         'read_depth': train_adata.obs['nuclear_reads'].values[row_idx],
-        'sample_id': train_adata.obs_names[row_idx],
-        'dhs_id': train_adata.var_names[col_idx],
-        'chrom': train_adata.var['#chr'].values[col_idx],
+        'sample_id': encoded["sample_id"][row_idx],
+        'dhs_id': encoded["dhs_id"][col_idx],
+        'chrom': encoded["chrom"][col_idx],
         'summit': train_adata.var['dhs_summit'].values[col_idx],
-        'background': layers['mean_bg_agg_cutcounts'].data,
-        'class': layers['class'].data,
-        'density': layers['density'].data,
+        'background': data['mean_bg_agg_cutcounts'].data,
+        'class': data['class'].data,
+        'density': data['density'].data,
     }
-    if 'indiv_id' in train_adata.obsm:
-        data['indiv_id'] = get_indiv_id_info(train_adata, row_idx)
+    if 'indiv_id' in encoded:
+        data['indiv_id'] = encoded["indiv_id"][row_idx]
 
     if 'dhs_weight' in train_adata.varm:
         data['dhs_weight'] = train_adata.varm['dhs_weight'][col_idx]
-
-    data = sanitize_data(data)
+    
+    data, encodings = sanitize_data(data, encodings, is_variant=False)
 
     embeddings_df = train_adata.obsm['motif_embeddings']
-    return data, embeddings_df
+    return VinsonData(
+        data,
+        encodings=encodings,
+        embeddings_df=embeddings_df,
+        is_variant=False
+    )
 
-
-def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str):
+def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str) -> VinsonData:
     """
     Convert AnnData object to H5 format and extract embeddings.
     Args:
@@ -137,35 +232,58 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str):
         embeddings_df (pd.DataFrame): DataFrame containing motif embeddings.
     """
     
-    layers = {"ref_counts": None, "total_counts": None, "BAD": None, "logit_es": None}
-    row_idx, col_idx = update_layers_dict_var(layers, train_adata, suffix)
-
-    data = {
-        'chrom': train_adata.var['#chr'].values[col_idx],
-        'pos': train_adata.var['start'].values[col_idx],
-        'ref': train_adata.var['ref'].values[col_idx],
-        'alt': train_adata.var['alt'].values[col_idx],
-        'sample_id': train_adata.obs_names[row_idx],
-        'ref_counts': layers['ref_counts'].data,
-        'total_counts': layers['total_counts'].data,
-        'BAD': layers['BAD'].data,
-        'logit_es': layers['logit_es'].data,
+    data = {"ref_counts": None, "total_counts": None, "BAD": None, "logit_es": None}
+    update_layers_dict(data, train_adata, suffix)
+    row_idx, col_idx = get_examples_indices_from_layer(data["ref_counts"])
+    encodings = {}
+    encoded = {}
+    encoding_sources = {
+        "sample_id": train_adata.obs_names,
+        "pos": train_adata.var['end'],
+        "chrom": train_adata.var["#chr"],
+        'ref': train_adata.var['ref'],
+        'alt': train_adata.var['alt']
     }
-
     if 'indiv_id' in train_adata.obsm:
-        data['indiv_id'] = get_indiv_id_info(train_adata, row_idx)
+        encoding_sources['indiv_id'] = train_adata.obsm['indiv_id']
 
-    data = sanitize_data(data, is_variant=True)
+    for key, arr in encoding_sources.items():
+        enc, inv = np.unique(arr, return_inverse=True)
+        encodings[key] = enc
+        encoded[key] = inv
 
+        
+    data = {
+        'chrom': encoded['chrom'][col_idx],
+        'pos': encoded['pos'][col_idx],
+        'ref': encoded['ref'][col_idx],
+        'alt': encoded['alt'][col_idx],
+        'sample_id': encoded["sample_id"][row_idx],
+        'ref_counts': data['ref_counts'].data,
+        'total_counts': data['total_counts'].data,
+        'BAD': data['BAD'].data,
+        'logit_es': data['logit_es'].data,
+    }
+    if 'indiv_id' in encoded:
+        data['indiv_id'] = encoded["indiv_id"][row_idx]
+
+    data, encodings = sanitize_data(data, encodings, is_variant=True)
     embeddings_df = train_adata.obsm['motif_embeddings']
-    return data, embeddings_df
+
+    return VinsonData(
+        data,
+        encodings=encodings,
+        embeddings_df=embeddings_df,
+        is_variant=True
+    )
 
 
 def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=None, use_sample_peaks=False,
-                                     extra_layers=()) -> dict:
+                                     extra_layers=()) -> VinsonData:
     """
     This function can also be used to extract data into training anndata object.
     """
+    # FIXME: Not optimized yet
     adata_slice = slice_adata(backed_anndata, dhs_ids, sample_ids) # sample x dhs
 
     sample_names = np.array(adata_slice.obs_names)
@@ -200,8 +318,12 @@ def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=No
         for key in data:
             data[key] = data[key][sample_peaks_mask]
 
-    data = sanitize_data(data)
-    return data
+    embeddings_df = adata_slice.obsm['motif_embeddings']
+    return VinsonData.from_raw(
+        data,
+        embeddings_df,
+        is_variant=False
+    )
 
 
 def slice_adata(adata, dhs_ids, sample_ids) -> ad.AnnData:
@@ -219,27 +341,28 @@ def compute_if_dask(array):
     return array
 
 
-def get_indiv_id_info(train_adata: ad.AnnData, row_idx: np.ndarray):
-    #return train_adata.obsm['indiv_id'].values[row_idx]
-    return train_adata.obsm['indiv_id'][row_idx]
-
+def get_examples_indices_from_layer(layer_coo):
+    row_idx, col_idx = layer_coo.row, layer_coo.col
+    return row_idx, col_idx
 
 def update_layers_dict(layers: dict, train_adata: ad.AnnData, suffix: str):
     assert len(layers) > 0, "Must provide at least one layer to extract"
     for layer_name in layers:
         epoch_layer_name = f"{layer_name}.{suffix}"
         layers[layer_name] = train_adata.layers[epoch_layer_name].tocoo()
-    
-    class_coo = layers["class"]
-    row_idx, col_idx = class_coo.row, class_coo.col
-    return row_idx, col_idx
 
-def update_layers_dict_var(layers: dict, train_adata: ad.AnnData, suffix: str):
-    assert len(layers) > 0, "Must provide at least one layer to extract"
-    for layer_name in layers:
-        epoch_layer_name = f"{layer_name}.{suffix}"
-        layers[layer_name] = train_adata.layers[epoch_layer_name].tocoo()
-    
-    class_coo = layers["logit_es"]
-    row_idx, col_idx = class_coo.row, class_coo.col
-    return row_idx, col_idx
+
+def get_number_of_train_examples(anndata_file):
+    adata = ad.read_h5ad(anndata_file)
+    if 'n_training_examples' in adata.uns:
+        n_examples = adata.uns['n_training_examples']
+    else:
+        n_examples = 0
+        for epoch in adata.uns['epoch_names']:
+            layer_name = f"class.{epoch}"
+            if layer_name not in adata.layers:
+                raise ValueError(f"Layer {layer_name} not found in AnnData layers. Cannot determine number of training examples.")
+            layer = adata.layers[layer_name]
+            n_examples += layer.getnnz()
+
+    return n_examples

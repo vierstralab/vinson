@@ -1,3 +1,4 @@
+import csv
 import os
 import sys
 import random
@@ -61,8 +62,8 @@ def main(args):
     )
     trainer_kwargs = {}
     if args.debug:
-        trainer_kwargs["limit_train_batches"] = 200 * args.devices
-        trainer_kwargs["limit_val_batches"] = 200 * args.devices
+        trainer_kwargs["limit_train_batches"] = 100 * args.devices
+        trainer_kwargs["limit_val_batches"] = 100 * args.devices
         config["logging_params"]["val_check_interval"] = 1.0
         
     trainer = init_multigpu_trainer(
@@ -94,6 +95,28 @@ def main(args):
     )
 
     model = model_from_config(config, checkpoint_path=checkpoint)
+
+    #deubugs remove later
+    debug_log_dir = os.path.join(outdir, "batch_logs")
+    os.makedirs(debug_log_dir, exist_ok=True)
+    batch_log_file = os.path.join(debug_log_dir, "batch_debug.csv")
+
+    
+    # Write header
+    with open(batch_log_file, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "epoch", "batch_idx", "loss",
+            "min_lfc", "max_lfc",
+            "min_ref_counts", "max_ref_counts",
+            "min_total_counts", "max_total_counts",
+            "min_bad_score", "max_bad_score",
+        ])
+    
+    # Attach file path to model
+    model.batch_log_file = batch_log_file
+    model.debug = True  # Enable debug mode
+
     
     # Start training
     fit_model(
@@ -122,10 +145,9 @@ if __name__ == "__main__":
         "--exclude_indiv_ids",
         type=str,
         default=None,
-        help=(
+        help=
             "Comma-separated list of indiv_id values to exclude, "
             "or path to a text file with one indiv_id per line."
-        ),
     )
 
     parser.add_argument(

@@ -336,6 +336,7 @@ def binomial_mixture_normed_loss(
 
     #optional min nll fix
     if tau <= 0:
+        
         edge = (target == 0) | (target == n)
         if edge.any():
             min_nll_edge = -math.log(2.0)

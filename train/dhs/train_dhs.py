@@ -1,7 +1,5 @@
 import os
 import sys
-import random
-import numpy as np
 from argparse import ArgumentParser
 
 import torch
@@ -13,40 +11,14 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 
-from vinson.utils.helpers import read_configs, save_config, generate_run_name
-from vinson.utils.run import datamodule_from_config, model_from_config
+import anndata as ad
+import gc
 
+from vinson.utils.helpers import read_configs, save_config, generate_run_name
+from vinson.utils.run import datamodule_from_config, model_from_config, set_global_seed, set_worker_seed
+from vinson.utils.data_formatting import get_number_of_train_examples
 
 torch.set_float32_matmul_precision('high')
-
-
-def set_global_seed(seed=42):
-    # Python's built-in random module
-    random.seed(seed)
-
-    # Numpy's random module
-    np.random.seed(seed)
-
-    # PyTorch seed for CPU
-    torch.manual_seed(seed)
-
-    # PyTorch seed for all GPU devices (if using CUDA)
-    torch.cuda.manual_seed_all(seed)
-
-    # Make sure to disable CuDNN's non-deterministic optimizations
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-
-def set_worker_seed(worker_id):
-    # Set seed for Python and NumPy in each worker
-    worker_seed = torch.initial_seed() % 2**32
-    np.random.seed(worker_seed)
-    random.seed(worker_seed)
-
-# class IterateDataModule(L.Callback):
-#     def on_train_epoch_end(self, trainer, pl_module):
-#         trainer.datamodule.iterate_train_dataset()
 
 
 def init_multigpu_trainer(
@@ -163,7 +135,7 @@ if __name__ == "__main__":
         "--num_workers",
         type=int,
         default=8,
-        help="Number of worker processes for data loading.",
+        help="Per device number of worker processes for data loading. One worker will be reserved for training script.",
     )
     parser.add_argument(
         "--accelerator",
@@ -226,6 +198,7 @@ if __name__ == "__main__":
         config["logging_params"]["val_check_interval"] = 1.0
 
     # Initialize trainer
+    print('Initializing trainer...', flush=True)
     trainer = init_multigpu_trainer(
         outdir,
         accelerator=args.accelerator,
@@ -236,9 +209,10 @@ if __name__ == "__main__":
         val_check_interval=config["logging_params"]["val_check_interval"],
         **trainer_kwargs
     )
-
+    if args.num_workers == 1:
+        print('Using single worker for data loading. This worker will be used by training process as well. This may slow down training.')
     dataloader_kwargs = dict(
-        num_workers=args.num_workers,
+        num_workers=max(args.num_workers - 1, 0),
         pin_memory=True if args.accelerator == "gpu" else False,
         drop_last=True,
         worker_init_fn=set_worker_seed,
@@ -246,6 +220,7 @@ if __name__ == "__main__":
     )
 
     # Setup dataloaders
+    print('Initializing datamodule...', flush=True)
     datamodule = datamodule_from_config(
         config,
         anndata_file=args.anndata_file,
@@ -253,9 +228,17 @@ if __name__ == "__main__":
         genotype_file=args.genotype_file,
         **dataloader_kwargs,
     )
+    
+    if config['hparams']['lr_scheduler'] == 'OneCycleLR':
+        if config['hparams']['lr_scheduler_kwargs'].get('total_steps') is None:
+            print('Setting total_steps for OneCycleLR...')
+            n_examples = get_number_of_train_examples(args.anndata_file)
+            config['hparams']['lr_scheduler_kwargs']['total_steps'] = round(n_examples / datamodule.dataloader_kwargs['batch_size'] / trainer.num_devices)
 
+    print('Initializing model...', flush=True)
     model = model_from_config(config, checkpoint_path=checkpoint)
 
+    print('Training...', flush=True)
     # Start training
     fit_model(
         model,
