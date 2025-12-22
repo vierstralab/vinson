@@ -175,6 +175,7 @@ class BaseSequenceDataset(Dataset):
                     ],
                     na_values=".",
                 )
+
     
     def get_sample_sequence(
             self,
@@ -238,84 +239,58 @@ class BaseSequenceDataset(Dataset):
         # Convert variants to VariantInterval objects
         variants = df_to_variant_intervals(variants, extra_columns=extra_columns)
     
-        #check for ambigous positions
+        # Check for ambiguous positions
+        # TO DO: clean up to remove ambiguous code, just throw warning
         variants_by_pos = {}
         for v in variants:
             variants_by_pos.setdefault(v.start, []).append(v)
-        
-        ambiguous_positions = set()
+    
         for pos, vars_at_pos in variants_by_pos.items():
-            rel = pos - interval.start
             if len(vars_at_pos) > 1:
-                ambiguous_positions.add(pos)
-                chosen = None
-
-                if reference_variant is not None:
-                    # Checking if reference_variant matches one of the ambiguous variants...
-                    for v in vars_at_pos:
-                        if (v.start == reference_variant.start and
-                            v.ref == reference_variant.ref and
-                            v.alt == reference_variant.alt):
-                            chosen = v
-                            print(f"Using reference_variant match: {v}")
-                            break
-                if chosen is None:
-                    warnings.warn(
-                        f"Skipping ambiguous region at {reference_variant.chrom}:{pos} for {indiv_id}."
-                    )
-                    continue
-        
-                # Use the chosen variant
-                v = chosen
-            else:
-                # Not ambiguous
-                v = vars_at_pos[0]
-
-            #get iupac
+                raise ValueError(f"Ambiguous variants found at {pos} for {indiv_id}")
+    
+            # Only one variant, safe to process
+            v = vars_at_pos[0]
+            rel = pos - interval.start
+    
+            # IUPAC sequence
             iupac_base = get_iupac_char_from_alleles(v.ref, v.alt)
             seq_iupac = replace_at(seq_iupac, rel, iupac_base)
-            
-            # Phased heterozygous
+    
+            # Phased heterozygous handling
             phased_match = (
                 reference_variant is not None
                 and v.gt in ("0|1", "1|0")
                 and reference_variant.phase_set == getattr(v, "phase_set", None)
             )
-            
             if phased_match:
-                # print(f"Phased match detected: GT={v.gt}, phase_set={v.phase_set}")
                 if v.gt == "1|0":
-                    # print(f"Using allele swap (1|0): ref={v.alt}, alt={v.ref}")
                     seq_ref = replace_at(seq_ref, rel, v.alt)
                     seq_alt = replace_at(seq_alt, rel, v.ref)
-                else:  # 0|1
-                    # print(f"Using allele order (0|1): ref={v.ref}, alt={v.alt}")
+                else:
                     seq_ref = replace_at(seq_ref, rel, v.ref)
                     seq_alt = replace_at(seq_alt, rel, v.alt)
                 continue
+    
             # Unphased / Homozygous / Heterozygous
             is_het = v.gt[0] != v.gt[2]
             base_ref = v.ref
             base_alt = v.alt if is_het else (v.alt if v.gt[0] == "1" else v.ref)
-    
             seq_ref = replace_at(seq_ref, rel, base_ref)
             seq_alt = replace_at(seq_alt, rel, base_alt)
-
-        # Check reference variant at the end
-        if reference_variant is not None and reference_variant.start not in ambiguous_positions:
+    
+        # Final check for reference variant
+        if reference_variant is not None:
             rel_pos = reference_variant.start - interval.start
             if reference_variant.gt == "1|0":
                 seq_ref, seq_alt = seq_alt, seq_ref
-    
             if (seq_ref[rel_pos] != reference_variant.ref) or (seq_alt[rel_pos] != reference_variant.alt):
                 raise ValueError(
                     f"Expected ref & alt alleles not found in correct position "
-                    f"(reference_variant={reference_variant}, indiv_id={indiv_id})",
-                    reference_variant,
-                    variants,
+                    f"(reference_variant={reference_variant}, indiv_id={indiv_id})"
                 )
+    
         return len(variants), seq_iupac, seq_ref, seq_alt
-
 
 class SequenceEmbedDataset(BaseSequenceDataset):
     """

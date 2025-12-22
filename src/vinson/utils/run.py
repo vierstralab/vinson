@@ -74,7 +74,11 @@ def model_from_config(config, checkpoint_path=None):
 
     # --- MODEL INITIALIZATION (NO CHECKPOINT) ---
     if model_type == "variant":
-        model = VariantEmbedModel(trunk=trunk_model, embed=embed_model)
+        model = VariantEmbedModel(
+            trunk=trunk_model,
+            embed=embed_model,
+            optimizer_kwargs=optimizer_kwargs,   # contains lr
+        )
     else:
         model = EmbedModel(
             trunk=trunk_model,
