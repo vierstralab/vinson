@@ -3,8 +3,7 @@ import pandas as pd
 import numpy as np
 from scipy.stats import gmean
 
-[1, 2, 3, 4, 5, 6]
-[[1, 2, 3], [4, 5, 6]]
+
 def get_corrected_density(density, bg_density, min=0.005, max=20):
     return np.clip(
         density - bg_density,

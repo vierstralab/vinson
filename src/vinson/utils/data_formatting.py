@@ -85,7 +85,7 @@ class VinsonData:
         with h5py.File(h5_file, 'w') as f:
             for key, value in self.data.items():
                 if key in self.encodings:
-                    value = np.astype(self.decode(key), strings_dtype)
+                    value = np.asarray(self.decode(key), dtype=strings_dtype)
                 f.create_dataset(key, data=value, compression="gzip")
 
     @classmethod

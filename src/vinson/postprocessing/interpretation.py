@@ -12,6 +12,7 @@ from tangermeme.predict import predict as tangermeme_predict
 from tangermeme.product import _apply
 from tangermeme.deep_lift_shap import deep_lift_shap, _nonlinear
 
+
 def dinucleotide_shuffle(X, **kwargs):
     """
     Shuffle input sequences while preserving dinucleotide composition.
