@@ -110,6 +110,7 @@ if __name__ == '__main__':
             sample_ids=sample_ids,
             dhs_ids=dhs_ids
         )
+        print(len(data))
     data.write_h5(args.output_file)
 
     
