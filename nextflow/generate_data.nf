@@ -61,8 +61,9 @@ workflow dhsValidation {
     Channel.fromPath(params.validation_dhs_file)
         | splitCsv(header:true, sep:'\t')
         | generate_dhs_validation_data
+        | predict
     
-    //annotate_with_predictions(params.validation_samples_file)
+    annotate_with_predictions(params.validation_dhs_file)
 }
 
 
