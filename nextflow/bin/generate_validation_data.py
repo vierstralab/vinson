@@ -86,7 +86,12 @@ if __name__ == '__main__':
     anndata = read_zarr_backed(args.anndata_file)
 
     sample_ids = [sid for sid in args.sample_ids if check_none(sid)]
+    if len(sample_ids) == 0:
+        sample_ids = None
     dhs_ids = [did for did in args.dhs_ids if check_none(did)]
+
+    if len(dhs_ids) == 0:
+        dhs_ids = None
 
     if len(dhs_ids) == 0:
         assert len(sample_ids) > 0, "Either sample IDs or DHS IDs must be provided."
