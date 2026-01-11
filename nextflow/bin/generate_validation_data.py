@@ -104,6 +104,7 @@ if __name__ == '__main__':
             )
     else:
         print('DHS IDs are provided. Ignoring "--mode" argument')
+        print('dhs_ids:', dhs_ids)
         data = extract_dhs_data_from_backed_anndata(
             anndata,
             sample_ids=sample_ids,
