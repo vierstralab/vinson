@@ -267,6 +267,7 @@ def extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=No
     """
     # FIXME: Not optimized yet
     adata_slice = slice_adata(backed_anndata, dhs_ids, sample_ids) # sample x dhs
+    print(len(adata_slice.obs_names), 'samples and', len(adata_slice.var_names), 'DHSs selected', flush=True)
 
     sample_names = np.array(adata_slice.obs_names)
     dhs_names = np.array(adata_slice.var_names)
