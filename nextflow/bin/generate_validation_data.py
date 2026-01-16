@@ -93,7 +93,7 @@ if __name__ == '__main__':
     if len(dhs_ids) == 0:
         dhs_ids = None
 
-    if len(dhs_ids) == 0:
+    if dhs_ids is None:
         assert len(sample_ids) > 0, "Either sample IDs or DHS IDs must be provided."
         if args.mode == 'sample_peaks':
             print('Generating validation data for sample peaks')
