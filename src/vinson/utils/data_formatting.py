@@ -22,7 +22,7 @@ class VinsonData:
     embeddings_df : pd.DataFrame
         DataFrame of cell-type/state embeddings indexed by sample ID.
     """
-    def __init__(self, data: dict, encodings: dict, embeddings_df: pd.DataFrame, is_variant=False):
+    def __init__(self, data: dict, encodings: dict, embeddings_df: pd.DataFrame=None, is_variant=False):
         self.data = data
         self.encodings = encodings
         self.embeddings_df = embeddings_df
@@ -89,7 +89,7 @@ class VinsonData:
                 f.create_dataset(key, data=value, compression="gzip")
 
     @classmethod
-    def from_raw(cls, raw_data: dict, embeddings_df: pd.DataFrame, is_variant=False):
+    def from_raw(cls, raw_data: dict, embeddings_df: pd.DataFrame=None, is_variant=False):
         data, encodings = sanitize_data(raw_data, is_variant=is_variant)
         return cls(data, encodings, embeddings_df, is_variant=is_variant)
 
