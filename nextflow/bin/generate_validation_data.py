@@ -67,7 +67,7 @@ def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> VinsonDa
     else:
         data = data[0]
 
-    return sanitize_data(data, is_variant=False)
+    return VinsonData.from_raw(data, is_variant=False)
 
 def check_none(val):
     if val is None or val == 'None' or pd.isna(val):
