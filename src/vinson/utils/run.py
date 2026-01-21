@@ -26,7 +26,7 @@ def model_from_config(config, checkpoint_path=None):
     hparams = config["hparams"]
     scheduler_name = hparams.get("lr_scheduler")
     scheduler_kwargs = hparams.get("lr_scheduler_kwargs", {})
-    optimizer_kwargs = hparams["optimizer_kwargs"]
+    optimizer_kwargs = hparams.get("optimizer_kwargs", {"lr": hparams.get("lr")})
     trunk_weights = config.get("trunk_weights", None)
 
     # legacy fix
@@ -126,19 +126,17 @@ def dataset_from_h5(
         **dataset_kwargs: Additional arguments for dataset.
     """
     if config["model_type"] == 'variant':
-        data, embeddings_df = extract_data_from_h5(h5_file, ref_adata=ref_adata, is_variant=True)
+        data = extract_data_from_h5(h5_file, ref_adata=ref_adata, is_variant=True)
         dataset = VariantEmbedDataset(
             data=data,
-            embeddings_df=embeddings_df,
             fasta_file=fasta_file,
             genotype_file=genotype_file,
             **dataset_kwargs,
         )
     else:
-        data, embeddings_df = extract_data_from_h5(h5_file, ref_adata=ref_adata, is_variant=False)
+        data = extract_data_from_h5(h5_file, ref_adata=ref_adata, is_variant=False)
         dataset = SequenceEmbedDataset(
             data=data,
-            embeddings_df=embeddings_df,
             fasta_file=fasta_file,
             genotype_file=genotype_file,
             **dataset_kwargs,
