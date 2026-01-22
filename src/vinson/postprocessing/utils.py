@@ -55,11 +55,19 @@ def annotate_eval_dataset_with_layers(eval_dataset: pd.DataFrame, annotate_count
         eval_dataset['pred_counts'] = eval_dataset.eval('pred_total_density / 1e6 * read_depth')
 
         eval_dataset['log_counts'] = np.log(
-            eval_dataset.eval('density * read_depth / 1e6 + 1')
+            eval_dataset.eval('counts + 1')
         )
         eval_dataset['pred_log_counts'] = np.log(
             eval_dataset.eval('pred_counts + 1')
         )
+
+        eval_dataset['log_corrected_counts'] = np.log(
+            np.clip(eval_dataset.eval('counts - bg_counts'), 0) + 1
+        )
+        eval_dataset['pred_log_corrected_counts'] = np.log(
+            eval_dataset.eval('pred_corrected_density / 1e6 * read_depth + 1')
+        )
+
     return eval_dataset
 
 def get_agg_by_annotation(df: pd.DataFrame, column, by='extended_annotation'):
