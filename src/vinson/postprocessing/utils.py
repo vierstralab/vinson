@@ -62,7 +62,7 @@ def annotate_eval_dataset_with_layers(eval_dataset: pd.DataFrame, annotate_count
         )
 
         eval_dataset['log_corrected_counts'] = np.log(
-            np.clip(eval_dataset.eval('counts - background'), 0) + 1
+            np.clip(eval_dataset.eval('counts - background'), a_min=0, a_max=None) + 1
         )
         eval_dataset['pred_log_corrected_counts'] = np.log(
             eval_dataset.eval('pred_corrected_density / 1e6 * read_depth + 1')
