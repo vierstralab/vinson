@@ -13,7 +13,7 @@ from torchmetrics.regression import PearsonCorrCoef
 from torch.nn import BCEWithLogitsLoss
 
 from vinson.loss import PoissonNLLLoss
-from vinson.lr import CosineAnnealingWarmupRestarts
+from vinson.lr import LR_SCHEDULERS
 from vinson.models.cell_classifier import EmbeddingMLP
 
 
@@ -172,11 +172,7 @@ class AbstractBaseSequenceModel(L.LightningModule):
 
     def configure_optimizers(self):
         """ """
-        lr_scheduler_dict = {
-            "CosineAnnealingWarmupRestarts": CosineAnnealingWarmupRestarts,
-            "OneCycleLR": torch.optim.lr_scheduler.OneCycleLR,
-        }
-        lr_scheduler = lr_scheduler_dict.get(self.lr_scheduler, None)
+        lr_scheduler = LR_SCHEDULERS.get(self.lr_scheduler, None)
         optimizer = torch.optim.AdamW(self.parameters(), **self.optimizer_kwargs)
 
         if lr_scheduler is None:

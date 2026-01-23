@@ -1,6 +1,9 @@
+from typing import Dict, Any, Union
+
 import torch
 import lightning as L
-from typing import Dict, Any
+
+from vinson.lr import LR_SCHEDULERS
 
 
 class EmbeddingMLP(torch.nn.Module):
@@ -22,7 +25,10 @@ class EmbeddingMLP(torch.nn.Module):
     dropout : float, optional
         Dropout probability (default is 0.3).
     """
-    def __init__(self, n_inputs: int, n_nodes: int = 64, n_layers: int = 1, dropout: float = 0.3):
+
+    def __init__(
+        self, n_inputs: int, n_nodes: int = 64, n_layers: int = 1, dropout: float = 0.3
+    ):
         super(EmbeddingMLP, self).__init__()
 
         self.n_inputs = n_inputs
@@ -105,7 +111,15 @@ class CellClassifierModel(L.LightningModule):
     >>> print(outputs.keys())  # dict_keys(['cell_type', 'disease_state'])
     """
 
-    def __init__(self, n_inputs: int, output_dict: Dict[str, int], **kwargs):
+    def __init__(
+        self,
+        n_inputs: int,
+        output_dict: Dict[str, int],
+        lr_scheduler=None,
+        optimizer_kwargs=dict(lr=5e-5, weight_decay=1e-2),
+        lr_scheduler_kwargs=dict(),
+        **kwargs,
+    ):
         super(CellClassifierModel, self).__init__()
 
         self.trunk = EmbeddingMLP(n_inputs, **kwargs)
@@ -119,6 +133,11 @@ class CellClassifierModel(L.LightningModule):
         )
 
         self.criterion = torch.nn.CrossEntropyLoss(reduction="none")
+
+        # Optimizer setup
+        self.optimizer_kwargs = optimizer_kwargs
+        self.lr_scheduler = lr_scheduler
+        self.lr_scheduler_kwargs = lr_scheduler_kwargs
 
         self.save_hyperparameters()
 
@@ -152,69 +171,21 @@ class CellClassifierModel(L.LightningModule):
 
         return loss
 
-    def configure_optimizers(self) -> torch.optim.Optimizer:
-        optimizer = torch.optim.AdamW(self.parameters(), lr=5e-5, weight_decay=1e-2)
-        return optimizer
+    def configure_optimizers(self) -> Union[torch.optim.Optimizer, Dict[str, Any]]:
+        lr_scheduler = LR_SCHEDULERS.get(self.lr_scheduler, None)
+        optimizer = torch.optim.AdamW(self.parameters(), **self.optimizer_kwargs)
 
+        if lr_scheduler is None:
+            return optimizer
 
-# class CellAndPathologicalStateClassifierModel(BaseCellClassifierModel):
-#     def __init__(self, n_inputs, n_cell_categories, n_pathological_states, **kwargs):
-#         super(CellAndPathologicalStateClassifierModel, self).__init__(n_inputs, n_cell_categories, **kwargs)
+        scheduler = lr_scheduler(optimizer, **self.lr_scheduler_kwargs)
 
-#         self.head_cell_category = torch.nn.Linear(self.trunk.n_nodes, n_cell_categories)
-#         self.head_pathological_state = torch.nn.Linear(self.trunk.n_nodes, n_pathological_states)
-
-#         self.criterion = torch.nn.CrossEntropyLoss()
-
-#         self.save_hyperparameters()
-
-#     def forward(self, x):
-#         x = self.trunk(x)
-#         cell_category = self.head_cell_category(x)
-#         pathological_state = self.head_pathological_state(x)
-#         return cell_category, pathological_state
-
-#     def training_step(self, batch, batch_idx):
-#         X, y_cell_category, y_pathological_state = (
-#             batch["embed"],
-#             batch["cell_category"],
-#             batch["pathological_state"],
-#         )
-
-#         _y_cell_category, _y_pathological_state = self(X)
-
-#         loss_cell_category = self.loss_fn(_y_cell_category, y_cell_category)
-#         loss_pathological_state = self.loss_fn(_y_pathological_state, y_pathological_state)
-#         loss = loss_cell_category + loss_pathological_state
-
-#         self.log(
-#             "loss",
-#             loss,
-#             on_step=True,
-#             on_epoch=True,
-#             sync_dist=True,
-#             prog_bar=True,
-#         )
-
-#         return loss
-
-#     def validation_step(self, batch, batch_idx):
-#         X, y_cell_category, y_pathological_state = (
-#             batch["embed"],
-#             batch["cell_category"],
-#             batch["pathological_state"],
-#         )
-
-#         _y_cell_category, _y_pathological_state = self(X)
-
-#         loss_cell_categories = self.loss_fn(_y_cell_category, y_cell_category)
-#         loss_pathological_state = self.loss_fn(_y_pathological_state, y_pathological_state)
-#         loss = loss_cell_categories + loss_pathological_state
-
-#         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-
-#         return loss
-
-#     def configure_optimizers(self):
-#         optimizer = torch.optim.AdamW(self.parameters(), lr=5e-5, weight_decay=1e-2)
-#         return optimizer
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+                "name": "lr",
+            },
+        }
