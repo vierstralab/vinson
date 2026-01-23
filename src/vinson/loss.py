@@ -1,6 +1,7 @@
+from typing import Union
+
 import torch
 from torch.nn.functional import softplus
-from typing import Union
 
 
 class MSELoss(torch.nn.Module):
@@ -138,7 +139,7 @@ class PoissonNLLLoss(torch.nn.Module):
     ----------
     exp_clip : float, optional
         Clipping value for exponential to prevent overflow (default is 30.0).
-    pseudocount : float, optional
+    eps : float, optional
         Small value added to input for log computation (default is 1e-6).
     log_input : bool, optional
         If True, input is treated as log(lambda); otherwise, as lambda (default is True).
@@ -151,7 +152,7 @@ class PoissonNLLLoss(torch.nn.Module):
     def __init__(
         self,
         exp_clip: float = 30.0,
-        pseudocount: float = 1e-6,
+        eps: float = 1e-6,
         log_input: bool = True,
         relative: bool = True,
         reduction: str = "mean",
@@ -159,7 +160,7 @@ class PoissonNLLLoss(torch.nn.Module):
         super(PoissonNLLLoss, self).__init__()
         self.c = float(exp_clip)
         self.reduction = reduction
-        self.pseudocount = pseudocount
+        self.eps = eps
         self.log_input = log_input
         self.relative = relative
 
@@ -196,7 +197,7 @@ class PoissonNLLLoss(torch.nn.Module):
         Parameters
         ----------
         input : torch.Tensor
-            Predicted counts. If log_input is True, this is log(lambda); otherwise, lambda.
+            Predicted counts. If log_input is True, this is log(input); otherwise, input.
         target : torch.Tensor
             Observed counts.
 
@@ -210,18 +211,19 @@ class PoissonNLLLoss(torch.nn.Module):
             log_input = input
             lam = self.clipped_exp(log_input)
         else:
-            log_input = torch.log(input + self.pseudocount)
+            log_input = torch.log(input + self.eps)
             lam = input
 
-        # Poisson NLL centered at target
         if self.relative:
+            # Poisson NLL centered at target
             nll = (
                 (lam - target)
                 + torch.special.xlogy(target, target)
                 - target * log_input
             )
         else:
-            raise NotImplementedError
+            # Raw Poisson NLL
+            nll = lam - target * log_input
 
         if self.reduction == "sum":
             return nll.sum()
@@ -399,7 +401,7 @@ class BinomialMixtureNLLLoss(torch.nn.Module):
         """
         Compute the binomial mixture negative log-likelihood loss.
 
-        This method calculates the NLL for a mixture of binomial distributions adjusted by a bad score.
+        This method calculates the NLL for a mixture of binomial distributions adjusted by a BAD score.
         If relative is True, it normalizes the loss by subtracting the minimum NLL found via root finding.
 
         Parameters
