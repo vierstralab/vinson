@@ -304,7 +304,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
     def step(self, batch, batch_idx):
         (y_hat, y), weight = self._run_step(batch)
 
-        loss = self.self.criterion(y_hat, y)
+        loss = self.criterion(y_hat, y)
         loss *= weight
         loss = loss.mean()
 
