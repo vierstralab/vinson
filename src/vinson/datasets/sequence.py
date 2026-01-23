@@ -274,10 +274,9 @@ class BaseSequenceDataset(Dataset):
 
         return len(variants), seq_iupac, seq_ref, seq_alt
 
-
-class SequenceEmbedDataset(BaseSequenceDataset):
+class SequenceOnlyDataset(BaseSequenceDataset):
     """
-    PyTorch Dataset for extracting sequence and cell-type embeddings, with optional
+    PyTorch Dataset for extracting sequence only (without cell-type embeddings), with optional
     genotype injection, negative sampling, and read depth normalization.
     
     Parameters
@@ -354,7 +353,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         dict
             Dictionary with keys:
             - 'ohe_seq': one-hot encoded DNA sequence (np.ndarray)
-            - 'embed': cell-type embedding (np.ndarray)
             - 'class': int, 1 (positive) or -1 (negative)
             - 'density': float, clipped density value
             - 'bg': float, clipped background
@@ -379,8 +377,22 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         else:
             mean_density = np.nan
 
+        """
         example_class = 0 if example_class == -1 else 1 # it's not compatible with torchmetrics
         assert example_class in [0, 1], "Class must be 0 or 1."
+        """
+        # Convert class from {-1,1} -> {0,1}
+        # Works for scalar or vector
+        example_class = np.asarray(example_class)
+        example_class = (example_class != -1).astype(np.int64)
+
+        # If scalar, keep it scalar-like for downstream code
+        if example_class.ndim == 0:
+            example_class = int(example_class)
+
+        # Sanity check
+        assert np.isin(example_class, [0, 1]).all(), "Class must be 0 or 1."
+
 
         # Define region
         interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
@@ -412,8 +424,6 @@ class SequenceEmbedDataset(BaseSequenceDataset):
                 f"Error converting DNA to one-hot encoding ({chrom}:{summit} -- {sample_id})"
             )
             raise e
-        # Get embeddings
-        embed = self.get_embedding_vec(sample_id)
        
         # Adjust values as needed
         density = np.clip(density, None, self.clip_density)
@@ -423,14 +433,39 @@ class SequenceEmbedDataset(BaseSequenceDataset):
         else:
             weight = np.float32(1.0)
 
+        """
         weight_mult = 1.0 if example_class == 1 else self.negatives_weight
+        """
+        # if multitask vector, treat example as positive if ANY task is positive
+        is_pos = bool(np.any(example_class == 1)) if isinstance(example_class, np.ndarray) else (example_class == 1)
+        weight_mult = 1.0 if is_pos else self.negatives_weight
+
         weight = weight * weight_mult
 
         bg = np.clip(bg, self.min_bg, None)
 
+        # --- make string-like fields collateable ---
+        # numpy string scalar -> python str
+        if isinstance(chrom, (np.str_, np.bytes_)):
+            chrom = str(chrom)
+
+        # if you ever return dhs_id, also convert:
+        # dhs_id = data_slice.get("dhs_id", None)
+        # if isinstance(dhs_id, (np.str_, np.bytes_)):
+        #     dhs_id = str(dhs_id)
+
+        # numpy scalar -> python scalar
+        if isinstance(summit, np.generic):
+            summit = summit.item()
+
+        # numpy unicode array -> python list[str]
+        if isinstance(sample_id, np.ndarray) and sample_id.dtype.kind in ("U", "S", "O"):
+            sample_id = [str(x) for x in sample_id]
+        elif isinstance(sample_id, (np.str_, np.bytes_)):
+            sample_id = str(sample_id)
+
         return {
             "ohe_seq": ohe_seq.copy(),
-            "embed": embed.copy(),
             "class": example_class,
             "mean_density": mean_density,
             "density": density,
@@ -441,6 +476,69 @@ class SequenceEmbedDataset(BaseSequenceDataset):
             "summit": summit,
             "sample_id": sample_id,
         }
+
+class SequenceEmbedDataset(SequenceOnlyDataset):
+    """
+    PyTorch Dataset for extracting sequence and cell-type embeddings, with optional
+    genotype injection, negative sampling, and read depth normalization.
+    
+    Parameters
+    ----------
+    data : VinsonData 
+        VinsonData object containing dict of sample metadata, encodings, embeddings
+    fasta_file : str
+        Path to reference genome FASTA file.
+    genotype_file : str, optional
+        Path to genotype file in tabix format. If provided, requires 'indiv_id' in data.
+    negatives_weight : float, default 1.0
+        Weight applied to negative class examples.
+    clip_density : float, default 20
+        Maximum value to clip density.
+    min_bg : float, default 0.1
+        Minimum value to clip background signal.
+    reverse_complement : bool, default False
+        Randomly reverse-complement sequences for augmentation.
+    jitter : int, default 0
+        Maximum number of bases to shift sequences.
+    noise : float, default 0
+        Standard deviation of Gaussian noise added to embeddings.
+
+    """
+
+    def __getitem__(self, i):
+        """
+        Retrieve a single training sample, including sequence, embedding, and metadata.
+
+        Handles negative sampling, region jittering, reverse complementation, genotype injection,
+        one-hot encoding, and embedding noise.
+
+        Parameters
+        ----------
+        i : int
+            Index of the sample to retrieve.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+            - 'ohe_seq': one-hot encoded DNA sequence (np.ndarray)
+            - 'embed': cell-type embedding (np.ndarray)
+            - 'class': int, 1 (positive) or -1 (negative)
+            - 'density': float, clipped density value
+            - 'bg': float, clipped background
+            - 'read_depth': float, read depth
+            - 'weight': float, sample weight
+            - 'chrom': str, chromosome
+            - 'summit': int, center coordinate
+            - 'sample_id': str, sample identifier
+        """
+        data = super().__getitem__(i)
+        
+        # Get embeddings
+        data['embed'] = self.get_embedding_vec(data['sample_id'])
+        
+
+        return data
 
 
 class VariantEmbedDataset(BaseSequenceDataset):

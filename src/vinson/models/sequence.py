@@ -125,11 +125,13 @@ class AbstractBaseSequenceModel(L.LightningModule):
         lr_scheduler=None,
         optimizer_kwargs=dict(),
         lr_scheduler_kwargs=dict(),
+        n_tasks=1,
     ):
         super().__init__()
 
         self.trunk = trunk_model
         self.seqlen = seqlen
+        self.n_tasks = n_tasks # save it to be use in PearsonCorrCoef
 
         # Common architecture
         self.fc1 = torch.nn.LazyLinear(1024)
@@ -142,7 +144,7 @@ class AbstractBaseSequenceModel(L.LightningModule):
         self.dropout2 = torch.nn.Dropout(0.3)
         self.relu2 = torch.nn.ReLU()
 
-        self.final = torch.nn.LazyLinear(1)
+        self.final = torch.nn.LazyLinear(n_tasks)
 
         # Optimizer setup
         self.optimizer_kwargs = optimizer_kwargs
@@ -178,13 +180,13 @@ class AbstractBaseSequenceModel(L.LightningModule):
             "CosineAnnealingWarmupRestarts": CosineAnnealingWarmupRestarts,
             "OneCycleLR": torch.optim.lr_scheduler.OneCycleLR
         }
-        lr_scheduler = lr_scheduler_dict.get(self.lr_scheduler, None) 
+        lr_scheduler = lr_scheduler_dict.get(self.lr_scheduler, None)
         optimizer = torch.optim.AdamW(self.parameters(), **self.optimizer_kwargs)
 
         if lr_scheduler is None:
             return optimizer
-
-        scheduler = lr_scheduler(optimizer, **self.lr_scheduler_kwargs)
+        else:
+            scheduler = lr_scheduler(optimizer, **self.lr_scheduler_kwargs)
 
         return {
             "optimizer": optimizer,
@@ -207,6 +209,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         lr_scheduler: str=None,
         optimizer_kwargs=dict(),
         lr_scheduler_kwargs=dict(),
+        n_tasks=1,
     ):
         super().__init__(
             trunk_model=trunk_model,
@@ -214,6 +217,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
             lr_scheduler=lr_scheduler,
             optimizer_kwargs=optimizer_kwargs,
             lr_scheduler_kwargs=lr_scheduler_kwargs,
+            n_tasks=n_tasks,
         )
         self.regression = regression
         self.log_output = log_output
@@ -232,7 +236,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         if self.regression:
             self.train_metrics = MetricCollection(
                 {
-                    "pcc": PearsonCorrCoef(),
+                    "pcc": PearsonCorrCoef(num_outputs=self.n_tasks),
                 },
                 prefix="train_",
             )
@@ -312,9 +316,13 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
     def step(self, batch, batch_idx):
         (y_hat, y), weight = self._run_step(batch)
 
+        # loss = self.loss(y_hat, y)
+        # loss *= weight
+        # loss = loss.mean()
         loss = self.loss(y_hat, y)
-        loss *= weight
+        loss = loss * weight.unsqueeze(-1)       # (B, 1) -> broadcasts to (B, 22)
         loss = loss.mean()
+
 
         return loss, y_hat, y
 
@@ -345,8 +353,21 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         return loss
 
     def on_validation_epoch_end(self):
-        self.log_dict(self.valid_metrics.compute(), sync_dist=True)
-        self.valid_metrics.reset()
+        # self.log_dict(self.valid_metrics.compute(), sync_dist=True)
+        # self.valid_metrics.reset()
+            metrics = self.valid_metrics.compute()
+            out = {}
+
+            for k, v in metrics.items():
+                if torch.is_tensor(v) and v.numel() > 1:
+                    for j in range(v.numel()):
+                        out[f"{k}_task{j:02d}"] = v[j]
+                    out[f"{k}_mean"] = torch.nanmean(v)
+                else:
+                    out[k] = v
+
+            self.log_dict(out, sync_dist=True)
+            self.valid_metrics.reset()
 
 
 class EmbedModel(BaseSequenceModel):
