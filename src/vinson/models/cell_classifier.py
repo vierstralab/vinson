@@ -94,7 +94,7 @@ class CellClassifierModel(L.LightningModule):
 
     Examples
     --------
-    >>> model = BaseCellClassifierModel(
+    >>> model = CellClassifierModel(
     ...     n_inputs=1000,
     ...     output_dict={'cell_type': 10, 'disease_state': 2},
     ...     n_nodes=128,
@@ -118,7 +118,7 @@ class CellClassifierModel(L.LightningModule):
             }
         )
 
-        self.criterion = torch.nn.CrossEntropyLoss()
+        self.criterion = torch.nn.CrossEntropyLoss(reduction="none")
 
         self.save_hyperparameters()
 
@@ -134,7 +134,7 @@ class CellClassifierModel(L.LightningModule):
         for head_name in self.heads.keys():
             loss += self.criterion(y_hat[head_name], batch[head_name])
 
-        return loss
+        return loss.mean()
 
     def training_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.Tensor:
         loss = self.step(batch)
