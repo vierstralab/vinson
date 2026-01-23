@@ -1,10 +1,11 @@
 import lightning.pytorch as L
 from torch.utils.data import DataLoader
-from vinson.datasets.sequence import SequenceEmbedDataset
-from vinson.utils.data_formatting import extract_data_from_train_anndata, extract_variant_data_from_anndata
+from vinson.utils.data_formatting import (
+    extract_data_from_train_anndata,
+    extract_variant_data_from_anndata,
+)
 from vinson.datasets.sequence import SequenceEmbedDataset, VariantEmbedDataset
 from itertools import cycle
-from torchdata.stateful_dataloader import StatefulDataLoader
 
 import anndata as ad
 from tqdm import tqdm
@@ -12,6 +13,7 @@ import gc
 
 # TODO: move all logging to one helper file
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,7 +52,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.train_data = None
         self.validation_data = None
         self.train_size = None
-        
+
         self.current_train_epoch = self.validation_epoch = self.epoch_names = None
         self.train_epoch_cycler = None
 
@@ -59,29 +61,31 @@ class SeqEmbedDataModule(L.LightningDataModule):
         adata = ad.read_h5ad(self.anndata_file)
         if "epoch_names" not in adata.uns:
             raise KeyError("AnnData missing 'epoch_names' in .uns")
-        
-        self.epoch_names = adata.uns['epoch_names']
+
+        self.epoch_names = adata.uns["epoch_names"]
 
         self.validation_epoch = self.epoch_names[0]
 
         layer_names = list(adata.layers)
         self.train_data = {}
-        for name in tqdm(self.epoch_names, desc='Loading training data for epochs'):
-            self.train_data[name] = self.get_data(adata, name, dhs_split='train', sample_split='train')
+        for name in tqdm(self.epoch_names, desc="Loading training data for epochs"):
+            self.train_data[name] = self.get_data(
+                adata, name, dhs_split="train", sample_split="train"
+            )
             if name == self.validation_epoch:
                 self.validation_data = {
                     self.validation_epoch: self.get_data(
                         adata,
                         self.validation_epoch,
-                        dhs_split='val',
-                        sample_split='train'
+                        dhs_split="val",
+                        sample_split="train",
                     )
                 }
             for layer in layer_names:
                 if layer.endswith(name):
                     del adata.layers[layer]
                     gc.collect()
-        
+
         self.train_epoch_cycler = cycle(self.epoch_names)
 
         logger.info(f"Finished setup. Available epochs: {self.epoch_names}")
@@ -120,14 +124,18 @@ class SeqEmbedDataModule(L.LightningDataModule):
             shuffle=True,
             **self.dataloader_kwargs,
         )
-        print('Finished creating train dataloader for epoch:', self.current_train_epoch, flush=True)
+        print(
+            "Finished creating train dataloader for epoch:",
+            self.current_train_epoch,
+            flush=True,
+        )
         return data_loader
-    
+
     def teardown(self, stage: str):
         print("Teardown datamodule and free memory")
         print(stage)
         gc.collect()
-    
+
     def val_dataloader(self):
         return DataLoader(
             self.validation_dataset(),
@@ -136,7 +144,9 @@ class SeqEmbedDataModule(L.LightningDataModule):
         )
 
     @staticmethod
-    def get_data(full_adata: ad.AnnData, suffix, dhs_split='train', sample_split='train'):
+    def get_data(
+        full_adata: ad.AnnData, suffix, dhs_split="train", sample_split="train"
+    ):
         """
         Generic method to extract data from anndata object for a given split
 
@@ -151,8 +161,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
             embeddings_df (pd.DataFrame): DataFrame with extracted embeddings
         """
         adata = full_adata[
-            full_adata.obsm['split_data'] == sample_split,
-            full_adata.varm['split_data'] == dhs_split
+            full_adata.obsm["split_data"] == sample_split,
+            full_adata.varm["split_data"] == dhs_split,
         ]
 
         return extract_data_from_train_anndata(adata, suffix)
@@ -166,6 +176,7 @@ class SeqEmbedVariantDataModule(SeqEmbedDataModule):
       - Uses extract_var_data_from_anndata
       - Uses VariantEmbedDataset instead of SequenceEmbedDataset
     """
+
     def train_dataset(self):
         data, embeddings_df = self.get_data(self.current_train_epoch, "train", "train")
         return VariantEmbedDataset(
@@ -187,7 +198,9 @@ class SeqEmbedVariantDataModule(SeqEmbedDataModule):
         )
 
     @staticmethod
-    def get_data(full_adata: ad.AnnData, suffix, dhs_split="train", sample_split="train"):
+    def get_data(
+        full_adata: ad.AnnData, suffix, dhs_split="train", sample_split="train"
+    ):
         """Extract variant-level data from AnnData."""
         adata = full_adata[
             full_adata.obsm["split_data"] == sample_split,
