@@ -152,6 +152,7 @@ class CosineAnnealingWarmupRestarts(_LRScheduler):
         for param_group, lr in zip(self.optimizer.param_groups, self.get_lr()):
             param_group["lr"] = lr
 
+
 LR_SCHEDULERS = {
     "CosineAnnealingWarmupRestarts": CosineAnnealingWarmupRestarts,
     "OneCycleLR": torch.optim.lr_scheduler.OneCycleLR,

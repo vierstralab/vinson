@@ -1,10 +1,17 @@
-from typing import Dict, Any, Union
+from typing import Dict, Any, Union, List
 
 import torch
 import lightning as L
 
 from vinson.lr import LR_SCHEDULERS
 
+
+ACTIVATIONS = {
+    "relu": torch.nn.ReLU,
+    "gelu": torch.nn.GELU,
+    "silu": torch.nn.SiLU,
+    "selu": torch.nn.SELU,
+}
 
 class EmbeddingMLP(torch.nn.Module):
     """
@@ -27,17 +34,23 @@ class EmbeddingMLP(torch.nn.Module):
     """
 
     def __init__(
-        self, n_inputs: int, n_nodes: int = 64, n_layers: int = 1, dropout: float = 0.3
+        self, n_inputs: int, n_nodes: int = 64, n_layers: int = 1, dropout: float = 0.3, activations: Union[List[str], str] = "relu"
     ):
-        super(EmbeddingMLP, self).__init__()
+        super().__init__()
 
         self.n_inputs = n_inputs
         self.n_nodes = n_nodes
         self.n_layers = n_layers
 
+        if isinstance(activations, str):
+            activations = [activations] * (n_layers + 1)
+        else:
+            assert len(activations) == n_layers + 1, "Length of activations list must be n_layers + 1"
+        self.activations = [ACTIVATIONS.get(act, act)() for act in activations]
+
         self.ifc = torch.nn.Linear(n_inputs, n_nodes)
         self.ibn = torch.nn.BatchNorm1d(num_features=n_nodes)
-        self.irelu = torch.nn.ReLU()
+        self.irelu = self.activations[0]
         self.idropout = torch.nn.Dropout(p=dropout)
 
         self.fcs = torch.nn.ModuleList(
@@ -47,7 +60,7 @@ class EmbeddingMLP(torch.nn.Module):
             [torch.nn.BatchNorm1d(num_features=n_nodes) for i in range(self.n_layers)]
         )
         self.relus = torch.nn.ModuleList(
-            [torch.nn.ReLU() for i in range(self.n_layers)]
+            self.activations[1:]
         )
         self.dropouts = torch.nn.ModuleList(
             [torch.nn.Dropout(p=dropout) for i in range(self.n_layers)]
@@ -120,7 +133,7 @@ class CellClassifierModel(L.LightningModule):
         lr_scheduler_kwargs=dict(),
         **kwargs,
     ):
-        super(CellClassifierModel, self).__init__()
+        super().__init__()
 
         self.trunk = EmbeddingMLP(n_inputs, **kwargs)
         self.heads = torch.nn.ModuleDict(
@@ -189,3 +202,24 @@ class CellClassifierModel(L.LightningModule):
                 "name": "lr",
             },
         }
+
+
+class CellAndPathologicalStateClassifierModel(CellClassifierModel):
+    """
+    Legacy wrapper for cell and pathological state classification.
+    """
+    def __init__(self, n_inputs, n_cell_categories, n_pathological_states, **kwargs):
+        output_dict = {
+            "cell_type": n_cell_categories,
+            "pathological_state": n_pathological_states,
+        }
+        super().__init__(
+            n_inputs=n_inputs, output_dict=output_dict, **kwargs
+        )
+    
+    def forward(self, x):
+        out = super().forward(x)
+        return out["cell_type"], out["pathological_state"]
+
+    def step(self, batch):
+        raise NotImplementedError("The legacy model is not trainable. Please use CellClassifierModel instead.")
