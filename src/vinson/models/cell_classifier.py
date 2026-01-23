@@ -216,6 +216,8 @@ class CellAndPathologicalStateClassifierModel(CellClassifierModel):
         super().__init__(
             n_inputs=n_inputs, output_dict=output_dict, **kwargs
         )
+        self.head_cell_category = self.heads["cell_type"]
+        self.head_pathological_state = self.heads["pathological_state"]
     
     def forward(self, x):
         out = super().forward(x)
