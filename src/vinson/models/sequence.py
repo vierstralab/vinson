@@ -1,4 +1,5 @@
 import torch
+from typing import Any, Dict, Optional, Tuple, Union, List
 
 import lightning as L
 
@@ -17,26 +18,40 @@ from vinson.optim.loss import PoissonNLLLoss
 from .cell_classifier import EmbeddingMLP
 
 
+
+
 class CellEmbedding(EmbeddingMLP):
     """
     This a simple multilayer perceptron to encode cell states from an embedding
     'n_inputs' is the dimension of the embedding space.
     """
 
-    def __init__(self, n_inputs, n_nodes=1024, n_outputs=128, n_layers=0):
-        super().__init__(n_inputs=n_inputs, n_nodes=n_nodes, n_layers=n_layers)
+    def __init__(
+        self,
+        n_inputs: int,
+        n_nodes: int = 1024,
+        n_outputs: int = 128,
+        n_layers: int = 0,
+        activations: Union[List[str], str] = "relu",
+    ) -> None:
+        super().__init__(
+            n_inputs=n_inputs,
+            n_nodes=n_nodes,
+            n_layers=n_layers,
+            activations=activations,
+        )
         self.n_outputs = n_outputs
 
         self.ffc = torch.nn.Linear(n_nodes, self.n_outputs)
 
-    def forward(self, embed):
+    def forward(self, embed: torch.Tensor) -> torch.Tensor:
         x = super().forward(embed)
         x = self.ffc(x)
         return x
 
 
 class BassetTrunk(torch.nn.Module):
-    def __init__(self):
+    def __init__(self) -> None:
         super(BassetTrunk, self).__init__()
 
         self.layer1 = torch.nn.Sequential(
@@ -71,7 +86,7 @@ class BassetTrunk(torch.nn.Module):
 
         # self.flatten = torch.nn.Flatten()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.layer1(x)
         x = self.relu1(x)
 
@@ -89,13 +104,13 @@ class BassetTrunk(torch.nn.Module):
 
 
 class BassetTrunkEmbed(BassetTrunk):
-    def __init__(self, n_embed_outputs):
+    def __init__(self, n_embed_outputs: int) -> None:
         super().__init__()
 
         self.bias2 = torch.nn.Linear(n_embed_outputs, self.layer2[0].out_channels)
         self.bias3 = torch.nn.Linear(n_embed_outputs, self.layer3[0].out_channels)
 
-    def forward(self, x, embed):
+    def forward(self, x: torch.Tensor, embed: torch.Tensor) -> torch.Tensor:
         x = self.layer1(x)
         x = self.relu1(x)
 
@@ -116,12 +131,12 @@ class BassetTrunkEmbed(BassetTrunk):
 class AbstractBaseSequenceModel(L.LightningModule):
     def __init__(
         self,
-        trunk_model,
-        seqlen=1344,
-        lr_scheduler=None,
-        optimizer_kwargs=dict(),
-        lr_scheduler_kwargs=dict(),
-    ):
+        trunk_model: torch.nn.Module,
+        seqlen: int = 1344,
+        lr_scheduler: Optional[str] = None,
+        optimizer_kwargs: Dict[str, Any] = dict(),
+        lr_scheduler_kwargs: Dict[str, Any] = dict(),
+    ) -> None:
         super().__init__()
 
         self.trunk = trunk_model
@@ -148,12 +163,12 @@ class AbstractBaseSequenceModel(L.LightningModule):
         self.train_metrics = MetricCollection({}, prefix="train_")
         self.valid_metrics = MetricCollection({}, prefix="val_")
 
-    def init_metrics(self):
+    def init_metrics(self) -> None:
         raise NotImplementedError(
             "Subclasses of AbstractBaseSequenceModel must implement init_metrics method."
         )
 
-    def forward_fc(self, x):
+    def forward_fc(self, x: torch.Tensor) -> torch.Tensor:
         x = self.fc1(x)
         x = self.bn1(x)
         x = self.dropout1(x)
@@ -166,11 +181,11 @@ class AbstractBaseSequenceModel(L.LightningModule):
 
         return x
 
-    def on_validation_epoch_end(self):
+    def on_validation_epoch_end(self) -> None:
         self.log_dict(self.valid_metrics.compute(), sync_dist=True)
         self.valid_metrics.reset()
 
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> Union[torch.optim.Optimizer, Dict[str, Any]]:
         """ """
         lr_scheduler = LR_SCHEDULERS.get(self.lr_scheduler, None)
         optimizer = torch.optim.AdamW(self.parameters(), **self.optimizer_kwargs)
@@ -194,14 +209,14 @@ class AbstractBaseSequenceModel(L.LightningModule):
 class BaseSequenceModel(AbstractBaseSequenceModel):
     def __init__(
         self,
-        trunk_model,
-        seqlen=1344,
-        regression=False,
-        log_output=True,
-        lr_scheduler: str = None,
-        optimizer_kwargs=dict(),
-        lr_scheduler_kwargs=dict(),
-    ):
+        trunk_model: torch.nn.Module,
+        seqlen: int = 1344,
+        regression: bool = False,
+        log_output: bool = True,
+        lr_scheduler: Optional[str] = None,
+        optimizer_kwargs: Dict[str, Any] = dict(),
+        lr_scheduler_kwargs: Dict[str, Any] = dict(),
+    ) -> None:
         super().__init__(
             trunk_model=trunk_model,
             seqlen=seqlen,
@@ -220,7 +235,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 
         self.init_metrics()
 
-    def init_metrics(self):
+    def init_metrics(self) -> None:
         if self.regression:
             self.train_metrics = MetricCollection(
                 {
@@ -240,11 +255,11 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 
         self.valid_metrics = self.train_metrics.clone(prefix="val_")
 
-    def init_model(self):
+    def init_model(self) -> "BaseSequenceModel":
         self(torch.zeros((2, 4, self.seqlen)))
         return self
 
-    def forward(self, seq):
+    def forward(self, seq: torch.Tensor) -> torch.Tensor:
         features = self.trunk(seq)
 
         x = self.forward_fc(features)
@@ -252,18 +267,24 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 
         return x
 
-    def forward_final(self, x):
+    def forward_final(self, x: torch.Tensor) -> torch.Tensor:
         x = self.final(x)
         if not self.log_output:
             x = torch.relu(x)
         return x
 
-    def _forward_from_batch(self, batch):
+    def _forward_from_batch(self, batch: Dict[str, Any]) -> torch.Tensor:
         X_seq = batch["ohe_seq"]
         y = self(X_seq).squeeze()
         return y
 
-    def _run_step_regression(self, y, read_depth, bg, density):
+    def _run_step_regression(
+        self,
+        y: torch.Tensor,
+        read_depth: torch.Tensor,
+        bg: torch.Tensor,
+        density: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         million = torch.tensor(1e6, device=self.device)
 
         if self.log_output:
@@ -277,10 +298,14 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 
         return input, target_counts  # y_hat, y
 
-    def _run_step_classification(self, y, indicator):
+    def _run_step_classification(
+        self, y: torch.Tensor, indicator: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         return y, indicator.float()  # y_hat, y
 
-    def _run_step(self, batch):
+    def _run_step(
+        self, batch: Dict[str, Any]
+    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         """
         Internal step function to parse batch and run forward + step
 
@@ -301,7 +326,9 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         else:
             return self._run_step_classification(y, batch["class"] == 1), weight
 
-    def step(self, batch, batch_idx):
+    def step(
+        self, batch: Dict[str, Any], batch_idx: int
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         (y_hat, y), weight = self._run_step(batch)
 
         loss = self.criterion(y_hat, y)
@@ -310,14 +337,14 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 
         return loss, y_hat, y
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.Tensor:
         loss, *_ = self.step(batch, batch_idx)
 
         self.log("loss", loss, on_step=True, on_epoch=False, sync_dist=True)
 
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.Tensor:
         loss, y_hat, y = self.step(batch, batch_idx)
 
         if self.regression:
@@ -331,7 +358,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 
         return loss
 
-    def on_validation_epoch_end(self):
+    def on_validation_epoch_end(self) -> None:
         self.log_dict(self.valid_metrics.compute(), sync_dist=True)
         self.valid_metrics.reset()
 
@@ -339,21 +366,23 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 class EmbedModel(BaseSequenceModel):
     """Sequence with embeddings model"""
 
-    def __init__(self, trunk: torch.nn.Module, embed: CellEmbedding, *args, **kwargs):
+    def __init__(
+        self, trunk: torch.nn.Module, embed: CellEmbedding, *args, **kwargs
+    ) -> None:
         super().__init__(trunk, *args, **kwargs)
 
         self.embedding = embed
 
         self.save_hyperparameters(ignore=["trunk", "embed"])
 
-    def init_model(self):
+    def init_model(self) -> "EmbedModel":
         self(
             torch.zeros((2, 4, self.seqlen)),
             torch.zeros((2, self.embedding.n_inputs)),
         )
         return self
 
-    def forward(self, seq, embed):
+    def forward(self, seq: torch.Tensor, embed: torch.Tensor) -> torch.Tensor:
         x = self.embedding(embed)
         x = self.trunk(seq, x)
 
@@ -362,14 +391,14 @@ class EmbedModel(BaseSequenceModel):
 
         return x
 
-    def _forward_from_batch(self, batch):
+    def _forward_from_batch(self, batch: Dict[str, Any]) -> torch.Tensor:
         X_seq = batch["ohe_seq"]
         X_embed = batch["embed"]
         y = self(X_seq, X_embed).squeeze()
         return y
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.Tensor:
         return super().training_step(batch, batch_idx)
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.Tensor:
         return super().validation_step(batch, batch_idx)
