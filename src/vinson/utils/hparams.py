@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Dict, List, Union
 from pandas.api.types import is_list_like
 import torch
 
