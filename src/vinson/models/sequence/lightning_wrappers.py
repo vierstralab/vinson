@@ -1,5 +1,4 @@
-import torch
-from typing import Any, Dict, Optional, Tuple, Union, List
+from typing import Any, Dict, Optional, Tuple, Union
 
 import lightning as L
 
@@ -11,116 +10,48 @@ from torchmetrics.classification import (
 )
 from torchmetrics.regression import PearsonCorrCoef
 
-from torch.nn import BCEWithLogitsLoss
+import torch
 
+from torch.nn import BCEWithLogitsLoss
+import torch.nn as nn
 from vinson.optim.loss import PoissonNLLLoss
 from vinson.utils.optim import configure_optimizer
 
 
-class BassetTrunk(torch.nn.Module):
-    def __init__(self) -> None:
-        super(BassetTrunk, self).__init__()
-
-        self.layer1 = torch.nn.Sequential(
-            torch.nn.Conv1d(
-                in_channels=4, out_channels=300, kernel_size=19, padding="same"
-            ),
-            torch.nn.BatchNorm1d(num_features=300, momentum=0.1),
-            torch.nn.ReLU(),
-            torch.nn.MaxPool1d(kernel_size=3, padding=(3 - 1) // 2),
-        )
-        self.relu1 = torch.nn.ReLU()
-
-        self.layer2 = torch.nn.Sequential(
-            torch.nn.Conv1d(
-                in_channels=300, out_channels=200, kernel_size=11, padding="same"
-            ),
-            torch.nn.BatchNorm1d(num_features=200, momentum=0.1),
-            torch.nn.ReLU(),
-            torch.nn.MaxPool1d(kernel_size=4, padding=(4 - 1) // 2),
-        )
-        self.relu2 = torch.nn.ReLU()
-
-        self.layer3 = torch.nn.Sequential(
-            torch.nn.Conv1d(
-                in_channels=200, out_channels=200, kernel_size=7, padding="same"
-            ),
-            torch.nn.BatchNorm1d(num_features=200, momentum=0.1),
-            torch.nn.ReLU(),
-            torch.nn.MaxPool1d(kernel_size=4, padding=(4 - 1) // 2),
-        )
-        self.relu3 = torch.nn.ReLU()
-
-        # self.flatten = torch.nn.Flatten()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.layer1(x)
-        x = self.relu1(x)
-
-        x = self.layer2(x)
-        x = self.relu2(x)
-
-        x = self.layer3(x)
-        x = self.relu3(x)
-
-        # flatten
-        # x = self.flatten(x)
-        x = torch.flatten(x, start_dim=1)
-
-        return x
+from vinson.models.shared import MLPBlock
 
 
-class BassetTrunkEmbed(BassetTrunk):
-    def __init__(self, n_embed_outputs: int) -> None:
-        super().__init__()
+def initialize_weights(m):
+    if isinstance(m, nn.Conv1d):
+        n = m.kernel_size[0] * m.out_channels
+        m.weight.data.normal_(0, (2 / n) ** 0.5)
+        if m.bias is not None:
+            nn.init.constant_(m.bias.data, 0)
+    elif isinstance(m, nn.BatchNorm1d):
+        nn.init.constant_(m.weight.data, 1)
+        nn.init.constant_(m.bias.data, 0)
+    elif isinstance(m, nn.Linear):
+        m.weight.data.normal_(0, 0.001)
+        if m.bias is not None:
+            nn.init.constant_(m.bias.data, 0)
 
-        self.bias2 = torch.nn.Linear(n_embed_outputs, self.layer2[0].out_channels)
-        self.bias3 = torch.nn.Linear(n_embed_outputs, self.layer3[0].out_channels)
-
-    def forward(self, x: torch.Tensor, embed: torch.Tensor) -> torch.Tensor:
-        x = self.layer1(x)
-        x = self.relu1(x)
-
-        x_conv = self.layer2(x)
-        x_bias = self.bias2(embed).unsqueeze(-1)
-        x = self.relu2(x_conv + x_bias)
-
-        x_conv = self.layer3(x)
-        x_bias = self.bias3(embed).unsqueeze(-1)
-        x = self.relu3(x_conv + x_bias)
-
-        # Flatten features
-        x = torch.flatten(x, start_dim=1)
-
-        return x
 
 ## Lightning Models ##
-class AbstractBaseSequenceModel(L.LightningModule):
+class AbstractSequenceModel(L.LightningModule):
     def __init__(
         self,
-        trunk_model: torch.nn.Module,
-        seqlen: int = 1344,
+        trunk_model: torch.nn.Module, # FIXME
+        head_model: MLPBlock,
         n_tasks=1,
         lr_scheduler: Optional[str]=None,
         optimizer_kwargs: Optional[Dict[str, Any]]=None,
         lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
     ) -> None:
         super().__init__()
+        self.n_tasks = n_tasks
 
-        self.trunk = trunk_model
-        self.seqlen = seqlen
-        self.n_tasks = n_tasks # save it to be use in PearsonCorrCoef
-
-        # Common architecture
-        self.fc1 = torch.nn.LazyLinear(1024)
-        self.bn1 = torch.nn.BatchNorm1d(1024, momentum=0.1)
-        self.dropout1 = torch.nn.Dropout(0.3)
-        self.relu1 = torch.nn.ReLU()
-
-        self.fc2 = torch.nn.LazyLinear(1024)
-        self.bn2 = torch.nn.BatchNorm1d(1024, momentum=0.1)
-        self.dropout2 = torch.nn.Dropout(0.3)
-        self.relu2 = torch.nn.ReLU()
+        self.trunk_model = trunk_model
+        self.head_model = head_model
 
         self.final = torch.nn.LazyLinear(n_tasks)
 
@@ -131,24 +62,14 @@ class AbstractBaseSequenceModel(L.LightningModule):
 
         self.train_metrics = MetricCollection({}, prefix="train_")
         self.valid_metrics = MetricCollection({}, prefix="val_")
+        
+        self.trunk_model.apply(initialize_weights)
+        self.head_model.apply(initialize_weights)
 
     def init_metrics(self) -> None:
         raise NotImplementedError(
             "Subclasses of AbstractBaseSequenceModel must implement init_metrics method."
         )
-
-    def forward_fc(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.fc1(x)
-        x = self.bn1(x)
-        x = self.dropout1(x)
-        x = self.relu1(x)
-
-        x = self.fc2(x)
-        x = self.bn2(x)
-        x = self.dropout2(x)
-        x = self.relu2(x)
-
-        return x
 
     def on_validation_epoch_end(self) -> None:
         self.log_dict(self.valid_metrics.compute(), sync_dist=True)
@@ -163,21 +84,21 @@ class AbstractBaseSequenceModel(L.LightningModule):
         )
 
 
-class BaseSequenceModel(AbstractBaseSequenceModel):
+class SequenceOnlyModel(AbstractSequenceModel):
     def __init__(
         self,
         trunk_model: torch.nn.Module,
-        seqlen: int = 1344,
-        n_tasks=1,
+        head_model: MLPBlock,
         regression: bool = False,
         log_output: bool = False,
+        n_tasks: int = 1,
         lr_scheduler: Optional[str]=None,
         optimizer_kwargs: Optional[Dict[str, Any]]=None,
         lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
     ) -> None:
         super().__init__(
             trunk_model=trunk_model,
-            seqlen=seqlen,
+            head_model=head_model,
             lr_scheduler=lr_scheduler,
             optimizer_kwargs=optimizer_kwargs,
             lr_scheduler_kwargs=lr_scheduler_kwargs,
@@ -191,8 +112,8 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
             if self.regression
             else BCEWithLogitsLoss(reduction="none")
         )
-
         self.init_metrics()
+        self.save_hyperparameters()
 
     def init_metrics(self) -> None:
         if self.regression:
@@ -214,14 +135,10 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 
         self.valid_metrics = self.train_metrics.clone(prefix="val_")
 
-    def init_model(self) -> "BaseSequenceModel":
-        self(torch.zeros((2, 4, self.seqlen)))
-        return self
-
     def forward(self, seq: torch.Tensor) -> torch.Tensor:
-        features = self.trunk(seq)
+        features = self.trunk_model(seq)
 
-        x = self.forward_fc(features)
+        x = self.head_model(features)
         x = self.forward_final(x)
 
         return x
@@ -332,30 +249,36 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         self.valid_metrics.reset()
 
 
-class EmbedModel(BaseSequenceModel):
+class SequenceEmbedModel(SequenceOnlyModel):
     """Sequence with embeddings model"""
 
     def __init__(
-        self, trunk: BassetTrunkEmbed, embed: CellEmbedding, *args, **kwargs
-    ) -> None:
-        super().__init__(trunk, *args, **kwargs)
-
-        self.embedding = embed
-
-        self.save_hyperparameters(ignore=["trunk", "embed"])
-
-    def init_model(self) -> "EmbedModel":
-        self(
-            torch.zeros((2, 4, self.seqlen)),
-            torch.zeros((2, self.embedding.n_inputs)),
+            self,
+            trunk_model: nn.Module,
+            head_model: MLPBlock,
+            embed_model: MLPBlock,
+            lr_scheduler: Optional[str]=None,
+            optimizer_kwargs: Optional[Dict[str, Any]]=None,
+            lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
+            **kwargs
+        ):
+        super().__init__(
+            trunk_model=trunk_model,
+            head_model=head_model,
+            lr_scheduler=lr_scheduler,
+            optimizer_kwargs=optimizer_kwargs,
+            lr_scheduler_kwargs=lr_scheduler_kwargs,
+            **kwargs
         )
-        return self
+        self.embed_model = embed_model
+        self.embed_model.apply(initialize_weights)
+        self.save_hyperparameters()
 
-    def forward(self, seq: torch.Tensor, embed: torch.Tensor) -> torch.Tensor:
-        x = self.embedding(embed)
-        x = self.trunk(seq, x)
+    def forward(self, seq: torch.Tensor, embedding: torch.Tensor) -> torch.Tensor:
+        x = self.embed_model(embedding)
+        x = self.trunk_model(seq, x)
 
-        x = self.forward_fc(x)
+        x = self.head_model(x)
         x = self.forward_final(x)
 
         return x

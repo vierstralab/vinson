@@ -4,7 +4,9 @@ from vinson.utils.data_formatting import (
     extract_data_from_train_anndata,
     extract_variant_data_from_anndata,
 )
-from vinson.datasets.sequence import SequenceEmbedDataset, VariantEmbedDataset
+from vinson.datasets.sequence import SequenceEmbedDataset
+
+from vinson.datasets.variant import VariantEmbedDataset
 from itertools import cycle
 
 import anndata as ad
@@ -13,6 +15,8 @@ import gc
 
 # TODO: move all logging to one helper file
 import logging
+
+from vinson.utils.data_formatting import VinsonData
 
 logger = logging.getLogger(__name__)
 
@@ -124,17 +128,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             shuffle=True,
             **self.dataloader_kwargs,
         )
-        print(
-            "Finished creating train dataloader for epoch:",
-            self.current_train_epoch,
-            flush=True,
-        )
         return data_loader
-
-    def teardown(self, stage: str):
-        print("Teardown datamodule and free memory")
-        print(stage)
-        gc.collect()
 
     def val_dataloader(self):
         return DataLoader(
@@ -146,7 +140,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
     @staticmethod
     def get_data(
         full_adata: ad.AnnData, suffix, dhs_split="train", sample_split="train"
-    ):
+    ) -> VinsonData:
         """
         Generic method to extract data from anndata object for a given split
 
@@ -157,8 +151,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
             sample_split (str): which sample split to use (train/val/test)
 
         Returns:
-            data (dict): dictionary with extracted data
-            embeddings_df (pd.DataFrame): DataFrame with extracted embeddings
+            VinsonData: extracted data object
         """
         adata = full_adata[
             full_adata.obsm["split_data"] == sample_split,

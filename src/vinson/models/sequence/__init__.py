@@ -1,9 +1,6 @@
-from .vinson import EmbedModel, CellEmbedding, BassetTrunkEmbed, BaseSequenceModel, AbstractBaseSequenceModel
+from .lightning_wrappers import SequenceEmbedModel, SequenceOnlyModel
 
 __all__ = [
-    "EmbedModel",
-    "CellEmbedding",
-    "BassetTrunkEmbed",
-    "BaseSequenceModel",
-    "AbstractBaseSequenceModel"
+    "SequenceEmbedModel",
+    "SequenceOnlyModel"
 ]

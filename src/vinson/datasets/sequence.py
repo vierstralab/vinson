@@ -498,7 +498,7 @@ class SequenceEmbedDataset(SequenceOnlyDataset):
             - 'sample_id': str, sample identifier
         """
         data = super().__getitem__(i)
-        if data["sample_id"].ndim > 0:
+        if data["density"].ndim > 0:
             raise ValueError("Multitask model not supported in SequenceEmbedDataset.")
         
         # Get embeddings
