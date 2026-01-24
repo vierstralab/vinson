@@ -1,7 +1,7 @@
-import torch
 import sys
-from .sequence import CellEmbedding, EmbedModel, BassetTrunkEmbed
+from .sequence import EmbedModel, BassetTrunkEmbed
 from .variant import VariantEmbedModel
+from .cell_classifier import CellEmbedding, EmbeddingMLP
 
 
 try:
@@ -24,36 +24,39 @@ def make_legnet_model(config):
     )
 
 
-def make_dhs_model(model_arch, **model_kwargs):
-    
-    # TODO: parse model_arch
-    embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
-    trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
+def make_dhs_model(model_arch, lr_scheduler, lr_scheduler_kwargs, optimizer_kwargs, **model_kwargs):
 
+    mlp_embedding = EmbeddingMLP(**model_arch["cell_embedding"])
+    embed_model = CellEmbedding(mlp_embedding, n_outputs=model_arch['n_outputs'])
+    trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
 
     model = EmbedModel(
         trunk=trunk_model,
         embed=embed_model,
         regression=True,
-        **model_kwargs,
-        **model_kwargs
-        
+        lr_scheduler=lr_scheduler,
+        lr_scheduler_kwargs=lr_scheduler_kwargs,
+        optimizer_kwargs=optimizer_kwargs,
+        **model_kwargs 
     )
+
     model.init_model()
     return model
 
 
-def make_variant_model(model_arch, **model_kwargs):
-    # TODO: parse model_arch
-
-    embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
+def make_variant_model(model_arch, lr_scheduler, lr_scheduler_kwargs, optimizer_kwargs, **model_kwargs):
+    mlp_embedding = EmbeddingMLP(**model_arch["cell_embedding"])
+    embed_model = CellEmbedding(mlp_embedding, n_outputs=model_arch['n_outputs'])
     trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
-
 
     model = VariantEmbedModel(
         trunk=trunk_model,
         embed=embed_model,
+        lr_scheduler=lr_scheduler,
+        lr_scheduler_kwargs=lr_scheduler_kwargs,
+        optimizer_kwargs=optimizer_kwargs,
         **model_kwargs,
     )
+
     model.init_model()
     return model

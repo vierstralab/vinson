@@ -90,6 +90,26 @@ class EmbeddingMLP(torch.nn.Module):
         return x
 
 
+class CellEmbedding(torch.nn.Module):
+    def __init__(
+        self,
+        embedding: EmbeddingMLP, # can be any embedding
+        n_outputs: int = 256,
+    ) -> None:
+        super().__init__()
+
+        self.embedding = embedding
+        self.n_outputs = n_outputs
+
+        self.ffc = torch.nn.Linear(self.embedding.output_dim, self.n_outputs)
+
+    def forward(self, embed: torch.Tensor) -> torch.Tensor:
+        x = self.embedding(embed)
+        x = self.ffc(x)
+        return x
+
+
+## Lightning Models ##
 class CellClassifierModel(L.LightningModule):
     """
     Base model for cell classification using multi-head architecture.

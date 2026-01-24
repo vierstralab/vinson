@@ -1,4 +1,10 @@
 model_type: regression
+model_arch:
+  cell_embedding:
+    n_inputs: 637
+    hidden_dims: [256]
+  n_outputs: 256
+
 model_kwargs:
   log_output: true
 train_augmentation_kwargs:

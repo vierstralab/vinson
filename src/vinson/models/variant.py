@@ -1,14 +1,13 @@
-import copy
-
 import torch
-import lightning as L
+import copy
 
 from torchmetrics import MetricCollection
 from torchmetrics.regression import PearsonCorrCoef
 
 import lightning as L
 
-from .sequence import AbstractBaseSequenceModel, CellEmbedding
+from .sequence import AbstractBaseSequenceModel
+from .cell_classifier import CellEmbedding
 from vinson.optim.loss import BinomialMixtureNLLLoss
 
 

@@ -16,35 +16,6 @@ from torch.nn import BCEWithLogitsLoss
 from vinson.optim.loss import PoissonNLLLoss
 from vinson.utils.optim import configure_optimizer
 
-from .cell_classifier import EmbeddingMLP
-
-
-class CellEmbedding(EmbeddingMLP):
-    """
-    This a simple multilayer perceptron to encode cell states from an embedding
-    'n_inputs' is the dimension of the embedding space.
-    """
-
-    def __init__(
-        self,
-        n_inputs: int,
-        hidden_dims: Union[int, List[int]],
-        activations: Union[List[str], str] = "silu",
-        last_layer_n_nodes: int = 256,
-    ) -> None:
-        super().__init__(
-            n_inputs=n_inputs,
-            hidden_dims=hidden_dims,
-            activations=activations,
-        )
-
-        self.ffc = torch.nn.Linear(last_layer_n_nodes, self.n_outputs)
-
-    def forward(self, embed: torch.Tensor) -> torch.Tensor:
-        x = super().forward(embed)
-        x = self.ffc(x)
-        return x
-
 
 class BassetTrunk(torch.nn.Module):
     def __init__(self) -> None:
@@ -123,7 +94,7 @@ class BassetTrunkEmbed(BassetTrunk):
 
         return x
 
-
+## Lightning Models ##
 class AbstractBaseSequenceModel(L.LightningModule):
     def __init__(
         self,

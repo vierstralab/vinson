@@ -24,12 +24,6 @@ from lightning.pytorch.callbacks import (
 )
 from lightning.pytorch.loggers import CSVLogger
 
-try:
-    from dnase_legnet.legnet_embed_cnn import LegNetEmbedInCNN
-except ImportError:
-    print("Please install dnase_legnet to use LegNet models.", file=sys.stderr)
-    sys.exit(1)
-
 
 def _parse_scheduler_and_optimizer(config):
     scheduler_name = config['hparams'].get("lr_scheduler")
@@ -45,18 +39,19 @@ def _parse_scheduler_and_optimizer(config):
 def model_from_config(config, checkpoint_path=None):
     # TODO: add loading from checkpoint
     model_type = config['model_type']
+    model_kwargs = config["model_kwargs"]
 
     if model_type not in {"dhs", "variant", "legnet_dhs"}:
         raise ValueError(f"Unsupported model type: {model_type}")
     
-    model_kwargs = _parse_scheduler_and_optimizer(config)
-    model_kwargs = {**config["model_kwargs"], **model_kwargs} # merge model kwargs
+    optimizer_kwargs = _parse_scheduler_and_optimizer(config)
+
     if model_type == "legnet_dhs":
         return make_legnet_model(config)
     elif model_type == "dhs":
-        return make_dhs_model(config["model_arch"], **model_kwargs)
+        return make_dhs_model(config["model_arch"], **optimizer_kwargs, **model_kwargs)
     elif model_type == "variant":
-        return make_variant_model(config["model_arch"], **model_kwargs)
+        return make_variant_model(config["model_arch"], **optimizer_kwargs, **model_kwargs)
 
 
 #take in config to determine model type

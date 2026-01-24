@@ -1,5 +1,4 @@
 import torch
-import numpy as np
 from tqdm import tqdm
 import itertools
 from collections.abc import Iterable
@@ -7,7 +6,7 @@ from collections.abc import Iterable
 from vinson.utils.sequence_utils import force_strict_ohe
 
 from tangermeme.ersatz import dinucleotide_shuffle as dinuc_shuffle
-from tangermeme.predict import predict as tangermeme_predict
+#from tangermeme.predict import predict as tangermeme_predict
 from tangermeme.product import _apply
 from tangermeme.deep_lift_shap import deep_lift_shap, _nonlinear
 
