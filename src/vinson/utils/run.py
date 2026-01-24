@@ -6,9 +6,15 @@ import lightning as L
 import anndata as ad
 import sys
 
-from vinson.models.sequence import CellEmbedding, BassetTrunkEmbed, EmbedModel, VariantEmbedModel
+# from vinson.models.sequence import CellEmbedding, BassetTrunkEmbed, EmbedModel
+# from vinson.models.variant import VariantEmbedModel
+
+from vinson.models.helpers import make_legnet_model, make_dhs_model, make_variant_model
+
 from vinson.datamodules.sequence import SeqEmbedDataModule, SeqEmbedVariantDataModule
-from vinson.datasets.sequence import SequenceEmbedDataset, VariantEmbedDataset
+from vinson.datasets.sequence import SequenceEmbedDataset
+from vinson.datasets.variant import VariantEmbedDataset
+
 from vinson.utils.data_formatting import extract_data_from_h5
 
 from lightning.pytorch.callbacks import (
@@ -18,77 +24,39 @@ from lightning.pytorch.callbacks import (
 )
 from lightning.pytorch.loggers import CSVLogger
 
+try:
+    from dnase_legnet.legnet_embed_cnn import LegNetEmbedInCNN
+except ImportError:
+    print("Please install dnase_legnet to use LegNet models.", file=sys.stderr)
+    sys.exit(1)
+
+
+def _parse_scheduler_and_optimizer(config):
+    scheduler_name = config['hparams'].get("lr_scheduler")
+    scheduler_kwargs = config['hparams'].get("lr_scheduler_kwargs", {})
+    optimizer_kwargs = config['hparams']["optimizer_kwargs"]
+    return {
+        'lr_scheduler': scheduler_name,
+        'lr_scheduler_kwargs': scheduler_kwargs,
+        'optimizer_kwargs': optimizer_kwargs
+    }
 
 # dataset util functions
 def model_from_config(config, checkpoint_path=None):
-    # TODO: add model configuration to config
+    # TODO: add loading from checkpoint
     model_type = config['model_type']
-    hparams = config["hparams"]
-    scheduler_name = hparams.get("lr_scheduler")
-    scheduler_kwargs = hparams.get("lr_scheduler_kwargs", {})
-    optimizer_kwargs = hparams["optimizer_kwargs"]
-
-    # legacy fix
-    if model_type == "regression":
-        model_type = "dhs"
 
     if model_type not in {"dhs", "variant", "legnet_dhs"}:
         raise ValueError(f"Unsupported model type: {model_type}")
+    
+    model_kwargs = _parse_scheduler_and_optimizer(config)
+    model_kwargs = {**config["model_kwargs"], **model_kwargs} # merge model kwargs
     if model_type == "legnet_dhs":
-        try:
-            from dnase_legnet.legnet_embed_cnn import LegNetEmbedInCNN
-        except ImportError:
-            print("Please install dnase_legnet to use LegNet models.", file=sys.stderr)
-            sys.exit(1)
-
-        if checkpoint_path:
-            return LegNetEmbedInCNN.load_from_checkpoint(
-                checkpoint_path,
-                inference_mode=False
-            )
-
-        return LegNetEmbedInCNN(
-            model_kws=config["model_arch"],
-            hparams=config['hparams'],
-            # hparams={
-            #     "lr_scheduler": scheduler_name,
-            #     "lr_scheduler_kwargs": scheduler_kwargs,
-            #     "optimizer_kwargs": optimizer_kwargs,
-            # },
-            **config["model_kwargs"],
-        )
-
-    # --- STANDARD EMBED/TRUNK PATH ---
-    embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
-    trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
-
-    # --- CHECKPOINT LOADING ---
-    if checkpoint_path:
-        load_cls = VariantEmbedModel if model_type == "variant" else EmbedModel
-        return load_cls.load_from_checkpoint(
-            checkpoint_path,
-            trunk=trunk_model,
-            embed=embed_model,
-        )
-
-    # --- MODEL INITIALIZATION (NO CHECKPOINT) ---
-    if model_type == "variant":
-        model = VariantEmbedModel(trunk=trunk_model, embed=embed_model)
-
-    else:
-        # dhs model
-        model = EmbedModel(
-            trunk=trunk_model,
-            embed=embed_model,
-            regression=True,
-            lr_scheduler=scheduler_name,
-            lr_scheduler_kwargs=scheduler_kwargs,
-            optimizer_kwargs=optimizer_kwargs,
-            **config["model_kwargs"],
-        )
-
-    model.init_model()
-    return model
+        return make_legnet_model(config)
+    elif model_type == "dhs":
+        return make_dhs_model(config["model_arch"], **model_kwargs)
+    elif model_type == "variant":
+        return make_variant_model(config["model_arch"], **model_kwargs)
 
 
 #take in config to determine model type

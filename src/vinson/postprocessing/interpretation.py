@@ -5,7 +5,6 @@ import itertools
 from collections.abc import Iterable
 
 from vinson.utils.sequence_utils import force_strict_ohe
-from vinson.models.helpers import _Exp
 
 from tangermeme.ersatz import dinucleotide_shuffle as dinuc_shuffle
 from tangermeme.predict import predict as tangermeme_predict
@@ -198,6 +197,14 @@ def apply_product(
         y = _y
 
     return y
+
+
+class _Exp(torch.nn.Module):
+    def __init__(self):
+        super(_Exp, self).__init__()
+
+    def forward(self, X):
+        return torch.exp(X)
 
 
 class ModelWrapper(torch.nn.Module):

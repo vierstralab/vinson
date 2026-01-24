@@ -19,8 +19,6 @@ from vinson.utils.optim import configure_optimizer
 from .cell_classifier import EmbeddingMLP
 
 
-
-
 class CellEmbedding(EmbeddingMLP):
     """
     This a simple multilayer perceptron to encode cell states from an embedding
@@ -30,20 +28,17 @@ class CellEmbedding(EmbeddingMLP):
     def __init__(
         self,
         n_inputs: int,
-        n_nodes: int = 1024,
-        n_outputs: int = 128,
-        n_layers: int = 0,
+        hidden_dims: Union[int, List[int]],
         activations: Union[List[str], str] = "silu",
+        last_layer_n_nodes: int = 256,
     ) -> None:
         super().__init__(
             n_inputs=n_inputs,
-            n_nodes=n_nodes,
-            n_layers=n_layers,
+            hidden_dims=hidden_dims,
             activations=activations,
         )
-        self.n_outputs = n_outputs
 
-        self.ffc = torch.nn.Linear(n_nodes, self.n_outputs)
+        self.ffc = torch.nn.Linear(last_layer_n_nodes, self.n_outputs)
 
     def forward(self, embed: torch.Tensor) -> torch.Tensor:
         x = super().forward(embed)
