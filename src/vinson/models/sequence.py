@@ -1,5 +1,4 @@
 import torch
-import copy
 
 import lightning as L
 
@@ -10,11 +9,12 @@ from torchmetrics.classification import (
     BinaryAUROC,
 )
 from torchmetrics.regression import PearsonCorrCoef
+
 from torch.nn import BCEWithLogitsLoss
 
-from vinson.loss import PoissonNLLLoss
-from vinson.lr import LR_SCHEDULERS
-from vinson.models.cell_classifier import EmbeddingMLP
+from vinson.optim.loss import PoissonNLLLoss
+
+from .cell_classifier import EmbeddingMLP
 
 
 class CellEmbedding(EmbeddingMLP):

@@ -3,68 +3,66 @@ from typing import Dict, Any, Union, List
 import torch
 import lightning as L
 
-from vinson.lr import LR_SCHEDULERS
+from vinson.utils.hparams import get_activations, get_lr_scheduler_cls, get_hidden_dims
 
-
-ACTIVATIONS = {
-    "relu": torch.nn.ReLU,
-    "gelu": torch.nn.GELU,
-    "silu": torch.nn.SiLU,
-    "selu": torch.nn.SELU,
-}
 
 class EmbeddingMLP(torch.nn.Module):
     """
     Multi-layer perceptron for embedding inputs with batch normalization and dropout.
 
-    This MLP consists of an initial linear layer followed by a series of hidden layers,
-    each with batch normalization, ReLU activation, and dropout. It is designed for
-    feature embedding in classification tasks.
+    This MLP consists of a stack of linear layers defined by `hidden_dims`,
+    each followed by batch normalization, configurable activation, and dropout.
 
     Parameters
     ----------
     n_inputs : int
         Number of input features.
-    n_nodes : int, optional
-        Number of nodes in each hidden layer (default is 64).
-    n_layers : int, optional
-        Number of hidden layers (default is 1).
+    hidden_dims : int or list[int]
+        Hidden layer dimensions. A scalar creates a single hidden layer.
     dropout : float, optional
-        Dropout probability (default is 0.3).
+        Dropout probability.
+    activations : str or list[str], optional
+        Activation function(s) to use. Scalars are broadcast per layer.
     """
-
     def __init__(
-        self, n_inputs: int, n_nodes: int = 64, n_layers: int = 1, dropout: float = 0.3, activations: Union[List[str], str] = "relu"
+        self,
+        n_inputs: int,
+        hidden_dims: Union[int, List[int]],
+        dropout: float = 0.3,
+        activations: Union[List[str], str] = "silu",
     ):
         super().__init__()
 
+        hidden_dims = get_hidden_dims(hidden_dims)
+        n_layers = len(hidden_dims)
+
+        dims = [n_inputs] + hidden_dims
+
+        assert n_layers >= 1, "n_layers must be at least 1"
+
         self.n_inputs = n_inputs
-        self.n_nodes = n_nodes
         self.n_layers = n_layers
 
-        if isinstance(activations, str):
-            activations = [activations] * (n_layers + 1)
-        else:
-            assert len(activations) == n_layers + 1, "Length of activations list must be n_layers + 1"
-        self.activations = [ACTIVATIONS.get(act, act)() for act in activations]
-
-        self.ifc = torch.nn.Linear(n_inputs, n_nodes)
-        self.ibn = torch.nn.BatchNorm1d(num_features=n_nodes)
-        self.irelu = self.activations[0]
-        self.idropout = torch.nn.Dropout(p=dropout)
-
+        
         self.fcs = torch.nn.ModuleList(
-            [torch.nn.Linear(n_nodes, n_nodes) for i in range(self.n_layers)]
+            [torch.nn.Linear(dims[i], dims[i + 1]) for i in range(n_layers)]
         )
-        self.bns = torch.nn.ModuleList(
-            [torch.nn.BatchNorm1d(num_features=n_nodes) for i in range(self.n_layers)]
+
+        self.batch_norms = torch.nn.ModuleList(
+            [torch.nn.BatchNorm1d(d) for d in hidden_dims]
         )
-        self.relus = torch.nn.ModuleList(
-            self.activations[1:]
+
+        self.activations = torch.nn.ModuleList(
+            get_activations(activations, n_layers)
         )
+
         self.dropouts = torch.nn.ModuleList(
-            [torch.nn.Dropout(p=dropout) for i in range(self.n_layers)]
+            [torch.nn.Dropout(p=dropout) for _ in range(n_layers)]
         )
+
+        assert len(self.fcs) == len(self.batch_norms) == len(self.activations) == len(self.dropouts) == n_layers
+
+        self.output_dim = hidden_dims[-1]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -78,18 +76,15 @@ class EmbeddingMLP(torch.nn.Module):
         Returns
         -------
         torch.Tensor
-            Output tensor of shape (batch_size, n_nodes).
+            Output tensor of shape (batch_size, hidden_dims[-1]).
         """
-        x = self.ifc(x)
-        x = self.ibn(x)
-        x = self.irelu(x)
-        x = self.idropout(x)
-
-        for i in range(self.n_layers):
-            x = self.fcs[i](x)
-            x = self.bns[i](x)
-            x = self.relus[i](x)
-            x = self.dropouts[i](x)
+        for fc, bn, act, drop in zip(
+            self.fcs, self.batch_norms, self.activations, self.dropouts
+        ):
+            x = fc(x)
+            x = bn(x)
+            x = act(x)
+            x = drop(x)
 
         return x
 
@@ -116,32 +111,38 @@ class CellClassifierModel(L.LightningModule):
     >>> model = CellClassifierModel(
     ...     n_inputs=1000,
     ...     output_dict={'cell_type': 10, 'disease_state': 2},
-    ...     n_nodes=128,
-    ...     n_layers=2
+    ...     hidden_dims=[128, 128],
+    ...     dropout=0.2,
+    ...     activations=['selu', 'silu'],
     ... )
     >>> inputs = torch.randn(32, 1000)
     >>> outputs = model(inputs)
     >>> print(outputs.keys())  # dict_keys(['cell_type', 'disease_state'])
     """
-
     def __init__(
         self,
         n_inputs: int,
+        hidden_dims: Union[int, List[int]],
         output_dict: Dict[str, int],
         lr_scheduler=None,
-        optimizer_kwargs=dict(lr=5e-5, weight_decay=1e-2),
-        lr_scheduler_kwargs=dict(),
+        optimizer_kwargs=None,
+        lr_scheduler_kwargs=None,
         **kwargs,
     ):
         super().__init__()
 
-        self.trunk = EmbeddingMLP(n_inputs, **kwargs)
+        self.trunk = EmbeddingMLP(
+            n_inputs=n_inputs,
+            hidden_dims=hidden_dims,
+            **kwargs
+        )
         self.heads = torch.nn.ModuleDict(
             {
                 name: torch.nn.Linear(
-                    in_features=self.trunk.n_nodes, out_features=n_features
+                    in_features=self.trunk.output_dim,
+                    out_features=n_features
                 )
-                for name, n_features in output_dict
+                for name, n_features in output_dict.items()
             }
         )
 
@@ -152,7 +153,8 @@ class CellClassifierModel(L.LightningModule):
         self.lr_scheduler = lr_scheduler
         self.lr_scheduler_kwargs = lr_scheduler_kwargs
 
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["trunk", "heads"])
+
 
     def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         x = self.trunk(x)
@@ -162,8 +164,8 @@ class CellClassifierModel(L.LightningModule):
         X = batch["embed"]
         y_hat = self(X)
 
-        loss = torch.tensor(0)
-        for head_name in self.heads.keys():
+        loss = 0.0
+        for head_name in self.heads:
             loss += self.criterion(y_hat[head_name], batch[head_name])
 
         return loss.mean()
@@ -185,13 +187,16 @@ class CellClassifierModel(L.LightningModule):
         return loss
 
     def configure_optimizers(self) -> Union[torch.optim.Optimizer, Dict[str, Any]]:
-        lr_scheduler = LR_SCHEDULERS.get(self.lr_scheduler, None)
-        optimizer = torch.optim.AdamW(self.parameters(), **self.optimizer_kwargs)
+        optimizer_kwargs = self.optimizer_kwargs or {}
+        optimizer = torch.optim.AdamW(self.parameters(), **optimizer_kwargs)
 
-        if lr_scheduler is None:
+        if self.lr_scheduler is None:
             return optimizer
 
-        scheduler = lr_scheduler(optimizer, **self.lr_scheduler_kwargs)
+        lr_scheduler = get_lr_scheduler_cls(self.lr_scheduler)
+
+        lr_scheduler_kwargs = self.lr_scheduler_kwargs or {}
+        scheduler = lr_scheduler(optimizer, **lr_scheduler_kwargs)
 
         return {
             "optimizer": optimizer,
@@ -202,26 +207,3 @@ class CellClassifierModel(L.LightningModule):
                 "name": "lr",
             },
         }
-
-
-class CellAndPathologicalStateClassifierModel(CellClassifierModel):
-    """
-    Legacy wrapper for cell and pathological state classification.
-    """
-    def __init__(self, n_inputs, n_cell_categories, n_pathological_states, **kwargs):
-        output_dict = {
-            "cell_type": n_cell_categories,
-            "pathological_state": n_pathological_states,
-        }
-        super().__init__(
-            n_inputs=n_inputs, output_dict=output_dict, **kwargs
-        )
-        self.head_cell_category = self.heads["cell_type"]
-        self.head_pathological_state = self.heads["pathological_state"]
-    
-    def forward(self, x):
-        out = super().forward(x)
-        return out["cell_type"], out["pathological_state"]
-
-    def step(self, batch):
-        raise NotImplementedError("The legacy model is not trainable. Please use CellClassifierModel instead.")

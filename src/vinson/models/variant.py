@@ -4,11 +4,10 @@ import copy
 from torchmetrics import MetricCollection
 from torchmetrics.regression import PearsonCorrCoef
 
-from vinson.models.sequence import AbstractBaseSequenceModel, CellEmbedding
-from vinson.loss import (
-    BinomialMixtureNLLLoss,
-)
 import lightning as L
+
+from .sequence import AbstractBaseSequenceModel, CellEmbedding
+from vinson.optim.loss import BinomialMixtureNLLLoss
 
 
 class VariantEmbedModel(AbstractBaseSequenceModel):
