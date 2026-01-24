@@ -3,7 +3,8 @@ from typing import Dict, Any, Union, List
 import torch
 import lightning as L
 
-from vinson.utils.hparams import get_activations, get_lr_scheduler_cls, get_hidden_dims
+from vinson.utils.hparams import get_activations, get_hidden_dims
+from vinson.utils.optim import configure_optimizer
 
 
 class EmbeddingMLP(torch.nn.Module):
@@ -186,24 +187,11 @@ class CellClassifierModel(L.LightningModule):
 
         return loss
 
-    def configure_optimizers(self) -> Union[torch.optim.Optimizer, Dict[str, Any]]:
-        optimizer_kwargs = self.optimizer_kwargs or {}
-        optimizer = torch.optim.AdamW(self.parameters(), **optimizer_kwargs)
+    def configure_optimizers(self):
+        return configure_optimizer(
+            module_parameters=self.parameters(),
+            optimizer_kwargs=self.optimizer_kwargs,
+            lr_scheduler=self.lr_scheduler,
+            lr_scheduler_kwargs=self.lr_scheduler_kwargs,
+        )
 
-        if self.lr_scheduler is None:
-            return optimizer
-
-        lr_scheduler = get_lr_scheduler_cls(self.lr_scheduler)
-
-        lr_scheduler_kwargs = self.lr_scheduler_kwargs or {}
-        scheduler = lr_scheduler(optimizer, **lr_scheduler_kwargs)
-
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "step",
-                "frequency": 1,
-                "name": "lr",
-            },
-        }

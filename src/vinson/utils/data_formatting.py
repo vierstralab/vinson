@@ -349,3 +349,58 @@ def get_number_of_train_examples(anndata_file):
             n_examples += layer.getnnz()
 
     return n_examples
+
+
+def long_to_wide_multitask_vinsondata(anndata_obj: ad.AnnData) -> VinsonData:
+
+    vd_long = extract_data_from_backed_anndata(anndata_obj)
+    d = vd_long.data
+    
+    # decode string-coded arrays if encoded
+    dhs_all = vd_long.decode("dhs_id") if "dhs_id" in vd_long.encodings else d["dhs_id"]
+    samp_all = vd_long.decode("sample_id") if "sample_id" in vd_long.encodings else d["sample_id"]
+    chrom_all = vd_long.decode("chrom") if "chrom" in vd_long.encodings else d["chrom"]
+    
+    dhs_ids_unique = np.unique(dhs_all)
+    n_dhs = len(dhs_ids_unique)
+
+    N = len(dhs_all)
+    if N % n_dhs != 0:
+        raise ValueError(f"N={N} not divisible by n_dhs={n_dhs}")
+    n_samples = N // n_dhs
+
+    # verify sample-major blocks
+    if len(np.unique(samp_all[:n_dhs])) != 1:
+        raise ValueError("Ordering is not sample-major blocks; cannot reshape safely.")
+
+    # sample order
+    sample_ids_1d = samp_all[::n_dhs]
+    read_depth_1d = d["read_depth"][::n_dhs]
+
+    # reshape numeric arrays -> wide (n_dhs, n_samples)
+    density = d["density"].reshape(n_samples, n_dhs).T
+    background = d["background"].reshape(n_samples, n_dhs).T
+    cls = d["class"].reshape(n_samples, n_dhs).T
+
+    # per-DHS metadata from first block (already decoded for chrom/dhs_id)
+    chrom = chrom_all[:n_dhs]
+    summit = d["summit"][:n_dhs]
+    dhs_id = dhs_all[:n_dhs]
+
+    # broadcast sample info to satisfy sanitize_data requirements
+    sample_id = np.tile(sample_ids_1d.reshape(1, -1), (n_dhs, 1))
+    read_depth = np.tile(read_depth_1d.reshape(1, -1), (n_dhs, 1))
+
+    raw_wide = {
+        "chrom": chrom,                 # (n_dhs,) strings like "chr1"
+        "summit": summit,               # (n_dhs,)
+        "dhs_id": dhs_id,               # (n_dhs,) strings
+        "density": density,             # (n_dhs, n_samples)
+        "background": background,       # (n_dhs, n_samples)
+        "class": cls,                   # (n_dhs, n_samples)
+        "sample_id": sample_id,         # (n_dhs, n_samples) strings
+        "read_depth": read_depth,       # (n_dhs, n_samples) float
+    }
+
+    vd_wide = VinsonData.from_raw(raw_wide, vd_long.embeddings_df, is_variant=vd_long.is_variant)
+    return vd_wide

@@ -14,6 +14,7 @@ from torchmetrics.regression import PearsonCorrCoef
 from torch.nn import BCEWithLogitsLoss
 
 from vinson.optim.loss import PoissonNLLLoss
+from vinson.utils.optim import configure_optimizer
 
 from .cell_classifier import EmbeddingMLP
 
@@ -32,7 +33,7 @@ class CellEmbedding(EmbeddingMLP):
         n_nodes: int = 1024,
         n_outputs: int = 128,
         n_layers: int = 0,
-        activations: Union[List[str], str] = "relu",
+        activations: Union[List[str], str] = "silu",
     ) -> None:
         super().__init__(
             n_inputs=n_inputs,
@@ -133,14 +134,16 @@ class AbstractBaseSequenceModel(L.LightningModule):
         self,
         trunk_model: torch.nn.Module,
         seqlen: int = 1344,
-        lr_scheduler: Optional[str] = None,
-        optimizer_kwargs: Dict[str, Any] = dict(),
-        lr_scheduler_kwargs: Dict[str, Any] = dict(),
+        n_tasks=1,
+        lr_scheduler: Optional[str]=None,
+        optimizer_kwargs: Optional[Dict[str, Any]]=None,
+        lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
     ) -> None:
         super().__init__()
 
         self.trunk = trunk_model
         self.seqlen = seqlen
+        self.n_tasks = n_tasks # save it to be use in PearsonCorrCoef
 
         # Common architecture
         self.fc1 = torch.nn.LazyLinear(1024)
@@ -153,7 +156,7 @@ class AbstractBaseSequenceModel(L.LightningModule):
         self.dropout2 = torch.nn.Dropout(0.3)
         self.relu2 = torch.nn.ReLU()
 
-        self.final = torch.nn.LazyLinear(1)
+        self.final = torch.nn.LazyLinear(n_tasks)
 
         # Optimizer setup
         self.optimizer_kwargs = optimizer_kwargs
@@ -186,24 +189,12 @@ class AbstractBaseSequenceModel(L.LightningModule):
         self.valid_metrics.reset()
 
     def configure_optimizers(self) -> Union[torch.optim.Optimizer, Dict[str, Any]]:
-        """ """
-        lr_scheduler = LR_SCHEDULERS.get(self.lr_scheduler, None)
-        optimizer = torch.optim.AdamW(self.parameters(), **self.optimizer_kwargs)
-
-        if lr_scheduler is None:
-            return optimizer
-
-        scheduler = lr_scheduler(optimizer, **self.lr_scheduler_kwargs)
-
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "step",
-                "frequency": 1,
-                "name": "lr",
-            },
-        }
+        return configure_optimizer(
+            params=self.parameters(),
+            optimizer_kwargs=self.optimizer_kwargs,
+            lr_scheduler=self.lr_scheduler,
+            lr_scheduler_kwargs=self.lr_scheduler_kwargs,
+        )
 
 
 class BaseSequenceModel(AbstractBaseSequenceModel):
@@ -211,11 +202,12 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         self,
         trunk_model: torch.nn.Module,
         seqlen: int = 1344,
+        n_tasks=1,
         regression: bool = False,
-        log_output: bool = True,
-        lr_scheduler: Optional[str] = None,
-        optimizer_kwargs: Dict[str, Any] = dict(),
-        lr_scheduler_kwargs: Dict[str, Any] = dict(),
+        log_output: bool = False,
+        lr_scheduler: Optional[str]=None,
+        optimizer_kwargs: Optional[Dict[str, Any]]=None,
+        lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
     ) -> None:
         super().__init__(
             trunk_model=trunk_model,
@@ -223,6 +215,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
             lr_scheduler=lr_scheduler,
             optimizer_kwargs=optimizer_kwargs,
             lr_scheduler_kwargs=lr_scheduler_kwargs,
+            n_tasks=n_tasks,
         )
         self.regression = regression
         self.log_output = log_output
@@ -239,7 +232,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         if self.regression:
             self.train_metrics = MetricCollection(
                 {
-                    "pcc": PearsonCorrCoef(),
+                    "pcc": PearsonCorrCoef(num_outputs=self.n_tasks),
                 },
                 prefix="train_",
             )
@@ -270,7 +263,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
     def forward_final(self, x: torch.Tensor) -> torch.Tensor:
         x = self.final(x)
         if not self.log_output:
-            x = torch.relu(x)
+            x = torch.nn.Softplus()(x)
         return x
 
     def _forward_from_batch(self, batch: Dict[str, Any]) -> torch.Tensor:
@@ -305,7 +298,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 
     def _run_step(
         self, batch: Dict[str, Any]
-    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+    ):
         """
         Internal step function to parse batch and run forward + step
 
@@ -332,7 +325,7 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
         (y_hat, y), weight = self._run_step(batch)
 
         loss = self.criterion(y_hat, y)
-        loss *= weight
+        loss *= weight[:, None] # works for both (B, 1) -> broadcasts to (B, 22)
         loss = loss.mean()
 
         return loss, y_hat, y
@@ -358,8 +351,18 @@ class BaseSequenceModel(AbstractBaseSequenceModel):
 
         return loss
 
-    def on_validation_epoch_end(self) -> None:
-        self.log_dict(self.valid_metrics.compute(), sync_dist=True)
+    def on_validation_epoch_end(self):
+        metrics = self.valid_metrics.compute()
+        out = {}
+
+        for k, v in metrics.items():
+            v = torch.as_tensor(v)
+            if v.numel() > 1:
+                out[k] = v.mean() # log mean over tasks for multi-task
+            else:
+                out[k] = v.item()
+
+        self.log_dict(out, sync_dist=True)
         self.valid_metrics.reset()
 
 
@@ -367,7 +370,7 @@ class EmbedModel(BaseSequenceModel):
     """Sequence with embeddings model"""
 
     def __init__(
-        self, trunk: torch.nn.Module, embed: CellEmbedding, *args, **kwargs
+        self, trunk: BassetTrunkEmbed, embed: CellEmbedding, *args, **kwargs
     ) -> None:
         super().__init__(trunk, *args, **kwargs)
 
