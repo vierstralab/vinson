@@ -214,11 +214,12 @@ class ModelWrapper(torch.nn.Module):
 
     def forward(self, seq, embed):
         x = self.model(seq, embed)
-        if self.model.log_output:
-            x = self.exp(x)
+        if hasattr(self.model, "log_output"):
+            if getattr(self.model, "log_output"):
+                x = self.exp(x)
         return x
     
-    def get_sequence_attributions(self, X, X_embed, print_convergence_deltas=True, **kwargs):
+    def get_sequence_attributions(self, X, X_embed, print_convergence_deltas=True, random_state=42, **kwargs):
         attributions = deep_lift_shap(
             self,
             X,
@@ -229,6 +230,7 @@ class ModelWrapper(torch.nn.Module):
             additional_nonlinear_ops={
                 _Exp: _nonlinear
             },
+            random_state=random_state,
             **kwargs,
         )
         return attributions
