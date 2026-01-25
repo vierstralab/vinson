@@ -81,7 +81,23 @@ def get_activations(values: Union[List[str], str], n_expected: int):
     return [v() for v in vals]
 
 
+def get_batchnorms(values: Union[List[bool], bool], hidden_dims, momentum: float):
+    values = _sanitize_list(
+        values,
+        n_expected=len(hidden_dims),
+    )
+    values = [
+        torch.nn.BatchNorm1d(d, momentum=momentum) if v else None
+        for v, d in zip(values, hidden_dims)
+    ]
+    return _replace_none_with_identity(values)
 
+
+def _replace_none_with_identity(modules: List[Union[torch.nn.Module, None]]):
+    return [
+        m if m is not None else torch.nn.Identity()
+        for m in modules
+    ]
 
 
 def _sanitize_value(

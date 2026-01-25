@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from typing import List, Union
 
-from vinson.utils.hparams import get_activations, get_hidden_dims
+from vinson.utils.hparams import get_activations, get_hidden_dims, get_batchnorms
 
 
 class MLPBlock(nn.Module):
@@ -29,7 +29,9 @@ class MLPBlock(nn.Module):
         n_inputs: int,
         hidden_dims: Union[int, List[int]],
         dropout: float = 0.2,
+        batch_norm: Union[bool, List[bool]] = True,
         activations: Union[List[str], str] = "silu",
+        batch_norm_momentum: float = 0.1,
     ):
         super().__init__()
 
@@ -43,13 +45,16 @@ class MLPBlock(nn.Module):
         self.n_inputs = n_inputs
         self.n_layers = n_layers
 
-        
         self.fcs = nn.ModuleList(
             [nn.Linear(dims[i], dims[i + 1]) for i in range(n_layers)]
         )
 
-        self.batch_norms = nn.ModuleList(
-            [nn.BatchNorm1d(d) for d in hidden_dims]
+        self.batch_norms = torch.nn.ModuleList(
+            get_batchnorms(
+                batch_norm,
+                hidden_dims,
+                momentum=batch_norm_momentum
+            )
         )
 
         self.activations = torch.nn.ModuleList(

@@ -1,9 +1,21 @@
-model_type: regression
+model_type: vinson_embed
 model_arch:
-  cell_embedding:
+  cell_embed:
     n_inputs: 637
-    hidden_dims: [256]
-  n_outputs: 256
+    hidden_dims: [256, 256]
+    batch_norm: true
+    batch_norm_momentum: 0.1
+    activation: silu
+  
+  head:
+    n_inputs: 256
+    hidden_dims: [128, 64]
+    batch_norm: true
+    batch_norm_momentum: 0.1
+    activation: silu
+
+  trunk:
+    activation: silu
 
 model_kwargs:
   log_output: true
