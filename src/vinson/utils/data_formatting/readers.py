@@ -190,13 +190,15 @@ def extract_data_from_backed_anndata(
         data[layer] = data[layer].flatten()
     
 
-    if 'indiv_id' in data:
-        data['indiv_id'] = pd.Series(data['sample_id']).map(data['indiv_id'])
-    
-    data['read_depth'] = pd.Series(data['sample_id']).map(data['read_depth'])
-    
-    data['chrom'] = pd.Series(data['dhs_id']).map(data['chrom'])
-    data['summit'] = pd.Series(data['dhs_id']).map(data['summit'])
+    for key in ['indiv_id', 'read_depth']:
+        if key not in data:
+            continue
+        mapping = pd.Series(data[key], index=sample_names)
+        data[key] = pd.Series(data['sample_id']).map(mapping)
+
+    for key in ['chrom', 'summit']:
+        mapping = pd.Series(data[key], index=dhs_names)
+        data[key] = pd.Series(data['dhs_id']).map(mapping)
 
     if use_sample_peaks:
         sample_peaks_mask = data['class'] == 1
