@@ -79,7 +79,7 @@ def classifier_model_from_config(config, checkpoint_path=None):
         model = CellClassifierModel(
             embedding=embedding,
             **scheduler_kwargs,
-            **config['model_kwargs'],
+            **config.get('model_kwargs', {}),
         )
     return model
 
