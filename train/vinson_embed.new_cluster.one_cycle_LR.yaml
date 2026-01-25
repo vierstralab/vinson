@@ -1,0 +1,50 @@
+model_type: vinson_embed
+model_arch:
+  cell_embed:
+    n_inputs: 637
+    hidden_dims: [256, 256]
+    batch_norm: true
+    batch_norm_momentum: 0.1
+    activation: silu
+  
+  head:
+    n_inputs: 256
+    hidden_dims: [128, 64]
+    batch_norm: true
+    batch_norm_momentum: 0.1
+    activation: silu
+
+  trunk:
+    activation: silu
+
+model_kwargs:
+  log_output: false
+
+hparams:
+  batch_size: 1024
+  wd: 1.0e-2
+  epochs: 3
+
+  lr_scheduler: OneCycleLR
+  lr_scheduler_kwargs:
+    max_lr: 1.0e-03
+    div_factor: 25
+    final_div_factor: 10000
+    total_steps: null
+
+train_augmentation_kwargs:
+  reverse_complement: true
+  jitter: 20
+  noise: 0.1
+validation_augmentation_kwargs:
+  reverse_complement: false
+  jitter: 0
+  noise: 0
+data_params:
+  clip_density: 20
+  min_bg: 0.1
+  negatives_weight: 1
+
+logging_params:
+  val_check_interval: 0.2
+  logger_type: csv
