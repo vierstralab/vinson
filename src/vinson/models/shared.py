@@ -22,7 +22,11 @@ class MLPBlock(nn.Module):
     dropout : float, optional
         Dropout probability applied after the activation in each layer.
     activations : str or list[str], optional
-        Activation function(s) to use per layer. Scalars are broadcast across layers.
+        Activation function(s) to use per layer. Scalars are broadcasted across layers.
+    batch_norm : bool or list[bool], optional
+        Whether to apply batch normalization after each layer. Scalars are broadcasted.
+    batch_norm_momentum : float, optional
+        Momentum parameter for batch normalization layers.
     """
     def __init__(
         self,
