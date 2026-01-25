@@ -78,8 +78,8 @@ def classifier_model_from_config(config, checkpoint_path=None):
         scheduler_kwargs = _parse_scheduler_and_optimizer(config)
         model = CellClassifierModel(
             embedding=embedding,
-            output_dict=config['output_dict'],
             **scheduler_kwargs,
+            **config['model_kwargs'],
         )
     return model
 
