@@ -24,8 +24,6 @@ from vinson.datasets.variant import VariantEmbedDataset
 from vinson.utils.data_formatting import extract_data_from_h5
 
 
-
-
 model_factory_registry = {
     "vinson": BassetTrunk,
     "legnet": LegNetTrunk,
