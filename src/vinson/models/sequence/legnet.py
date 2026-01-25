@@ -55,8 +55,8 @@ class EffBlock(nn.Module):
                  in_ch: int, 
                  ks: int, 
                  resize_factor:int, 
-                 out_ch=Union[int, None], 
-                 se_reduction=Union[int, None], 
+                 out_ch: int = None, 
+                 se_reduction: int = None, 
                  activation=nn.SiLU
                  ):
         super().__init__()
@@ -106,20 +106,21 @@ class EffBlock(nn.Module):
 
 
 class LocalBlock(nn.Module):
-    def __init__(self, in_ch: int, ks:int, out_ch:Union[int, None]=None):
+    def __init__(self, in_ch: int, ks: int, out_ch: int = None):
         super().__init__()
         self.in_ch = in_ch
         self.out_ch = self.in_ch if out_ch is None else out_ch
         self.ks = ks
         
         self.block = nn.Sequential(
-                       nn.Conv1d(
-                            in_channels=self.in_ch,
-                            out_channels=self.out_ch,
-                            kernel_size=self.ks,
-                            padding='same',
-                            bias=False)
-                       )        
+            nn.Conv1d(
+                in_channels=self.in_ch,
+                out_channels=self.out_ch,
+                kernel_size=self.ks,
+                padding='same',
+                bias=False
+            )
+        )        
         
     def forward(self, x):
         return self.block(x)
