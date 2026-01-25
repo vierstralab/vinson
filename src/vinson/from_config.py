@@ -1,9 +1,18 @@
+import anndata as ad
+
+from datetime import datetime
+import mergedeep
+
+from vinson.utils.helpers import read_yaml_config
+
 from vinson.models.sequence.lightning_wrappers import AbstractSequenceModel
 from vinson.models.sequence.lightning_wrappers import SequenceEmbedModel, SequenceOnlyModel
 from vinson.models.sequence.basset import BassetTrunk, BassetTrunkEmbed
 from vinson.models.sequence.legnet import LegNetTrunk, LegNetTrunkEmbed
 
 from vinson.models.variant.lightning_wrappers import VariantEmbedModel
+
+from vinson.models.cell_classifier import CellClassifierModel
 
 from vinson.models.shared import MLPBlock
 
@@ -14,7 +23,7 @@ from vinson.datasets.variant import VariantEmbedDataset
 
 from vinson.utils.data_formatting import extract_data_from_h5
 
-import anndata as ad
+
 
 
 model_factory_registry = {
@@ -36,6 +45,14 @@ lightning_model_registry = {
     "legnet_variant_embed": VariantEmbedModel,
 }
 
+def read_configs(config_path, overwrite_config_path=None):
+    config = read_yaml_config(config_path)
+    if overwrite_config_path is not None:
+        update_config = read_yaml_config(overwrite_config_path)
+        mergedeep.merge(config, update_config, strategy=mergedeep.Strategy.REPLACE)
+    config['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return config
+
 
 def _parse_scheduler_and_optimizer(config):
     scheduler_name = config['hparams'].get("lr_scheduler")
@@ -46,6 +63,25 @@ def _parse_scheduler_and_optimizer(config):
         'lr_scheduler_kwargs': scheduler_kwargs,
         'optimizer_kwargs': optimizer_kwargs
     }
+
+def classifier_model_from_config(config, checkpoint_path=None):
+    embedding = MLPBlock(
+        **config['model_arch']['cell_embed_arch']
+    )
+
+    if checkpoint_path is not None:
+        model = CellClassifierModel.load_from_checkpoint(
+            checkpoint_path=checkpoint_path,
+            embedding=embedding,
+        )
+    else:
+        scheduler_kwargs = _parse_scheduler_and_optimizer(config)
+        model = CellClassifierModel(
+            embedding=embedding,
+            output_dict=config['output_dict'],
+            **scheduler_kwargs,
+        )
+    return model
 
 
 def dhs_model_from_config(config, checkpoint_path=None):
@@ -59,11 +95,11 @@ def dhs_model_from_config(config, checkpoint_path=None):
     LightningModelCls: AbstractSequenceModel = lightning_model_registry[model_type]
 
     trunk = BaseModelCls(
-        **config['base_arch']
+        **config['model_arch']['base_arch']
     )
 
     head = MLPBlock(
-        **config['head_arch']
+        **config['model_arch']['head_arch']
     )
 
     torch_modules_kwargs = {
@@ -72,7 +108,7 @@ def dhs_model_from_config(config, checkpoint_path=None):
     }
 
     if model_type in ("vinson_embed", "legnet_embed"):
-        mlp_embedding = MLPBlock(**config["cell_embed_arch"])
+        mlp_embedding = MLPBlock(**config["model_arch"]["cell_embed_arch"])
         torch_modules_kwargs["embed_model"] = mlp_embedding
 
     if checkpoint_path is not None:
