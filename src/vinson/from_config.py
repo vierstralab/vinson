@@ -54,7 +54,7 @@ def read_configs(config_path, overwrite_config_path=None):
     return config
 
 
-def _parse_scheduler_and_optimizer(config):
+def _parse_scheduler_and_optimizer(config: dict):
     scheduler_name = config['hparams'].get("lr_scheduler")
     scheduler_kwargs = config['hparams'].get("lr_scheduler_kwargs", {})
     optimizer_kwargs = config['hparams']["optimizer_kwargs"]
@@ -64,7 +64,7 @@ def _parse_scheduler_and_optimizer(config):
         'optimizer_kwargs': optimizer_kwargs
     }
 
-def classifier_model_from_config(config, checkpoint_path=None):
+def classifier_model_from_config(config: dict, checkpoint_path: str = None):
     embedding = MLPBlock(
         **config['model_arch']['cell_embed']
     )
