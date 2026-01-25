@@ -183,11 +183,14 @@ class LegNetTrunk(nn.Module):
                         out_ch=in_ch,
                         ks=ef_ks,
                         resize_factor=resize_factor,
-                        activation=activation)
+                        activation=activation
+                    )
                 ),
-                LocalBlock(in_ch=in_ch * 2,
-                           out_ch=out_ch,
-                           ks=ef_ks),
+                LocalBlock(
+                    in_ch=in_ch * 2,
+                    out_ch=out_ch,
+                    ks=ef_ks
+                ),
                 nn.MaxPool1d(pool_sz,) if pool_sz != 1 else nn.Identity()
             )
             in_ch = out_ch
@@ -195,16 +198,18 @@ class LegNetTrunk(nn.Module):
         
         block_ids = [f'blc{blc_id}' for blc_id in range(len(self.ef_block_sizes))]
         blocks_dict = dict(zip(block_ids,blocks))
-        self.main = nn.ModuleDict(blocks_dict)
+        self.blocks_dict = nn.ModuleDict(blocks_dict)
         
-        self.mapper = MapperBlock(in_features=out_ch, 
-                                  out_features=out_ch * 2)
+        self.mapper = MapperBlock(
+            in_features=out_ch, 
+            out_features=out_ch * 2
+        )
             
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.stem(x)
         for blc_id in range(len(self.ef_block_sizes)):
             cur_block = f'blc{blc_id}'
-            x = self.main[cur_block](x)
+            x = self.blocks_dict[cur_block](x)
         x = self.mapper(x)
         x = F.adaptive_avg_pool1d(x, 1)
         x = x.squeeze(-1)
@@ -245,17 +250,17 @@ class LegNetTrunkEmbed(LegNetTrunk):
             self.bias[cur_block] = nn.Linear(n_embed_outputs, in_ch)
 
     def forward(self, x: torch.Tensor, embed: torch.Tensor) -> torch.Tensor:
-        x_conv = self.stem(x)
+        current_layer = self.stem(x)
         b, c, _, = embed.size()
         embed = embed.view(b, c, -1)
         
         for blc_id in range(len(self.ef_block_sizes)):
             cur_block = f'blc{blc_id}'
             x_bias = self.bias[cur_block](embed)
-            x_conv = x_conv + x_bias
-            x_conv = self.main[cur_block](x_conv)
+            current_layer = current_layer + x_bias
+            current_layer = self.blocks_dict[cur_block](current_layer)
 
-        x = self.mapper(x_conv)
+        x = self.mapper(current_layer)
         x = F.adaptive_avg_pool1d(x, 1)
         x = x.squeeze(-1)
         return x 

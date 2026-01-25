@@ -25,21 +25,21 @@ from vinson.utils.data_formatting import extract_data_from_h5
 
 
 model_factory_registry = {
-    "vinson": BassetTrunk,
+    "basset": BassetTrunk,
     "legnet": LegNetTrunk,
 
-    "vinson_embed": BassetTrunkEmbed,
+    "basset_embed": BassetTrunkEmbed,
     "legnet_embed": LegNetTrunkEmbed,
 }
 
 lightning_model_registry = {
-    "vinson": SequenceOnlyModel,
+    "basset": SequenceOnlyModel,
     "legnet": SequenceOnlyModel,
 
-    "vinson_embed": SequenceEmbedModel,
+    "basset_embed": SequenceEmbedModel,
     "legnet_embed": SequenceEmbedModel,
 
-    "vinson_variant_embed": VariantEmbedModel,
+    "basset_variant_embed": VariantEmbedModel,
     "legnet_variant_embed": VariantEmbedModel,
 }
 

@@ -1,4 +1,4 @@
-model_type: vinson_embed
+model_type: basset_embed
 model_arch:
   cell_embed:
     n_inputs: 637
