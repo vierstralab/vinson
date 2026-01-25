@@ -65,6 +65,7 @@ def _parse_scheduler_and_optimizer(config: dict):
     }
 
 def classifier_model_from_config(config: dict, checkpoint_path: str = None):
+    assert config['model_type'] == "classifier"
     embedding = MLPBlock(
         **config['model_arch']['cell_embed']
     )
