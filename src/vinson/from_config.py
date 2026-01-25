@@ -66,7 +66,7 @@ def _parse_scheduler_and_optimizer(config):
 
 def classifier_model_from_config(config, checkpoint_path=None):
     embedding = MLPBlock(
-        **config['model_arch']['cell_embed_arch']
+        **config['model_arch']['cell_embed']
     )
 
     if checkpoint_path is not None:
@@ -95,11 +95,11 @@ def dhs_model_from_config(config, checkpoint_path=None):
     LightningModelCls: AbstractSequenceModel = lightning_model_registry[model_type]
 
     trunk = BaseModelCls(
-        **config['model_arch']['base_arch']
+        **config['model_arch']['trunk']
     )
 
     head = MLPBlock(
-        **config['model_arch']['head_arch']
+        **config['model_arch']['head']
     )
 
     torch_modules_kwargs = {
@@ -108,7 +108,7 @@ def dhs_model_from_config(config, checkpoint_path=None):
     }
 
     if model_type in ("vinson_embed", "legnet_embed"):
-        mlp_embedding = MLPBlock(**config["model_arch"]["cell_embed_arch"])
+        mlp_embedding = MLPBlock(**config["model_arch"]["cell_embed"])
         torch_modules_kwargs["embed_model"] = mlp_embedding
 
     if checkpoint_path is not None:
