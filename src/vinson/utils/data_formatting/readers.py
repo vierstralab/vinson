@@ -177,9 +177,9 @@ def extract_data_from_backed_anndata(
     dhs_names = data["dhs_id"]
 
     # Create broadcasted grids (C order = sample-major)
-    broadcasted_sample_ids, broadcasted_dhs_ids = np.meshgrid(
-        sample_names,
+    broadcasted_dhs_ids, broadcasted_sample_ids = np.meshgrid(
         dhs_names,
+        sample_names,
         indexing="ij"
     )
 

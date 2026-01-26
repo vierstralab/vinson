@@ -94,4 +94,9 @@ class MLPBlock(nn.Module):
             x = drop(x)
             x = act(x)
             x = bn(x)
+
+            # x = fc(x)
+            # x = bn(x)
+            # x = act(x)
+            # x = drop(x)
         return x
