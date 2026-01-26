@@ -462,26 +462,26 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
         # --- Detect NaN/Inf and print detailed info ---
         nan_indices = torch.where(torch.isnan(loss) | torch.isinf(loss))[0]
         if len(nan_indices) > 0:
-            print(f"[WARNING] NaN/Inf loss detected at batch {batch_idx}")
-            print("Indices with NaN/Inf:", nan_indices.tolist())
+            # print(f"[WARNING] NaN/Inf loss detected at batch {batch_idx}")
+            # print("Indices with NaN/Inf:", nan_indices.tolist())
     
-            for idx in nan_indices:
-                idx = idx.item()  # make Python int
-                print(f"\nVariant at batch idx {idx}:")
-                print(f"  y = {y[idx].item()}")
-                print(f"  ref_counts = {ref_counts[idx].item()}")
-                print(f"  total_counts = {total_counts[idx].item()}")
-                print(f"  bad_score = {bad_score[idx].item()}")
-                print(f"  weight = {batch['weight'][idx].item()}")
+            # for idx in nan_indices:
+            #     idx = idx.item()  # make Python int
+            #     print(f"\nVariant at batch idx {idx}:")
+            #     print(f"  y = {y[idx].item()}")
+            #     print(f"  ref_counts = {ref_counts[idx].item()}")
+            #     print(f"  total_counts = {total_counts[idx].item()}")
+            #     print(f"  bad_score = {bad_score[idx].item()}")
+            #     print(f"  weight = {batch['weight'][idx].item()}")
     
-                # print variant metadata if present
-                for key in ["chrom", "pos", "ref", "alt", "gt"]:
-                    if key in batch:
-                        val = batch[key][idx]
-                        # convert single-element tensor to Python scalar
-                        if torch.is_tensor(val) and val.numel() == 1:
-                            val = val.item()
-                        print(f"  {key} = {val}")
+            #     # print variant metadata if present
+            #     for key in ["chrom", "pos", "ref", "alt", "gt"]:
+            #         if key in batch:
+            #             val = batch[key][idx]
+            #             # convert single-element tensor to Python scalar
+            #             if torch.is_tensor(val) and val.numel() == 1:
+            #                 val = val.item()
+            #             print(f"  {key} = {val}")
     
             # Optionally: replace NaN/Inf with large number to continue training
             #loss = torch.nan_to_num(loss, nan=1e6, posinf=1e6, neginf=1e6)
@@ -495,66 +495,9 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
 
         return loss, y, (ref_counts, total_counts, bad_score)
 
-    def debug_training_step(self, batch, batch_idx):
-        # Print batch info
-        print(f"\n--- Batch {batch_idx} ---")
-        for k, v in batch.items():
-            if torch.is_tensor(v):
-                print(f"{k}: shape={v.shape}, min={v.min().item()}, max={v.max().item()}, NaN={torch.isnan(v).any().item()}, Inf={torch.isinf(v).any().item()}")
-            else:
-                print(f"{k}: type={type(v)}, len={len(v)}")
-        
-        # Call original step (optional, to see loss)
-        loss, *_ = self.step(batch, batch_idx)
-        print(f"Batch loss: {loss.item()}")
-        return loss
-
-    def debug_validation_step(self, batch, batch_idx):
-        print(f"\n--- Validation Batch {batch_idx} ---")
-        for k, v in batch.items():
-            if torch.is_tensor(v):
-                print(f"{k}: shape={v.shape}, min={v.min().item()}, max={v.max().item()}, NaN={torch.isnan(v).any().item()}, Inf={torch.isinf(v).any().item()}")
-            else:
-                print(f"{k}: type={type(v)}, len={len(v)}")
-        
-        loss, y_hat, y = self.step(batch, batch_idx)
-        print(f"Validation batch loss: {loss.item()}")
-        return loss
-
-
-    # def training_step(self, batch, batch_idx):
-    #     loss, *_ = self.step(batch, batch_idx)
-
-    #     self.log(
-    #         "loss", loss, on_step=True, on_epoch=False, sync_dist=True
-    #     )
-
-    #     return loss
+  
     def training_step(self, batch, batch_idx):
         loss, *_ = self.step(batch, batch_idx)
-    
-        if getattr(self, "debug", False) and hasattr(self, "batch_log_file"):
-            lfc = batch.get("lfc")
-            ref_counts = batch.get("ref_counts")
-            total_counts = batch.get("total_counts")
-            bad_score = batch.get("bad_score")
-    
-            with open(self.batch_log_file, "a", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    self.current_epoch,
-                    batch_idx,
-                    loss.item(),
-                    lfc.min().item() if lfc is not None else "",
-                    lfc.max().item() if lfc is not None else "",
-                    ref_counts.min().item() if ref_counts is not None else "",
-                    ref_counts.max().item() if ref_counts is not None else "",
-                    total_counts.min().item() if total_counts is not None else "",
-                    total_counts.max().item() if total_counts is not None else "",
-                    bad_score.min().item() if bad_score is not None else "",
-                    bad_score.max().item() if bad_score is not None else "",
-                ])
-    
         self.log("loss", loss, on_step=True, on_epoch=False, sync_dist=True)
         return loss
 
@@ -564,41 +507,9 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
         lfc = batch.get("lfc")
         self.valid_metrics.update(y_hat, lfc)
     
-        if getattr(self, "debug", False) and hasattr(self, "batch_log_file"):
-            ref_counts = batch.get("ref_counts")
-            total_counts = batch.get("total_counts")
-            bad_score = batch.get("bad_score")
-    
-            with open(self.batch_log_file, "a", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    self.current_epoch,
-                    f"val_{batch_idx}",
-                    loss.item(),
-                    lfc.min().item() if lfc is not None else "",
-                    lfc.max().item() if lfc is not None else "",
-                    ref_counts.min().item() if ref_counts is not None else "",
-                    ref_counts.max().item() if ref_counts is not None else "",
-                    total_counts.min().item() if total_counts is not None else "",
-                    total_counts.max().item() if total_counts is not None else "",
-                    bad_score.min().item() if bad_score is not None else "",
-                    bad_score.max().item() if bad_score is not None else "",
-                ])
-    
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
         return loss
 
-
-    # def validation_step(self, batch, batch_idx):
-    #     loss, y_hat, y = self.step(batch, batch_idx)
-    #     lfc = batch["lfc"]
-
-    #     self.valid_metrics.update(y_hat, lfc)
-
-    #     self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-
-    #     return loss
-   
 
 class VariantEmbedModelWrapper(L.LightningModule):
     """Wrapper class for VariantModel to perform only inference"""

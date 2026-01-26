@@ -166,25 +166,6 @@ class SeqEmbedVariantDataModule(SeqEmbedDataModule):
       - Uses extract_var_data_from_anndata
       - Uses VariantEmbedDataset instead of SequenceEmbedDataset
     """
-    # def train_dataset(self):
-    #     data, embeddings_df = self.get_data(self.current_train_epoch, "train", "train")
-    #     return VariantEmbedDataset(
-    #         data=data,
-    #         embeddings_df=embeddings_df,
-    #         fasta_file=self.fasta_file,
-    #         genotype_file=self.genotype_file,
-    #         **self.train_dataset_kwargs,
-    #     )
-
-    # def validation_dataset(self):
-    #     data, embeddings_df = self.get_data(self.validation_epoch, "val", "train")
-    #     return VariantEmbedDataset(
-    #         data=data,
-    #         embeddings_df=embeddings_df,
-    #         fasta_file=self.fasta_file,
-    #         genotype_file=self.genotype_file,
-    #         **self.valid_dataset_kwargs,
-    #     )
     def train_dataset(self, epoch=None):
         if epoch is None:
             epoch = self.current_train_epoch

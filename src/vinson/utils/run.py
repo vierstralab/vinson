@@ -5,6 +5,8 @@ import torch
 import lightning as L
 import anndata as ad
 import sys
+# sys.path.append("/home/mbrannon/.local/src/dnase_legnet")
+import copy
 
 from vinson.models.sequence import CellEmbedding, BassetTrunkEmbed, EmbedModel, VariantEmbedModel
 from vinson.datamodules.sequence import SeqEmbedDataModule, SeqEmbedVariantDataModule
@@ -20,20 +22,21 @@ from lightning.pytorch.loggers import CSVLogger
 
 
 # dataset util functions
+# dataset util functions
 def model_from_config(config, checkpoint_path=None):
     # TODO: add model configuration to config
     model_type = config['model_type']
     hparams = config["hparams"]
-    scheduler_name = hparams.get("lr_scheduler")
-    scheduler_kwargs = hparams.get("lr_scheduler_kwargs", {})
-    optimizer_kwargs = hparams.get("optimizer_kwargs", {"lr": hparams.get("lr")})
+    # scheduler_name = hparams.get("lr_scheduler")
+    # scheduler_kwargs = hparams.get("lr_scheduler_kwargs", {})
+    # optimizer_kwargs = hparams.get("optimizer_kwargs", {"lr": hparams.get("lr")})
     trunk_weights = config.get("trunk_weights", None)
 
     # legacy fix
     if model_type == "regression":
         model_type = "dhs"
 
-    if model_type not in {"dhs", "variant", "legnet_dhs"}:
+    if model_type not in {"dhs", "variant", "legnet_dhs", "legnet_variant"}:
         raise ValueError(f"Unsupported model type: {model_type}")
     if model_type == "legnet_dhs":
         try:
@@ -50,15 +53,39 @@ def model_from_config(config, checkpoint_path=None):
 
         return LegNetEmbedInCNN(
             model_kws=config["model_arch"],
-            hparams=config['hparams'],
-            # hparams={
-            #     "lr_scheduler": scheduler_name,
-            #     "lr_scheduler_kwargs": scheduler_kwargs,
-            #     "optimizer_kwargs": optimizer_kwargs,
-            # },
+            hparams=hparams,
             **config["model_kwargs"],
         )
+    #WIP model architecture changing
+    if model_type == "legnet_variant":
+        try:
+            from dnase_legnet.legnet_embed_cnn import LegNetEmbedInCNN
+            from dnase_legnet.legnet_embed_cnn import LegNetVariantWrapper
 
+        except ImportError:
+            print("Please install dnase_legnet to use LegNet models.", file=sys.stderr)
+            sys.exit(1)
+        # --- build shared trunk model ---
+        base_model = LegNetEmbedInCNN(
+            model_kws=config["model_arch"],
+            hparams=hparams,
+            **config["model_kwargs"],
+        )
+        if trunk_weights is not None:
+                print(f"[INFO] Loading pretrained LegNet trunk from {trunk_weights}")
+                ckpt = torch.load(trunk_weights, map_location="cpu")
+                state = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
+                base_model.load_state_dict(state, strict=False)
+        ref_model = copy.deepcopy(base_model)
+        alt_model = copy.deepcopy(base_model)
+
+        return LegNetVariantWrapper(
+            ref_model=ref_model,
+            alt_model=alt_model,
+            hparams=hparams,
+            # seed=config.get("seed"),
+        )
+        #expects in params wd, lr
     # --- STANDARD EMBED/TRUNK PATH ---
     embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
     trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
@@ -178,7 +205,7 @@ def datamodule_from_config(
     }
 
     # DataModule to handle datasets updates and dataloader init
-    if config.get("model_type") == "variant":
+    if config.get("model_type") in ("variant", "legnet_variant"):
         return SeqEmbedVariantDataModule(
             anndata_file=anndata_file,
             fasta_file=fasta_file,
@@ -249,23 +276,10 @@ def init_multigpu_trainer(
         LearningRateMonitor(),
     ]
 
-    # callbacks = [
-    #     EarlyStopping(monitor="val_loss", mode="min", min_delta=0.005, patience=10),
-    #     ModelCheckpoint(
-    #         monitor="val_loss",
-    #         mode="min",
-    #         filename="{epoch}-{step}-{val_loss:.2f}",
-    #         dirpath=os.path.join(outdir, "checkpoints"),
-    #         save_top_k=5,
-    #         save_last=True,
-    #     ),
-    #     LearningRateMonitor(),
-    # ]
-
     trainer = L.Trainer(
         logger=logger,
         callbacks=callbacks,
-        max_epochs=10,
+        #max_epochs=10, removed to take from kwargs
         accelerator=accelerator,
         strategy=strategy,
         num_nodes=nodes,

@@ -10,7 +10,7 @@ validation_augmentation_kwargs:
   jitter: 0
   noise: 0
 trainer_kwargs:
-    max_epochs: 10
+    max_epochs: 25
 hparams:
   batch_size: 64
   optimizer_kwargs:
