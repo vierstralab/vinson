@@ -9,7 +9,7 @@ class StemConv(nn.Module):
     def __init__(self, in_ch: int, out_ch: int, filter_sizes: Union[int, list], groups: int = 1):
         super(StemConv, self).__init__()
 
-        in_ch = [in_ch] if isinstance(in_ch, int) else in_ch
+        filter_sizes = [filter_sizes] if isinstance(filter_sizes, int) else filter_sizes
         num_blocks = len(filter_sizes)
         assert out_ch % num_blocks == 0 
 
