@@ -93,6 +93,13 @@ def dhs_model_from_config(config, checkpoint_path=None):
 
     LightningModelCls: AbstractSequenceModel = lightning_model_registry[model_type]
 
+    torch_modules_kwargs = {}
+    if model_type in ("vinson_embed", "legnet_embed"):
+        mlp_embedding = MLPBlock(**config["model_arch"]["cell_embed"])
+        torch_modules_kwargs["embed_model"] = mlp_embedding
+        config['model_arch']['trunk']['n_embed_outputs'] = mlp_embedding.output_dim
+
+
     trunk = BaseModelCls(
         **config['model_arch']['trunk']
     )
@@ -102,14 +109,11 @@ def dhs_model_from_config(config, checkpoint_path=None):
     )
 
     torch_modules_kwargs = {
+        **torch_modules_kwargs,
         "trunk_model": trunk,
         "head_model": head,
     }
 
-    if model_type in ("vinson_embed", "legnet_embed"):
-        mlp_embedding = MLPBlock(**config["model_arch"]["cell_embed"])
-        torch_modules_kwargs["embed_model"] = mlp_embedding
-        config['model_kwargs']['n_embed_outputs'] = mlp_embedding.output_dim
 
     if checkpoint_path is not None:
         model = LightningModelCls.load_from_checkpoint(
