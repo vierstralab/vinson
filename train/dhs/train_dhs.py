@@ -11,12 +11,13 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 
-import anndata as ad
-import gc
+from vinson.utils.helpers import save_config, generate_run_name
 
-from vinson.utils.helpers import read_configs, save_config, generate_run_name
-from vinson.utils.run import datamodule_from_config, model_from_config, set_global_seed, set_worker_seed
+from vinson.from_config import datamodule_from_config, read_configs, dhs_model_from_config 
+
+from vinson.run import set_global_seed, set_worker_seed
 from vinson.utils.data_formatting import get_number_of_train_examples
+
 
 torch.set_float32_matmul_precision('high')
 
@@ -175,6 +176,7 @@ if __name__ == "__main__":
         default_config_path,
         custom_config_path=args.config
     )
+
     config['command'] = " ".join(["python"] + sys.argv)
     config_path = os.path.join(outdir, "run_config.yaml")
     save_config(
@@ -236,7 +238,7 @@ if __name__ == "__main__":
             config['hparams']['lr_scheduler_kwargs']['total_steps'] = round(n_examples / datamodule.dataloader_kwargs['batch_size'] / trainer.num_devices)
 
     print('Initializing model...', flush=True)
-    model = model_from_config(config, checkpoint_path=checkpoint)
+    model = dhs_model_from_config(config, checkpoint_path=checkpoint)
 
     print('Training...', flush=True)
     # Start training
