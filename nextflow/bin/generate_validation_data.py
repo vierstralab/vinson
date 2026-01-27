@@ -5,7 +5,7 @@ import anndata as ad
 
 from genome_tools.data.anndata import read_zarr_backed
 
-from vinson.utils.data_formatting import extract_data_from_backed_anndata as extract_dhs_data_from_backed_anndata, VinsonData, sanitize_data
+from vinson.utils.data_formatting import extract_data_from_backed_anndata as extract_dhs_data_from_backed_anndata, VinsonData
 
 
 def get_bg_for_peaks(peaks_df: pd.DataFrame, stats_path):
