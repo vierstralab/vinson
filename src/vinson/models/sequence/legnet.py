@@ -256,6 +256,7 @@ class LegNetTrunkEmbed(LegNetTrunk):
         for blc_id in range(len(self.ef_block_sizes)):
             cur_block = f'blc{blc_id}'
             x_bias = self.bias[cur_block](embed)
+            print(x_bias.shape, current_layer.shape)
             current_layer = current_layer + x_bias
             current_layer = self.blocks_dict[cur_block](current_layer)
 
