@@ -30,13 +30,14 @@ def update_layers_dict(layers: dict, train_adata: ad.AnnData, suffix: str):
 
 def get_number_of_train_examples(anndata_file):
     full_adata = ad.read_h5ad(anndata_file)
-    adata = full_adata[
-        full_adata.obsm["split_data"] == "train",
-        full_adata.varm["split_data"] == "train",
-    ]
-    if 'n_training_examples' in adata.uns:
-        n_examples = adata.uns['n_training_examples']
+
+    if 'n_training_examples' in full_adata.uns:
+        n_examples = full_adata.uns['n_training_examples']
     else:
+        adata = full_adata[
+            full_adata.obsm["split_data"] == "train",
+            full_adata.varm["split_data"] == "train",
+        ]
         n_examples = 0
         for epoch in adata.uns['epoch_names']:
             layer_name = f"class.{epoch}"
