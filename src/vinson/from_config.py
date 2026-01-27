@@ -19,7 +19,8 @@ from vinson.models.cell_classifier import CellClassifierModel
 from vinson.models.shared import MLPBlock
 
 
-from vinson.datamodules.sequence import SeqEmbedDataModule, SeqEmbedVariantDataModule
+from vinson.datamodules.sequence import SeqEmbedDataModule
+from vinson.datamodules.variant import SeqEmbedVariantDataModule
 from vinson.datasets.sequence import SequenceEmbedDataset
 from vinson.datasets.variant import VariantEmbedDataset
 
