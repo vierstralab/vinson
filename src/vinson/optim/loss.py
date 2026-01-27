@@ -231,6 +231,8 @@ class PoissonNLLLoss(torch.nn.Module):
             return nll
 
 
+PoissonNLL = PoissonNLLLoss # alias
+
 class BinomialMixtureNLLLoss(torch.nn.Module):
     """
     Negative log-likelihood loss for a binomial mixture model with BAD score adjustment.

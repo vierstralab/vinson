@@ -1,8 +1,11 @@
+import csv
 import os
 import sys
 import random
 import numpy as np
+import anndata as ad
 from argparse import ArgumentParser
+
 
 import torch
 import lightning as L
@@ -39,7 +42,7 @@ def main(args):
         args.config = prev_run_config
         
     default_config_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "default_train_dhs.config.yaml"
+        os.path.dirname(os.path.abspath(__file__)), "default_train_variant.config.yaml"
     )
     config = read_configs(
         default_config_path,
@@ -59,8 +62,8 @@ def main(args):
     )
     trainer_kwargs = {}
     if args.debug:
-        trainer_kwargs["limit_train_batches"] = 200 * args.devices
-        trainer_kwargs["limit_val_batches"] = 200 * args.devices
+        trainer_kwargs["limit_train_batches"] = 100 * args.devices
+        trainer_kwargs["limit_val_batches"] = 100 * args.devices
         config["logging_params"]["val_check_interval"] = 1.0
         
     trainer = init_multigpu_trainer(
@@ -71,7 +74,7 @@ def main(args):
         devices=args.devices,
         logger_type=config["logging_params"]["logger_type"],
         val_check_interval=config["logging_params"]["val_check_interval"],
-        **trainer_kwargs,
+        **trainer_kwargs, #should include max_epochs if want
     )
     
     dataloader_kwargs = dict(
@@ -92,6 +95,28 @@ def main(args):
     )
 
     model = model_from_config(config, checkpoint_path=checkpoint)
+
+    #debugs remove later
+    # debug_log_dir = os.path.join(outdir, "batch_logs")
+    # os.makedirs(debug_log_dir, exist_ok=True)
+    # batch_log_file = os.path.join(debug_log_dir, "batch_debug.csv")
+
+    
+    # # Write header
+    # with open(batch_log_file, "w", newline="") as f:
+    #     writer = csv.writer(f)
+    #     writer.writerow([
+    #         "epoch", "batch_idx", "loss",
+    #         "min_lfc", "max_lfc",
+    #         "min_ref_counts", "max_ref_counts",
+    #         "min_total_counts", "max_total_counts",
+    #         "min_bad_score", "max_bad_score",
+    #     ])
+    
+    # # Attach file path to model
+    # model.batch_log_file = batch_log_file
+    # model.debug = True  # Enable debug mode
+
     
     # Start training
     fit_model(
@@ -116,6 +141,7 @@ if __name__ == "__main__":
         type=str,
         help="Unique identifier for the training run. Generated if not provided.",
     )
+
     parser.add_argument(
         "--config",
         type=str,

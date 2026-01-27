@@ -5,7 +5,7 @@ import anndata as ad
 
 from genome_tools.data.anndata import read_zarr_backed
 
-from vinson.utils.data_formatting import extract_data_from_backed_anndata as extract_dhs_data_from_backed_anndata, VinsonData, sanitize_data
+from vinson.utils.data_formatting import extract_data_from_backed_anndata as extract_dhs_data_from_backed_anndata, VinsonData
 
 
 def get_bg_for_peaks(peaks_df: pd.DataFrame, stats_path):
@@ -36,7 +36,6 @@ def get_bg_for_peaks(peaks_df: pd.DataFrame, stats_path):
     bg = merged.eval('bg_r * bg_p / (1 - bg_p)').values
     assert len(bg) == len(peaks_df), f"Background length mismatch {len(bg)} vs {len(peaks_df)}"
     return bg
-
 
 def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> VinsonData:
     anndata_slice = anndata[sample_ids, :]
@@ -115,7 +114,7 @@ if __name__ == '__main__':
             sample_ids=sample_ids,
             dhs_ids=dhs_ids
         )
-        print(len(data))
+
     data.write_h5(args.output_file)
 
     

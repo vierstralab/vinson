@@ -1,25 +1,46 @@
-import torch
+from typing import Any, Dict, Optional
 import copy
+
+import torch
 
 from torchmetrics import MetricCollection
 from torchmetrics.regression import PearsonCorrCoef
 
-from vinson.models.sequence import AbstractBaseSequenceModel, CellEmbedding
-from vinson.loss import (
-    BinomialMixtureNLLLoss,
-)
 import lightning as L
 
+from vinson.models.sequence.lightning_wrappers import AbstractSequenceModel, SequenceEmbedModel
 
-class VariantEmbedModel(AbstractBaseSequenceModel):
-    def __init__(self, trunk: torch.nn.Module, embed: CellEmbedding, *args, **kwargs):
-        super().__init__(trunk, *args, **kwargs)
+from vinson.optim.loss import BinomialMixtureNLLLoss
 
-        self.embedding = embed
+from vinson.models.shared import MLPBlock, initialize_weights
+
+
+class VariantEmbedModel(AbstractSequenceModel):
+    def __init__(
+        self,
+        trunk_model: torch.nn.Module,
+        head_model: MLPBlock,
+        embed_model: MLPBlock,
+        lr_scheduler: Optional[str]=None,
+        optimizer_kwargs: Optional[Dict[str, Any]]=None,
+        lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
+        init_weights: bool=True,
+    ):
+        super().__init__(
+            trunk_model=trunk_model,
+            head_model=head_model,
+            lr_scheduler=lr_scheduler,
+            optimizer_kwargs=optimizer_kwargs,
+            lr_scheduler_kwargs=lr_scheduler_kwargs,
+            init_weights=init_weights,
+        )
+        self.embed_model = embed_model
+        if init_weights:
+            self.embed_model.apply(initialize_weights)
 
         self.criterion = BinomialMixtureNLLLoss(relative=True, reduction="none")
-
-        self.save_hyperparameters()
+        self.init_metrics()
+        self.save_hyperparameters(ignore=["trunk_model", "head_model", "embed_model"])
 
     def init_metrics(self):
         self.train_metrics = MetricCollection(
@@ -31,28 +52,19 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
 
         self.valid_metrics = self.train_metrics.clone(prefix="val_")
 
-    def init_model(self):
-        self(
-            torch.zeros((2, 4, self.seqlen)),
-            torch.zeros((2, 4, self.seqlen)),
-            torch.zeros((2, self.embedding.n_inputs)),
-        )
-
     def forward_final(self, x):
         x = self.final(x)
         return x
 
     def forward(self, seq_ref, seq_alt, embed):
-        x = self.embedding(embed)
-        ref_features = self.trunk(seq_ref, x)
-        alt_features = self.trunk(seq_alt, x)
+        x = self.embed_model(embed)
+        ref_features = self.trunk_model(seq_ref, x)
+        alt_features = self.trunk_model(seq_alt, x)
 
         x = torch.subtract(ref_features, alt_features)
 
-        x = self.forward_fc(x)
-        x = self.forward_final(
-            x
-        )  # in variant model, outputs are always logits of ES -infinity to +infinity
+        x = self.head_model(x)
+        x = self.forward_final(x) # in variant model, outputs are always logits of ES -infinity to +infinity
         return x
 
     def _forward_from_batch(self, batch):
@@ -100,6 +112,23 @@ class VariantEmbedModel(AbstractBaseSequenceModel):
 
         return loss
 
+    @classmethod
+    def from_sequence_embed_model(
+        cls,
+        sequence_embed_model: SequenceEmbedModel,
+        head_model: MLPBlock,
+        **kwargs
+    ):
+        model = cls(
+            trunk_model=sequence_embed_model.trunk_model,
+            embed_model=sequence_embed_model.embed_model,
+            head_model=head_model,
+            init_weights=False,
+            **kwargs,
+        )
+        model.head_model.apply(initialize_weights)
+        return model
+
 
 class VariantEmbedModelWrapper(L.LightningModule):
     """Wrapper class for VariantModel to perform only inference"""
@@ -109,11 +138,11 @@ class VariantEmbedModelWrapper(L.LightningModule):
         self.model = model
 
         # Make independent ref/alt branches
-        self.embedding_ref = copy.deepcopy(model.embedding)
-        self.embedding_alt = copy.deepcopy(model.embedding)
+        self.embedding_ref = copy.deepcopy(model.embed_model)
+        self.embedding_alt = copy.deepcopy(model.embed_model)
 
-        self.trunk_ref = copy.deepcopy(model.trunk)
-        self.trunk_alt = copy.deepcopy(model.trunk)
+        self.trunk_ref = copy.deepcopy(model.trunk_model)
+        self.trunk_alt = copy.deepcopy(model.trunk_model)
 
         for mod in [
             self.trunk_ref,
@@ -133,14 +162,14 @@ class VariantEmbedModelWrapper(L.LightningModule):
                 pass
         raise AttributeError(f"{self.model} has no attribute {name}")
 
-    def forward(self, seq_ref, seq_alt, embed):
+    def forward(self, seq_ref, seq_alt, embed: torch.Tensor) -> torch.Tensor:
         """ """
         features_ref = self.trunk_ref(seq_ref, self.embedding_ref(embed))
         features_alt = self.trunk_alt(seq_alt, self.embedding_alt(embed.clone()))
 
         x = torch.subtract(features_ref, features_alt)
 
-        x = self.model.forward_fc(x)
+        x = self.model.head_model(x)
         x = self.model.forward_final(x)
 
         return x

@@ -1,14 +1,12 @@
 import torch
-import numpy as np
 from tqdm import tqdm
 import itertools
 from collections.abc import Iterable
 
 from vinson.utils.sequence_utils import force_strict_ohe
-from vinson.models.helpers import _Exp
 
 from tangermeme.ersatz import dinucleotide_shuffle as dinuc_shuffle
-from tangermeme.predict import predict as tangermeme_predict
+#from tangermeme.predict import predict as tangermeme_predict
 from tangermeme.product import _apply
 from tangermeme.deep_lift_shap import deep_lift_shap, _nonlinear
 
@@ -200,6 +198,14 @@ def apply_product(
     return y
 
 
+class _Exp(torch.nn.Module):
+    def __init__(self):
+        super(_Exp, self).__init__()
+
+    def forward(self, X):
+        return torch.exp(X)
+
+
 class ModelWrapper(torch.nn.Module):
     def __init__(self, model):
         super().__init__()
@@ -208,11 +214,12 @@ class ModelWrapper(torch.nn.Module):
 
     def forward(self, seq, embed):
         x = self.model(seq, embed)
-        if self.model.log_output:
-            x = self.exp(x)
+        if hasattr(self.model, "log_output"):
+            if getattr(self.model, "log_output"):
+                x = self.exp(x)
         return x
     
-    def get_sequence_attributions(self, X, X_embed, print_convergence_deltas=True, **kwargs):
+    def get_sequence_attributions(self, X, X_embed, print_convergence_deltas=True, random_state=42, **kwargs):
         attributions = deep_lift_shap(
             self,
             X,
@@ -223,6 +230,7 @@ class ModelWrapper(torch.nn.Module):
             additional_nonlinear_ops={
                 _Exp: _nonlinear
             },
+            random_state=random_state,
             **kwargs,
         )
         return attributions

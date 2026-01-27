@@ -1,0 +1,20 @@
+model_type: variant
+trunk_weights: '/net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model/2025_11_04_trusting_goldwasser/checkpoints/epoch=3-step=3892051-val_loss=52.76.ckpt'
+train_augmentation_kwargs:
+  reverse_complement: true
+  jitter: 0
+  noise: 0.01
+validation_augmentation_kwargs:
+  reverse_complement: false
+  flip_alleles: false
+  jitter: 0
+  noise: 0
+trainer_kwargs:
+    max_epochs: 25
+hparams:
+  batch_size: 64
+  optimizer_kwargs:
+      lr: 0.00001
+logging_params:
+  val_check_interval: 0.2
+  logger_type: csv
