@@ -53,7 +53,7 @@ class AbstractSequenceModel(L.LightningModule):
         self.trunk_model = trunk_model
         self.head_model = head_model
 
-        self.final = torch.nn.LazyLinear(n_tasks)
+        self.final = torch.nn.Linear(self.head_model.output_dim, n_tasks)
 
         # Optimizer setup
         self.optimizer_kwargs = optimizer_kwargs
