@@ -33,9 +33,10 @@ model_arch:
      
 hparams:
   batch_size: 1024
-  lr_scheduler: OneCycleLR
   epochs: 3
-  wd: 1.0e-2
+  optimizer_kwargs:
+    wd: 1.0e-2
+  lr_scheduler: OneCycleLR
   lr_scheduler_kwargs:
     max_lr: 1.0e-3
     div_factor: 25
