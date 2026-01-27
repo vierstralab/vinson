@@ -77,7 +77,7 @@ class AbstractSequenceModel(L.LightningModule):
 
     def configure_optimizers(self) -> Union[torch.optim.Optimizer, Dict[str, Any]]:
         return configure_optimizer(
-            params=self.parameters(),
+            module_parameters=self.parameters(),
             optimizer_kwargs=self.optimizer_kwargs,
             lr_scheduler=self.lr_scheduler,
             lr_scheduler_kwargs=self.lr_scheduler_kwargs,
