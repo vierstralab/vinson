@@ -252,8 +252,6 @@ class LegNetTrunkEmbed(LegNetTrunk):
 
     def forward(self, x: torch.Tensor, embed: torch.Tensor) -> torch.Tensor:
         current_layer = self.stem(x)
-        b, c, _, = embed.size()
-        embed = embed.view(b, c, -1)
         
         for blc_id in range(len(self.ef_block_sizes)):
             cur_block = f'blc{blc_id}'
