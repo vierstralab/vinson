@@ -109,7 +109,7 @@ def dhs_model_from_config(config, checkpoint_path=None):
     if model_type in ("vinson_embed", "legnet_embed"):
         mlp_embedding = MLPBlock(**config["model_arch"]["cell_embed"])
         torch_modules_kwargs["embed_model"] = mlp_embedding
-        torch_modules_kwargs['n_embed_outputs'] = mlp_embedding.output_dim
+        config['model_kwargs']['n_embed_outputs'] = mlp_embedding.output_dim
 
     if checkpoint_path is not None:
         model = LightningModelCls.load_from_checkpoint(
