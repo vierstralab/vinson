@@ -174,7 +174,7 @@ if __name__ == "__main__":
 
     config = read_configs(
         default_config_path,
-        custom_config_path=args.config
+        overwrite_config_path=args.config
     )
 
     config['command'] = " ".join(["python"] + sys.argv)
