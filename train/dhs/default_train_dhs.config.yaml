@@ -1,4 +1,4 @@
-model_type: vinson_embed
+model_type: basset_embed
 model_arch:
   cell_embed:
     n_inputs: 637
@@ -14,11 +14,9 @@ model_arch:
     batch_norm_momentum: 0.1
     activation: silu
 
-  trunk:
-    activation: silu
-
 model_kwargs:
-  log_output: true
+  log_output: false
+
 train_augmentation_kwargs:
   reverse_complement: true
   jitter: 5
