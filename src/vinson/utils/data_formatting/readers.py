@@ -39,32 +39,31 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str) -> Vin
     row_idx, col_idx = get_examples_indices_from_layer(data["class"])
     encodings = {}
 
-    encoded_data = {}
-    encoding_sources = {
+    encoded_vals = {
         "sample_id": train_adata.obs_names,
         "dhs_id": train_adata.var_names,
         "chrom": train_adata.var["#chr"],
     }
 
     if "indiv_id" in train_adata.obsm:
-        encoding_sources["indiv_id"] = train_adata.obsm["indiv_id"]
+        encoded_vals["indiv_id"] = train_adata.obsm["indiv_id"]
 
-    for key in encoding_sources:
-        encode_inplace(encoded_data, encodings, key)
+    for key in encoded_vals:
+        encode_inplace(encoded_vals, encodings, key)
 
 
     data = {
         'read_depth': train_adata.obs['nuclear_reads'].values[row_idx],
-        'sample_id': encoded_data["sample_id"][row_idx],
-        'dhs_id': encoded_data["dhs_id"][col_idx],
-        'chrom': encoded_data["chrom"][col_idx],
+        'sample_id': encoded_vals["sample_id"][row_idx],
+        'dhs_id': encoded_vals["dhs_id"][col_idx],
+        'chrom': encoded_vals["chrom"][col_idx],
         'summit': train_adata.var['dhs_summit'].values[col_idx],
         'background': data['mean_bg_agg_cutcounts'].data,
         'class': data['class'].data,
         'density': data['density'].data,
     }
-    if 'indiv_id' in encoded_data:
-        data['indiv_id'] = encoded_data["indiv_id"][row_idx]
+    if 'indiv_id' in encoded_vals:
+        data['indiv_id'] = encoded_vals["indiv_id"][row_idx]
 
     if 'dhs_weight' in train_adata.varm:
         data['dhs_weight'] = train_adata.varm['dhs_weight'][col_idx]
