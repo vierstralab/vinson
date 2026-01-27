@@ -208,7 +208,10 @@ class SequenceOnlyModel(AbstractSequenceModel):
         (y_hat, y), weight = self._run_step(batch)
 
         loss = self.criterion(y_hat, y)
-        loss *= weight[:, None] # works for both (B, 1) -> broadcasts to (B, 22)
+        if loss.ndim == 1:
+            loss = loss * weight
+        else:
+            loss = loss * weight[:, None]
         loss = loss.mean()
 
         return loss, y_hat, y
