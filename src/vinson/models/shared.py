@@ -6,6 +6,21 @@ from typing import List, Union
 from vinson.utils.hparams import get_activations, get_hidden_dims, get_batchnorms
 
 
+def initialize_weights(m):
+    if isinstance(m, nn.Conv1d):
+        n = m.kernel_size[0] * m.out_channels
+        m.weight.data.normal_(0, (2 / n) ** 0.5)
+        if m.bias is not None:
+            nn.init.constant_(m.bias.data, 0)
+    elif isinstance(m, nn.BatchNorm1d):
+        nn.init.constant_(m.weight.data, 1)
+        nn.init.constant_(m.bias.data, 0)
+    elif isinstance(m, nn.Linear):
+        m.weight.data.normal_(0, 0.001)
+        if m.bias is not None:
+            nn.init.constant_(m.bias.data, 0)
+
+
 class MLPBlock(nn.Module):
     """
     Multi-layer perceptron block with batch normalization and dropout.

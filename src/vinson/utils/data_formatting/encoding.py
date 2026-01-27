@@ -77,4 +77,3 @@ def sanitize_data(data: dict, encodings: dict = None, is_variant=False) -> tuple
     if 'background' in data:
         data['background'] = np.nan_to_num(data['background'], copy=False)
     return data, encodings
-

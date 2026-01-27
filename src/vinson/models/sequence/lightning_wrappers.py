@@ -17,23 +17,7 @@ import torch.nn as nn
 from vinson.optim.loss import PoissonNLLLoss
 from vinson.utils.optim import configure_optimizer
 
-
-from vinson.models.shared import MLPBlock
-
-
-def initialize_weights(m):
-    if isinstance(m, nn.Conv1d):
-        n = m.kernel_size[0] * m.out_channels
-        m.weight.data.normal_(0, (2 / n) ** 0.5)
-        if m.bias is not None:
-            nn.init.constant_(m.bias.data, 0)
-    elif isinstance(m, nn.BatchNorm1d):
-        nn.init.constant_(m.weight.data, 1)
-        nn.init.constant_(m.bias.data, 0)
-    elif isinstance(m, nn.Linear):
-        m.weight.data.normal_(0, 0.001)
-        if m.bias is not None:
-            nn.init.constant_(m.bias.data, 0)
+from vinson.models.shared import MLPBlock, initialize_weights
 
 
 ## Lightning Models ##
@@ -46,6 +30,7 @@ class AbstractSequenceModel(L.LightningModule):
         lr_scheduler: Optional[str]=None,
         optimizer_kwargs: Optional[Dict[str, Any]]=None,
         lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
+        init_weights: bool=True,
     ) -> None:
         super().__init__()
         self.n_tasks = n_tasks
@@ -63,8 +48,9 @@ class AbstractSequenceModel(L.LightningModule):
         self.train_metrics = MetricCollection({}, prefix="train_")
         self.valid_metrics = MetricCollection({}, prefix="val_")
         
-        self.trunk_model.apply(initialize_weights)
-        self.head_model.apply(initialize_weights)
+        if init_weights:
+            self.trunk_model.apply(initialize_weights)
+            self.head_model.apply(initialize_weights)
 
     def init_metrics(self) -> None:
         raise NotImplementedError(
@@ -263,6 +249,7 @@ class SequenceEmbedModel(SequenceOnlyModel):
             lr_scheduler: Optional[str]=None,
             optimizer_kwargs: Optional[Dict[str, Any]]=None,
             lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
+            init_weights: bool=True,
             **kwargs
         ):
         super().__init__(
@@ -271,10 +258,12 @@ class SequenceEmbedModel(SequenceOnlyModel):
             lr_scheduler=lr_scheduler,
             optimizer_kwargs=optimizer_kwargs,
             lr_scheduler_kwargs=lr_scheduler_kwargs,
+            init_weights=init_weights,
             **kwargs
         )
         self.embed_model = embed_model
-        self.embed_model.apply(initialize_weights)
+        if init_weights:
+            self.embed_model.apply(initialize_weights)
         self.save_hyperparameters(ignore=["trunk_model", "head_model", "embed_model"])
 
     def forward(self, seq: torch.Tensor, embedding: torch.Tensor) -> torch.Tensor:

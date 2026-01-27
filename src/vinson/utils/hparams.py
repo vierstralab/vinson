@@ -132,4 +132,3 @@ def _sanitize_list(
         _sanitize_value(v, registry=registry)
         for v in values
     ]
-

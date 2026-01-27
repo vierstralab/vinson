@@ -1,30 +1,46 @@
-import torch
+from typing import Any, Dict, Optional
 import copy
+
+import torch
 
 from torchmetrics import MetricCollection
 from torchmetrics.regression import PearsonCorrCoef
 
 import lightning as L
 
-from vinson.models.sequence.lightning_wrappers import AbstractSequenceModel
+from vinson.models.sequence.lightning_wrappers import AbstractSequenceModel, SequenceEmbedModel
+
 from vinson.optim.loss import BinomialMixtureNLLLoss
 
-from vinson.models.shared import MLPBlock
+from vinson.models.shared import MLPBlock, initialize_weights
 
 
 class VariantEmbedModel(AbstractSequenceModel):
-    # todo write optimizers as kwargs
-    def __init__(self, trunk_model: torch.nn.Module, head_model: MLPBlock, embed_model: MLPBlock, **kwargs):
+    def __init__(
+        self,
+        trunk_model: torch.nn.Module,
+        head_model: MLPBlock,
+        embed_model: MLPBlock,
+        lr_scheduler: Optional[str]=None,
+        optimizer_kwargs: Optional[Dict[str, Any]]=None,
+        lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
+        init_weights: bool=True,
+    ):
         super().__init__(
-            trunk_model, head_model,
-            **kwargs
+            trunk_model=trunk_model,
+            head_model=head_model,
+            lr_scheduler=lr_scheduler,
+            optimizer_kwargs=optimizer_kwargs,
+            lr_scheduler_kwargs=lr_scheduler_kwargs,
+            init_weights=init_weights,
         )
-
         self.embed_model = embed_model
+        if init_weights:
+            self.embed_model.apply(initialize_weights)
 
         self.criterion = BinomialMixtureNLLLoss(relative=True, reduction="none")
-
-        self.save_hyperparameters()
+        self.init_metrics()
+        self.save_hyperparameters(ignore=["trunk_model", "head_model", "embed_model"])
 
     def init_metrics(self):
         self.train_metrics = MetricCollection(
@@ -95,6 +111,23 @@ class VariantEmbedModel(AbstractSequenceModel):
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
         return loss
+
+    @classmethod
+    def from_sequence_embed_model(
+        cls,
+        sequence_embed_model: SequenceEmbedModel,
+        head_model: MLPBlock,
+        **kwargs
+    ):
+        model = cls(
+            trunk_model=sequence_embed_model.trunk_model,
+            embed_model=sequence_embed_model.embed_model,
+            head_model=head_model,
+            init_weights=False,
+            **kwargs,
+        )
+        model.head_model.apply(initialize_weights)
+        return model
 
 
 class VariantEmbedModelWrapper(L.LightningModule):

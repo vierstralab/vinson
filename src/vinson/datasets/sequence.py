@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import warnings
 
 from torch.utils.data import Dataset
 import gzip
@@ -14,7 +13,6 @@ from vinson.utils.helpers import replace_at
 import logging
 
 logger = logging.getLogger(__name__)
-
 
 
 class BaseSequenceDataset(Dataset):

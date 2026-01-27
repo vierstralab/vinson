@@ -8,6 +8,9 @@ from vinson.utils.sequence_utils import one_hot_encode
 
 from .sequence import BaseSequenceDataset, logger
 
+from genome_tools.data.extractors import FastaExtractor
+import warnings
+
 
 class VariantEmbedDataset(BaseSequenceDataset):
     """
@@ -52,6 +55,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
 
         self.flip_alleles = flip_alleles
         self.genotype_extr: TabixExtractor = None
+        self.fasta_extr: FastaExtractor = None
 
         assert set(
             [
@@ -113,17 +117,28 @@ class VariantEmbedDataset(BaseSequenceDataset):
         """
         self._init_fileread()
 
-        chrom, pos, ref, alt, ref_counts, total_counts, bad, lfc, sample_id = (
-            self.data["chrom"][i].astype(str),
-            self.data["pos"][i],
-            self.data["ref"][i].astype(str),
-            self.data["alt"][i].astype(str),
-            self.data["ref_counts"][i].astype(np.float32),
-            self.data["total_counts"][i].astype(np.float32),
-            self.data["BAD"][i].astype(np.float32),
-            self.data["logit_es"][i].astype(np.float32),
-            self.data["sample_id"][i].astype(str),
-        )
+        # chrom, pos, ref, alt, ref_counts, total_counts, bad, lfc, sample_id = (
+        #     self.data["chrom"][i],
+        #     self.data["pos"][i],
+        #     self.data["ref"][i],
+        #     self.data["alt"][i],
+        #     self.data["ref_counts"][i],
+        #     self.data["total_counts"][i],
+        #     self.data["BAD"][i],
+        #     self.data["logit_es"][i],
+        #     self.data["sample_id"][i],
+        # )
+        data_slice = self.data[i]
+        chrom = data_slice['chrom']
+        pos = data_slice['pos']
+        ref = data_slice['ref']
+        alt = data_slice['alt']
+        ref_counts = data_slice['ref_counts']
+        total_counts = data_slice['total_counts']
+        bad = data_slice['BAD']
+        lfc = data_slice['logit_es']
+        sample_id = data_slice['sample_id']
+
         # FIXME: Decode categorical variables
 
         variant = GenomicInterval(chrom, pos, pos)
@@ -134,20 +149,26 @@ class VariantEmbedDataset(BaseSequenceDataset):
             interval.shift(shift, inplace=True)
 
         rel_pos = pos - interval.start
-
+        
         # Inject genotypes if genotype files provided
+        #variant interval pos-1 because dataformatting is using end as pos
         if self.include_genotypes:
-            indiv_id = self.data["indiv_id"][i]   
+            indiv_id = data_slice['indiv_id']   
             _, _, dna_seq_ref, dna_seq_alt = self.get_sample_sequence(
                 interval, 
                 indiv_id,
-                reference=VariantInterval(
-                    chrom=chrom, start=pos, end=pos + 1, ref=ref, alt=alt
+                reference_variant=VariantInterval(
+                    chrom=chrom, start=pos-1, end=pos, ref=ref, alt=alt
                 )
             )
         else:
             dna_seq_ref = self.fasta_extr[interval]
             dna_seq_alt = dna_seq_ref[:rel_pos] + alt + dna_seq_ref[rel_pos + 1 :]
+        if len(dna_seq_ref) != 1344 or len(dna_seq_alt) != 1344:
+            warnings.warn(
+            f"[DEBUG WARNING] idx={i}, chrom={chrom}, pos={pos}, "
+            f"ref_seq length={len(dna_seq_ref)} alt_len expected seqlen={len(dna_seq_alt)}, relpos {rel_pos}, alt {alt}, ref {ref} indiv {indiv_id}"
+        )
 
         try:
             ohe_seq_ref, ohe_seq_alt = (

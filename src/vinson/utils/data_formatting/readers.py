@@ -91,30 +91,48 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str) -> V
         embeddings_df (pd.DataFrame): DataFrame containing motif embeddings.
     """
     
-    layers = {"ref_counts": None, "total_counts": None, "BAD": None, "logit_es": None}
-    update_layers_dict(layers, train_adata, suffix)
-    row_idx, col_idx = get_examples_indices_from_layer(layers["ref_counts"])
+    data = {"ref_counts": None, "total_counts": None, "BAD": None, "logit_es": None}
+    update_layers_dict(data, train_adata, suffix)
+    row_idx, col_idx = get_examples_indices_from_layer(data["ref_counts"])
+    
+    encodings = {}
+
+    encoding_sources = {
+        "sample_id": train_adata.obs_names,
+        "chrom": train_adata.var["#chr"],
+        'ref': train_adata.var['ref'],
+        'alt': train_adata.var['alt']
+    }
+    if 'indiv_id' in train_adata.obsm:
+        encoding_sources['indiv_id'] = train_adata.obsm['indiv_id']
+
+    for key in encoding_sources:
+        encode_inplace(encoding_sources, encodings, key)
 
     data = {
-        'chrom': train_adata.var['#chr'].values[col_idx],
-        'pos': train_adata.var['end'].values[col_idx],
-        'ref': train_adata.var['ref'].values[col_idx],
-        'alt': train_adata.var['alt'].values[col_idx],
-        'sample_id': train_adata.obs_names[row_idx],
-        'ref_counts': layers['ref_counts'].data,
-        'total_counts': layers['total_counts'].data,
-        'BAD': layers['BAD'].data,
-        'logit_es': layers['logit_es'].data,
+        'chrom': encoding_sources['chrom'][col_idx],
+        'pos': data['pos'][col_idx],
+        'ref': encoding_sources['ref'][col_idx],
+        'alt': encoding_sources['alt'][col_idx],
+        'sample_id': encoding_sources["sample_id"][row_idx],
+        'ref_counts': data['ref_counts'].data,
+        'total_counts': data['total_counts'].data,
+        'BAD': data['BAD'].data,
+        'logit_es': data['logit_es'].data,
     }
+    if 'indiv_id' in encoding_sources:
+        data['indiv_id'] = encoding_sources["indiv_id"][row_idx]
 
-    if 'indiv_id' in train_adata.obsm:
-        data['indiv_id'] = train_adata.obsm['indiv_id'][row_idx]
+    data, encodings = sanitize_data(data, encodings, is_variant=True)
+    embeddings_df = train_adata.obsm['motif_embeddings']
 
-    return VinsonData.from_raw(
+    return VinsonData(
         data,
-        train_adata.obsm['motif_embeddings'],
+        encodings=encodings,
+        embeddings_df=embeddings_df,
         is_variant=True
     )
+
 
 def _extract_wide_raw(
     backed_anndata,
@@ -239,7 +257,3 @@ def extract_data_from_backed_anndata_wide(
         encodings=encodings,
         is_variant=False,
     )
-
-
-
-
