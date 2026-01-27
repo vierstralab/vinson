@@ -88,7 +88,7 @@ def classifier_model_from_config(config: dict, checkpoint_path: str = None):
 def dhs_model_from_config(config, checkpoint_path=None):
     model_type = config["model_type"]
 
-    assert model_type in ('vinson', 'legnet', 'vinson_embed', 'legnet_embed'), f"Model type {model_type} not supported for DHS models."
+    assert model_type in model_factory_registry, f"Model type {model_type} not supported for DHS models. Available types: {list(model_factory_registry.keys())}"
 
 
     BaseModelCls = model_factory_registry[model_type]
@@ -96,7 +96,7 @@ def dhs_model_from_config(config, checkpoint_path=None):
     LightningModelCls: AbstractSequenceModel = lightning_model_registry[model_type]
 
     torch_modules_kwargs = {}
-    if model_type in ("vinson_embed", "legnet_embed"):
+    if model_type in ("basset_embed", "legnet_embed"):
         mlp_embedding = MLPBlock(**config["model_arch"]["cell_embed"])
         torch_modules_kwargs["embed_model"] = mlp_embedding
         config['model_arch']['trunk']['n_embed_outputs'] = mlp_embedding.output_dim
