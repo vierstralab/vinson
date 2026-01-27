@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import warnings
 
 from torch.utils.data import Dataset
 import gzip
@@ -13,6 +14,7 @@ from vinson.utils.helpers import replace_at
 import logging
 
 logger = logging.getLogger(__name__)
+
 
 
 class BaseSequenceDataset(Dataset):
@@ -70,7 +72,6 @@ class BaseSequenceDataset(Dataset):
         self.genotype_extr: TabixExtractor = None
         if self.genotype_file is not None:
             assert 'indiv_id' in self.data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
-
             self.include_genotypes = True
         else:
             logger.info(
@@ -134,7 +135,7 @@ class BaseSequenceDataset(Dataset):
             with gzip.open(self.genotype_file, "rt") as f:
                 phased = "phase_set" in f.readline()
             if phased:
-                print(f"[INFO] Detected phased genotype format ({self.genotype_file})")
+                # print(f"[INFO] Detected phased genotype format ({self.genotype_file})")
                 self.genotype_extr = TabixExtractor(
                     self.genotype_file,
                     skiprows=1,
@@ -172,6 +173,7 @@ class BaseSequenceDataset(Dataset):
                     ],
                     na_values=".",
                 )
+
     
     def get_sample_sequence(
             self,
@@ -195,81 +197,97 @@ class BaseSequenceDataset(Dataset):
             return 0, seq_iupac, seq_ref, seq_alt
         assert 'INDIV' in indiv_id, f"INDIV_ID format incorrect ({indiv_id}, {type(indiv_id)})."
         
-        variants = variants[variants["indiv_id"] == f"{indiv_id}.bed.gz"]
-
-        extra_columns = ('gt',)
-        if reference_variant is not None:
-            assert 'phase_set' in variants.columns, "Phased genotype data required for variant-aligned sequence extraction."
-            try:
-                # Look for the reference variant in the individual's genotypes
-                phase_set = variants.set_index(
-                    ["chrom", "start", "ref", "alt"]
-                ).loc[
-                    (
-                        reference_variant.chrom,
-                        reference_variant.start,
-                        reference_variant.ref,
-                        reference_variant.alt
-                    ),
-                    'phase_set'
-                ]
-                if not pd.isna(phase_set):
-                    reference_variant.phase_set = phase_set
-                    extra_columns = ('gt', 'phase_set') # extract phase set to match the reference variant
-            except KeyError:
-                raise ValueError(
-                    "Query variant not found in genotyping file "
-                    f"({str(interval)}/{indiv_id}/{reference_variant.pos}/{reference_variant.alt})"
-                )
-
-        variants = df_to_variant_intervals(
-            variants, extra_columns=extra_columns
-        )
+        if variants["indiv_id"].str.endswith(".bed.gz").any():
+            key = f"{indiv_id}.bed.gz"
+        else:
+            key = indiv_id
         
-        for variant_interval in variants:
-            rel_pos = variant_interval.start - interval.start
-            if 'phase_set' in extra_columns and reference_variant.phase_set == variant_interval.phase_set:
-                    base = get_iupac_char_from_alleles(variant_interval.ref, variant_interval.alt)
-                    seq_iupac = replace_at(seq_iupac, rel_pos, base)
-                    if variant_interval.gt == "1|0":
-                        seq_ref = replace_at(seq_ref, rel_pos, variant_interval.alt)
-                        seq_alt = replace_at(seq_alt, rel_pos, variant_interval.ref)
-                    elif variant_interval.gt == "0|1":
-                        seq_ref = replace_at(seq_ref, rel_pos, variant_interval.ref)
-                        seq_alt = replace_at(seq_alt, rel_pos, variant_interval.alt)
-                    else:
-                        raise ValueError(f'Phased genotype not recognized! {variant_interval}')
-            else:
-                assert variant_interval.gt[0] in ("0", "1") and variant_interval.gt[2] in ("0", "1"), f"Genotype format not recognized! {variant_interval} {variant_interval.gt}"
-                variant_is_het = (
-                    variant_interval.gt[0] == "1" and variant_interval.gt[2] == "0"
-                ) or (
-                    variant_interval.gt[0] == "0" and variant_interval.gt[2] == "1"
-                )
-                if variant_is_het:
-                    base = get_iupac_char_from_alleles(variant_interval.ref, variant_interval.alt)
-                    seq_iupac = replace_at(seq_iupac, rel_pos, base)
-                    seq_ref = replace_at(seq_ref, rel_pos, variant_interval.ref)
-                    seq_alt = replace_at(seq_alt, rel_pos, variant_interval.alt)
-                elif variant_interval.gt[0] == "1":
-                    base = variant_interval.alt
-                    seq_iupac = replace_at(seq_iupac, rel_pos, base)
-                    seq_ref = replace_at(seq_ref, rel_pos, base)
-                    seq_alt = replace_at(seq_alt, rel_pos, base)
-                else:
-                    base = variant_interval.ref
-                    seq_iupac = replace_at(seq_iupac, rel_pos, base)
-                    seq_ref = replace_at(seq_ref, rel_pos, base)
-                    seq_alt = replace_at(seq_alt, rel_pos, base)
+        variants = variants[variants["indiv_id"] == key]
 
+
+        #get phased info if exists make sure right format
+        if "phase_set" not in variants.columns:
+            if "phase_block" in variants.columns:
+                variants = variants.rename(columns={"phase_block": "phase_set"})
+            else:
+                variants["phase_set"] = None
+                #assert 'phase_set' in variants.columns, "Phased genotype data required for variant-aligned sequence extraction."
+    
+        # If reference_variant is provided, attach gt and phase_set to it
         if reference_variant is not None:
+            #if variant spcified not just genotype from dhs model
+            try:
+                #find reference variant in variant
+                row = variants.set_index(["chrom", "start", "ref", "alt"]).loc[
+                    (reference_variant.chrom, reference_variant.start, reference_variant.ref, reference_variant.alt)
+                ]
+    
+            except KeyError:
+                #if cannot find variant
+                raise ValueError(
+                    f"Reference variant not found in genotyping file: "
+                    f"{interval}/{indiv_id}/{reference_variant.start}/{reference_variant.alt}"
+                )
+            #get genotype and phase set
+            reference_variant.gt = row["gt"]
+            phase_val = row.get("phase_set", None)
+            reference_variant.phase_set = None if pd.isna(phase_val) or phase_val == "." else phase_val
+            extra_columns = ("gt", "phase_set")  # Include phase_set for VariantInterval conversion
+    
+        # Convert variants to VariantInterval objects
+        variants = df_to_variant_intervals(variants, extra_columns=extra_columns)
+    
+        # Check for ambiguous positions
+        # TO DO: clean up to remove ambiguous code, just throw warning
+        variants_by_pos = {}
+        for v in variants:
+            variants_by_pos.setdefault(v.start, []).append(v)
+    
+        for pos, vars_at_pos in variants_by_pos.items():
+            if len(vars_at_pos) > 1:
+                raise ValueError(f"Ambiguous variants found at {pos} for {indiv_id}")
+    
+            # Only one variant, safe to process
+            v = vars_at_pos[0]
+            rel = pos - interval.start
+    
+            # IUPAC sequence
+            iupac_base = get_iupac_char_from_alleles(v.ref, v.alt)
+            seq_iupac = replace_at(seq_iupac, rel, iupac_base)
+    
+            # Phased heterozygous handling
+            phased_match = (
+                reference_variant is not None
+                and v.gt in ("0|1", "1|0")
+                and reference_variant.phase_set == getattr(v, "phase_set", None)
+            )
+            if phased_match:
+                if v.gt == "1|0":
+                    seq_ref = replace_at(seq_ref, rel, v.alt)
+                    seq_alt = replace_at(seq_alt, rel, v.ref)
+                else:
+                    seq_ref = replace_at(seq_ref, rel, v.ref)
+                    seq_alt = replace_at(seq_alt, rel, v.alt)
+                continue
+    
+            # Unphased / Homozygous / Heterozygous
+            is_het = v.gt[0] != v.gt[2]
+            base_ref = v.ref
+            base_alt = v.alt if is_het else (v.alt if v.gt[0] == "1" else v.ref)
+            seq_ref = replace_at(seq_ref, rel, base_ref)
+            seq_alt = replace_at(seq_alt, rel, base_alt)
+    
+        # Final check for reference variant
+        if reference_variant is not None:
+            rel_pos = reference_variant.start - interval.start
             if reference_variant.gt == "1|0":
                 seq_ref, seq_alt = seq_alt, seq_ref
-        
-            rel_pos = reference_variant.start - interval.start
             if (seq_ref[rel_pos] != reference_variant.ref) or (seq_alt[rel_pos] != reference_variant.alt):
-                raise ValueError("Expected ref & alt alleles not found in correct position in sequences!", reference_variant, variants)
-
+                raise ValueError(
+                    f"Expected ref & alt alleles not found in correct position "
+                    f"(reference_variant={reference_variant}, indiv_id={indiv_id})"
+                )
+    
         return len(variants), seq_iupac, seq_ref, seq_alt
 
 
@@ -441,34 +459,7 @@ class SequenceOnlyDataset(BaseSequenceDataset):
             "sample_id": sample_id,
         }
 
-
 class SequenceEmbedDataset(SequenceOnlyDataset):
-    """
-    PyTorch Dataset for extracting sequence and cell-type embeddings, with optional
-    genotype injection, negative sampling, and read depth normalization.
-    
-    Parameters
-    ----------
-    data : VinsonData 
-        VinsonData object containing dict of sample metadata, encodings, embeddings
-    fasta_file : str
-        Path to reference genome FASTA file.
-    genotype_file : str, optional
-        Path to genotype file in tabix format. If provided, requires 'indiv_id' in data.
-    negatives_weight : float, default 1.0
-        Weight applied to negative class examples.
-    clip_density : float, default 20
-        Maximum value to clip density.
-    min_bg : float, default 0.1
-        Minimum value to clip background signal.
-    reverse_complement : bool, default False
-        Randomly reverse-complement sequences for augmentation.
-    jitter : int, default 0
-        Maximum number of bases to shift sequences.
-    noise : float, default 0
-        Standard deviation of Gaussian noise added to embeddings.
-
-    """
 
     def __getitem__(self, i):
         """
@@ -503,6 +494,4 @@ class SequenceEmbedDataset(SequenceOnlyDataset):
         
         # Get embeddings
         data['embed'] = self.get_embedding_vec(data['sample_id'])
-        
-
         return data

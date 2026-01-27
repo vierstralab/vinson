@@ -79,6 +79,7 @@ def scatter_by_ann_train_val(gb, in_training, pos_tr=0.05, ax=None):
     return ax
 
 
+
 def barplot_by_ann_with_offset(df, column, annotation_data, w=0.35, offset=0, ax=None, color='annotation', edgecolor='none', label=None, errors=True, **kwargs):
     n = len(annotation_data)
     if ax is None:

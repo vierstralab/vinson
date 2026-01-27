@@ -1,12 +1,10 @@
 import lightning.pytorch as L
+import numpy as np
 from torch.utils.data import DataLoader
 from vinson.utils.data_formatting import (
     extract_data_from_train_anndata,
-    extract_variant_data_from_anndata,
 )
 from vinson.datasets.sequence import SequenceEmbedDataset
-
-from vinson.datasets.variant import VariantEmbedDataset
 from itertools import cycle
 
 import anndata as ad
@@ -159,44 +157,3 @@ class SeqEmbedDataModule(L.LightningDataModule):
         ]
 
         return extract_data_from_train_anndata(adata, suffix)
-
-
-class SeqEmbedVariantDataModule(SeqEmbedDataModule):
-    """
-    Variant version of SeqEmbedDataModule.
-
-    Differences:
-      - Uses extract_var_data_from_anndata
-      - Uses VariantEmbedDataset instead of SequenceEmbedDataset
-    """
-
-    def train_dataset(self):
-        data, embeddings_df = self.get_data(self.current_train_epoch, "train", "train")
-        return VariantEmbedDataset(
-            data=data,
-            embeddings_df=embeddings_df,
-            fasta_file=self.fasta_file,
-            genotype_file=self.genotype_file,
-            **self.train_dataset_kwargs,
-        )
-
-    def validation_dataset(self):
-        data, embeddings_df = self.get_data(self.validation_epoch, "val", "train")
-        return VariantEmbedDataset(
-            data=data,
-            embeddings_df=embeddings_df,
-            fasta_file=self.fasta_file,
-            genotype_file=self.genotype_file,
-            **self.valid_dataset_kwargs,
-        )
-
-    @staticmethod
-    def get_data(
-        full_adata: ad.AnnData, suffix, dhs_split="train", sample_split="train"
-    ):
-        """Extract variant-level data from AnnData."""
-        adata = full_adata[
-            full_adata.obsm["split_data"] == sample_split,
-            full_adata.varm["split_data"] == dhs_split,
-        ]
-        return extract_variant_data_from_anndata(adata, suffix)

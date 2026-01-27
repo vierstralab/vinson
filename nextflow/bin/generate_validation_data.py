@@ -37,7 +37,6 @@ def get_bg_for_peaks(peaks_df: pd.DataFrame, stats_path):
     assert len(bg) == len(peaks_df), f"Background length mismatch {len(bg)} vs {len(peaks_df)}"
     return bg
 
-
 def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> VinsonData:
     anndata_slice = anndata[sample_ids, :]
     data = []
@@ -115,7 +114,7 @@ if __name__ == '__main__':
             sample_ids=sample_ids,
             dhs_ids=dhs_ids
         )
-        print(len(data))
+
     data.write_h5(args.output_file)
 
     

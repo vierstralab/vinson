@@ -70,8 +70,13 @@ def annotate_eval_dataset_with_layers(eval_dataset: pd.DataFrame, annotate_count
 
     return eval_dataset
 
+<<<<<<< HEAD
+def get_agg_by_annotation(df, column, by='extended_annotation'):
+    gb = df.groupby(by).agg(
+=======
 def get_agg_by_annotation(df: pd.DataFrame, column, by='extended_annotation'):
     gb = df.groupby(by, observed=True).agg(
+>>>>>>> origin/development
         median=(column, 'median'),
         q1=(column, lambda x: np.percentile(x, 25)),
         q3=(column, lambda x: np.percentile(x, 75)),
