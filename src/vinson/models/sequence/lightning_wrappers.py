@@ -113,7 +113,7 @@ class SequenceOnlyModel(AbstractSequenceModel):
             else BCEWithLogitsLoss(reduction="none")
         )
         self.init_metrics()
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["trunk_model", "head_model"])
 
     def init_metrics(self) -> None:
         if self.regression:
@@ -272,7 +272,7 @@ class SequenceEmbedModel(SequenceOnlyModel):
         )
         self.embed_model = embed_model
         self.embed_model.apply(initialize_weights)
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["trunk_model", "head_model", "embed_model"])
 
     def forward(self, seq: torch.Tensor, embedding: torch.Tensor) -> torch.Tensor:
         x = self.embed_model(embedding)
