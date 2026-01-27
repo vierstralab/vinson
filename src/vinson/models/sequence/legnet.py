@@ -165,6 +165,9 @@ class LegNetTrunk(nn.Module):
         
         self.stem_ch = stem_ch
         self.ef_block_sizes = ef_block_sizes
+
+        self.output_dim = ef_block_sizes[-1] * 2
+
         self.stem = StemConv(
             in_ch=in_ch,
             out_ch=stem_ch,
@@ -174,6 +177,7 @@ class LegNetTrunk(nn.Module):
         blocks = []
         in_ch = self.stem_ch
         out_ch = self.stem_ch
+
         for pool_sz, out_ch in zip(pool_sizes, ef_block_sizes):
             blc = nn.Sequential(
                 nn.BatchNorm1d(in_ch), 
@@ -203,7 +207,7 @@ class LegNetTrunk(nn.Module):
         
         self.mapper = MapperBlock(
             in_features=out_ch, 
-            out_features=out_ch * 2
+            out_features=self.output_dim
         )
             
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -256,8 +260,7 @@ class LegNetTrunkEmbed(LegNetTrunk):
         for blc_id in range(len(self.ef_block_sizes)):
             cur_block = f'blc{blc_id}'
             x_bias = self.bias[cur_block](embed)
-            print(x_bias.shape, current_layer.shape)
-            current_layer = current_layer + x_bias
+            current_layer = current_layer + x_bias[:, :, None]
             current_layer = self.blocks_dict[cur_block](current_layer)
 
         x = self.mapper(current_layer)

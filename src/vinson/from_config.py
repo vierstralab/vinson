@@ -1,3 +1,5 @@
+from typing import Union
+
 import anndata as ad
 
 from datetime import datetime
@@ -104,6 +106,10 @@ def dhs_model_from_config(config, checkpoint_path=None):
         **config['model_arch']['trunk']
     )
 
+    if hasattr(trunk, 'output_dim'):
+        if config['model_arch']['head']['n_inputs'] is None:
+            config['model_arch']['head']['n_inputs'] = trunk.output_dim
+
     head = MLPBlock(
         **config['model_arch']['head']
     )
@@ -113,7 +119,6 @@ def dhs_model_from_config(config, checkpoint_path=None):
         "trunk_model": trunk,
         "head_model": head,
     }
-
 
     if checkpoint_path is not None:
         model = LightningModelCls.load_from_checkpoint(

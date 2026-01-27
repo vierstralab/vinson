@@ -35,6 +35,8 @@ class BassetTrunk(torch.nn.Module):
         )
         self.relu3 = torch.nn.ReLU()
 
+        self.output_dim = 200
+
         # self.flatten = torch.nn.Flatten()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -66,11 +68,11 @@ class BassetTrunkEmbed(BassetTrunk):
         x = self.relu1(x)
 
         x_conv = self.layer2(x)
-        x_bias = self.bias2(embed).unsqueeze(-1)
+        x_bias = self.bias2(embed)[:, :, None]
         x = self.relu2(x_conv + x_bias)
 
         x_conv = self.layer3(x)
-        x_bias = self.bias3(embed).unsqueeze(-1)
+        x_bias = self.bias3(embed)[:, :, None]
         x = self.relu3(x_conv + x_bias)
 
         # Flatten features
