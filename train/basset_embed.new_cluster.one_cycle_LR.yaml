@@ -22,8 +22,11 @@ model_kwargs:
 
 hparams:
   batch_size: 1024
-  wd: 1.0e-2
+
   epochs: 3
+
+  optimizer_kwargs:
+    wd: 1.0e-2
 
   lr_scheduler: OneCycleLR
   lr_scheduler_kwargs:
