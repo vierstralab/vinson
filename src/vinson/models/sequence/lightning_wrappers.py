@@ -24,7 +24,7 @@ from vinson.models.shared import MLPBlock, initialize_weights
 class AbstractSequenceModel(L.LightningModule):
     def __init__(
         self,
-        trunk_model: torch.nn.Module, # FIXME
+        trunk_model: torch.nn.Module,
         head_model: MLPBlock,
         n_tasks=1,
         lr_scheduler: Optional[str]=None,
