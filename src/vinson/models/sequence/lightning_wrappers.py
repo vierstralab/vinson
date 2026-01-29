@@ -51,6 +51,7 @@ class AbstractSequenceModel(L.LightningModule):
         if init_weights:
             self.trunk_model.apply(initialize_weights)
             self.head_model.apply(initialize_weights)
+            self.final.apply(initialize_weights)
 
     def init_metrics(self) -> None:
         raise NotImplementedError(
@@ -81,6 +82,7 @@ class SequenceOnlyModel(AbstractSequenceModel):
         lr_scheduler: Optional[str]=None,
         optimizer_kwargs: Optional[Dict[str, Any]]=None,
         lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
+        save_hyperparameters: bool = True,
     ) -> None:
         super().__init__(
             trunk_model=trunk_model,
@@ -99,7 +101,8 @@ class SequenceOnlyModel(AbstractSequenceModel):
             else BCEWithLogitsLoss(reduction="none")
         )
         self.init_metrics()
-        self.save_hyperparameters(ignore=["trunk_model", "head_model"])
+        if save_hyperparameters:
+            self.save_hyperparameters(ignore=["trunk_model", "head_model"])
 
     def init_metrics(self) -> None:
         if self.regression:
@@ -259,6 +262,7 @@ class SequenceEmbedModel(SequenceOnlyModel):
             optimizer_kwargs=optimizer_kwargs,
             lr_scheduler_kwargs=lr_scheduler_kwargs,
             init_weights=init_weights,
+            save_hyperparameters=False,
             **kwargs
         )
         self.embed_model = embed_model
