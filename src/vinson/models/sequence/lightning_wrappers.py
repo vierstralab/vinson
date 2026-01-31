@@ -168,9 +168,7 @@ class SequenceOnlyModel(AbstractSequenceModel):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         return y, indicator.float()  # y_hat, y
 
-    def _run_step(
-        self, batch: Dict[str, Any]
-    ):
+    def _run_step(self, batch: Dict[str, Any]):
         """
         Internal step function to parse batch and run forward + step
 
