@@ -5,6 +5,7 @@ import anndata as ad
 from datetime import datetime
 import mergedeep
 
+import torch
 from vinson.utils.helpers import read_yaml_config
 
 from vinson.models.sequence.lightning_wrappers import AbstractSequenceModel
@@ -25,6 +26,9 @@ from vinson.datasets.sequence import SequenceEmbedDataset
 from vinson.datasets.variant import VariantEmbedDataset
 
 from vinson.utils.data_formatting import extract_data_from_h5
+
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 MODEL_FACTORY_REGISTRY = {
@@ -79,6 +83,7 @@ def classifier_model_from_config(config: dict, checkpoint_path: str = None):
         model = CellClassifierModel.load_from_checkpoint(
             checkpoint_path=checkpoint_path,
             embedding=embedding,
+            map_location=device
         )
     else:
         scheduler_kwargs = _parse_scheduler_and_optimizer(config)
@@ -135,6 +140,7 @@ def dhs_model_from_config(config, checkpoint_path=None):
         model = LightningModelCls.load_from_checkpoint(
             checkpoint_path=checkpoint_path,
             **torch_modules_kwargs,
+            map_location=device
         )
     
     else:
@@ -181,6 +187,7 @@ def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint
             variant_model = VariantEmbedModel.load_from_checkpoint(
                 checkpoint_path=checkpoint_path,
                 **torch_modules_kwargs,
+                map_location=device
             )
         else:
             variant_model = VariantEmbedModel(
