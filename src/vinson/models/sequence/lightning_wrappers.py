@@ -83,6 +83,7 @@ class SequenceOnlyModel(AbstractSequenceModel):
         optimizer_kwargs: Optional[Dict[str, Any]]=None,
         lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
         save_hyperparameters: bool = True,
+        init_weights: bool=True,
     ) -> None:
         super().__init__(
             trunk_model=trunk_model,
@@ -91,6 +92,7 @@ class SequenceOnlyModel(AbstractSequenceModel):
             optimizer_kwargs=optimizer_kwargs,
             lr_scheduler_kwargs=lr_scheduler_kwargs,
             n_tasks=n_tasks,
+            init_weights=init_weights,
         )
         self.regression = regression
         self.log_output = log_output
