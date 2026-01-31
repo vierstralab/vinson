@@ -1,13 +1,11 @@
 import torch
-import sys
 import numpy as np
 from tqdm import tqdm
 import argparse
-import pandas as pd
 
 from torch.utils.data import DataLoader
-from vinson.utils.run import model_from_config as load_vinson_model
-from vinson.utils.helpers import read_configs
+
+from vinson.from_config import read_configs, dhs_model_from_config
 from vinson.utils.data_formatting import extract_data_from_h5
 from vinson.datasets.sequence import SequenceEmbedDataset
 
@@ -17,47 +15,7 @@ from genome_tools.data.anndata import read_zarr_backed
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def load_legnet_model(checkpoint_path, device):
-    try:
-        from dnase_legnet.legnet_embed_cnn import LegNetEmbedInCNN
-    except ImportError:
-        print("Please install dnase_legnet to use LegNet models.", file=sys.stderr)
-        sys.exit(1)
-
-    model = LegNetEmbedInCNN.load_from_checkpoint(
-        checkpoint_path,
-        map_location=device,
-        inference_mode=True
-    ).eval()
-    return model
-
-def load_legacy_vinson(checkpoint_path):
-    from vinson.models.sequence import BassetTrunkEmbed, CellEmbedding, EmbedModel
-    embed_model = CellEmbedding(n_inputs=637, n_layers=0, n_outputs=256)
-    trunk_model = BassetTrunkEmbed(embed_model.n_outputs)
-
-    model_predict = EmbedModel(
-        trunk_model,
-        embed_model,
-        regression=True,
-    ).to(device)
-    pretrained_state_dict = torch.load(
-        checkpoint_path,
-        map_location=device,
-    )["state_dict"]
-
-    model_predict.load_state_dict(pretrained_state_dict)
-    return model_predict
-
-@torch.inference_mode()
-def load_and_predict(batch, model):    
-    X_seq      = batch["ohe_seq"].to(device, non_blocking=True)
-    X_embed    = batch["embed"].to(device, non_blocking=True)
-    y_ = model(X_seq, X_embed).squeeze(-1).detach()
-    return y_
-
-
-def main():
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Predict DHS model")
     parser.add_argument("h5_data", type=str, help="Path to DHS dataset (.h5 file)")
 
@@ -70,12 +28,6 @@ def main():
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_workers", type=int, default=8)
 
-    parser.add_argument(
-        "--model_type", 
-        type=str, default="vinson",
-        choices=["vinson", "vinson_legacy", "legnet", "legacy_legnet"],
-        help="Type of model to use for prediction"
-    )
     parser.add_argument("--output", type=str, required=True, help="Path to save model predictions (.npy file)")
     args = parser.parse_args()
 
@@ -92,13 +44,6 @@ def main():
             noise=0,
         )
     )
-
-    if args.model_type in ("vinson_legacy", 'legnet_legacy'):
-        print('legacy')
-        motif_embedding = pd.read_table('/home/jvierstra/proj/vinson/data/embeddings_clustername.tsv', index_col=0)
-        adata.obsm['motif_embeddings'] = motif_embedding.loc[adata.obs_names]
-
-    
 
     vinson_data = extract_data_from_h5(
         h5_file=args.h5_data,
@@ -121,25 +66,15 @@ def main():
         drop_last=False,
     )
 
-    if args.model_type == "vinson":
-        model_predict = load_vinson_model(model_config, args.model_checkpoint)
-    elif args.model_type in ("legnet", "legacy_legnet"):
-        model_predict = load_legnet_model(args.model_checkpoint, device)
-    elif args.model_type in ("legnet_multitask"):
-        model_predict = load_legnet_model(args.model_checkpoint, device)
-    elif args.model_type == "vinson_legacy":
-        model_predict = load_legacy_vinson(args.model_checkpoint)
-    else:
-        raise ValueError(f"Unknown model type: {args.model_type}")
-    model_predict.to(device).eval()
+    model_predict = dhs_model_from_config(
+        model_config,
+        checkpoint_path=args.model_checkpoint,
+    ).to(device).eval()
 
     y_hat_all = []
     for batch in tqdm(dataloader):
-        y_ = load_and_predict(batch, model_predict).cpu()
+        y_ = model_predict.predict_step(batch).cpu()
         y_hat_all.append(y_)
     y_hat_all = torch.cat(y_hat_all).numpy()
 
     np.save(args.output, y_hat_all)
-
-if __name__ == "__main__":
-    main()

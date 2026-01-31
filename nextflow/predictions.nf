@@ -23,7 +23,6 @@ process predict {
         ${meta.fasta_file} \
         ${meta.checkpoint} \
         ${meta.model_config} \
-        --model_type ${meta.model_type} \
         ${genotype_args} \
         --num_workers ${task.cpus} \
         --batch_size ${params.prediction_batch_size} \

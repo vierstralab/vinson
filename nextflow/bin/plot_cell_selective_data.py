@@ -8,7 +8,7 @@ import argparse
 from genome_tools.data.anndata import read_zarr_backed
 
 from vinson.utils.data_formatting import extract_data_from_h5
-from vinson.utils.helpers import read_configs
+from vinson.from_config import read_configs
 from vinson.postprocessing.plotting.per_dhs import obs_pred_barplot_by_ann, scatter_by_ann_train_val, aggregate_eval_dataset_by_sample
 from vinson.postprocessing.utils import annotate_eval_dataset_with_layers, annotate_eval_dataset_with_obs_columns, calculate_per_dhs_fold_changes, get_samples_used_in_training_for_dhs
 from vinson.postprocessing.metrics import calc_metrics

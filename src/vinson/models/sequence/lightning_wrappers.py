@@ -223,6 +223,9 @@ class SequenceOnlyModel(AbstractSequenceModel):
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
         return loss
+    
+    def predict_step(self, batch, batch_idx: int) -> torch.Tensor  :
+        return self._forward_from_batch(batch)
 
     def on_validation_epoch_end(self):
         metrics = self.valid_metrics.compute()
