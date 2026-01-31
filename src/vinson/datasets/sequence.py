@@ -202,7 +202,7 @@ class BaseSequenceDataset(Dataset):
         
         variants = variants[variants["indiv_id"] == key]
 
-
+        extra_columns = ('gt', )
         #get phased info if exists make sure right format
         if "phase_set" not in variants.columns:
             if "phase_block" in variants.columns:
