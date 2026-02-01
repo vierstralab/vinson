@@ -12,9 +12,6 @@ from vinson.datasets.sequence import SequenceEmbedDataset
 from genome_tools.data.anndata import read_zarr_backed
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Predict DHS model")
     parser.add_argument("h5_data", type=str, help="Path to DHS dataset (.h5 file)")
@@ -71,6 +68,7 @@ if __name__ == "__main__":
         checkpoint_path=args.model_checkpoint,
     ).eval()
 
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     trainer = L.Trainer(
         accelerator=device,
         devices=1,
