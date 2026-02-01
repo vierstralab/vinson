@@ -243,7 +243,9 @@ class BaseSequenceDataset(Dataset):
     
         for pos, vars_at_pos in variants_by_pos.items():
             if len(vars_at_pos) > 1:
-                raise ValueError(f"Ambiguous variants found at {pos} for {indiv_id}")
+                
+                print(f"Ambiguous variants found at {pos} for {indiv_id}")
+                # TODO: handle ambiguous cases properly
     
             # Only one variant, safe to process
             v = vars_at_pos[0]
