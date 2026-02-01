@@ -73,6 +73,7 @@ if __name__ == "__main__":
 
     y_hat_all = []
     for batch in tqdm(dataloader):
+        batch = {k: v.to(device) for k, v in batch.items()}
         y_ = model_predict.predict_step(batch).cpu()
         y_hat_all.append(y_)
     y_hat_all = torch.cat(y_hat_all).numpy()
