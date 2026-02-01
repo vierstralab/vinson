@@ -54,12 +54,14 @@ if __name__ == "__main__":
         **dataset_kwargs,
     )
 
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
     dataloader = DataLoader(
         dataset,
         batch_size=args.batch_size,
         shuffle=False,
         num_workers=args.num_workers,
-        pin_memory=True if torch.cuda.is_available() else False,
+        pin_memory=device == 'cuda',
         drop_last=False,
     )
 
@@ -68,7 +70,6 @@ if __name__ == "__main__":
         checkpoint_path=args.model_checkpoint,
     ).eval()
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     trainer = L.Trainer(
         accelerator=device,
         devices=1,
