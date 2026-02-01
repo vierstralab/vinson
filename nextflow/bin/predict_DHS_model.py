@@ -1,9 +1,9 @@
 import torch
 import numpy as np
-from tqdm import tqdm
 import argparse
 
 from torch.utils.data import DataLoader
+import lightning as L
 
 from vinson.from_config import read_configs, dhs_model_from_config
 from vinson.utils.data_formatting import extract_data_from_h5
@@ -69,13 +69,15 @@ if __name__ == "__main__":
     model_predict = dhs_model_from_config(
         model_config,
         checkpoint_path=args.model_checkpoint,
-    ).to(device).eval()
+    ).eval()
 
-    y_hat_all = []
-    for batch in tqdm(dataloader):
-        batch = {k: v.to(device) for k, v in batch.items()}
-        y_ = model_predict.predict_step(batch).cpu()
-        y_hat_all.append(y_)
-    y_hat_all = torch.cat(y_hat_all).numpy()
+    trainer = L.Trainer(
+        accelerator=device,
+        devices=1,
+        enable_checkpointing=False,
+    )
+
+    y_hat_all = trainer.predict(model_predict, dataloaders=dataloader)
+    y_hat_all = torch.cat(y_hat_all).cpu().numpy()
 
     np.save(args.output, y_hat_all)

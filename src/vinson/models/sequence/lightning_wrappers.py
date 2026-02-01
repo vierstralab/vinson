@@ -226,7 +226,7 @@ class SequenceOnlyModel(AbstractSequenceModel):
 
         return loss
     
-    def predict_step(self, batch, batch_idx: int=None) -> torch.Tensor  :
+    def predict_step(self, batch, batch_idx: int=None) -> torch.Tensor:
         return self._forward_from_batch(batch)
 
     def on_validation_epoch_end(self):
