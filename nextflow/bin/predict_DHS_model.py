@@ -72,6 +72,7 @@ if __name__ == "__main__":
     trainer = L.Trainer(
         accelerator=device,
         devices=1,
+        logger=False,
         enable_checkpointing=False,
     )
 
