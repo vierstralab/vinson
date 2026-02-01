@@ -74,6 +74,7 @@ if __name__ == "__main__":
         devices=1,
         logger=False,
         enable_checkpointing=False,
+        limit_predict_batches=10
     )
 
     y_hat_all = trainer.predict(model_predict, dataloaders=dataloader)
