@@ -79,6 +79,7 @@ def init_multigpu_trainer(
         gradient_clip_val=1.0,
         reload_dataloaders_every_n_epochs=1,
         num_sanity_val_steps=0,
+        sync_batchnorm=True,
         **trainer_kwargs,
     )
     return trainer
