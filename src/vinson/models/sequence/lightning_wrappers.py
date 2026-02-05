@@ -220,7 +220,7 @@ class SequenceOnlyModel(AbstractSequenceModel):
                 y_hat = torch.log(y_hat + 1e-6)
 
             y = torch.log(y + 1e-6)
-            self.valid_metrics.update(y_hat, y)
+            self.valid_metrics.update(y_hat, y) # correlation of log counts
         else:
             self.valid_metrics.update(torch.sigmoid(y_hat), y.int())
 
