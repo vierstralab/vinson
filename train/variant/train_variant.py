@@ -6,6 +6,7 @@ import numpy as np
 import anndata as ad
 from argparse import ArgumentParser
 
+# from dnase_legnet.utils import AUC_callback,Pearsonr_callback, generate_name, read_configs_siamese
 
 import torch
 import lightning as L
@@ -16,15 +17,9 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
 )
 
-from vinson.utils.helpers import read_configs, save_config, generate_run_name
-from vinson.utils.run import (
-    datamodule_from_config,
-    model_from_config,
-    set_global_seed,
-    set_worker_seed,
-    init_multigpu_trainer,
-    fit_model,
-)
+from vinson.utils.helpers import save_config, generate_run_name
+from vinson.run import set_global_seed,set_worker_seed,init_multigpu_trainer,fit_model
+from vinson.from_config import read_configs,datamodule_from_config,variant_model_from_config
 
 torch.set_float32_matmul_precision('high')
 
@@ -32,6 +27,7 @@ def main(args):
     run_name = args.run_name.strip() or "vinson"
     outdir = os.path.join(args.outdir, run_name)
     os.makedirs(outdir, exist_ok=True)
+    epochs=args.epochs
 
     prev_run_config = os.path.join(outdir, "run_config.yaml")
     if os.path.exists(prev_run_config) and args.config is None:
@@ -40,13 +36,13 @@ def main(args):
             "Using existing config."
         )
         args.config = prev_run_config
-        
+    #use other default for legnet
     default_config_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "default_train_variant.config.yaml"
+        os.path.dirname(os.path.abspath(__file__)), "default_train_variant_legnet.config.yaml"
     )
     config = read_configs(
         default_config_path,
-        custom_config_path=args.config,
+        overwrite_config_path=args.config,
     )
 
     config["command"] = " ".join(["python"] + sys.argv)
@@ -62,6 +58,7 @@ def main(args):
     )
     trainer_kwargs = {}
     if args.debug:
+        epochs = 5
         trainer_kwargs["limit_train_batches"] = 100 * args.devices
         trainer_kwargs["limit_val_batches"] = 100 * args.devices
         config["logging_params"]["val_check_interval"] = 1.0
@@ -74,6 +71,7 @@ def main(args):
         devices=args.devices,
         logger_type=config["logging_params"]["logger_type"],
         val_check_interval=config["logging_params"]["val_check_interval"],
+        epochs = epochs,
         **trainer_kwargs, #should include max_epochs if want
     )
     
@@ -94,28 +92,33 @@ def main(args):
         **dataloader_kwargs,
     )
 
-    model = model_from_config(config, checkpoint_path=checkpoint)
+    
+    datamodule.setup(stage="fit")  # <-- VERY IMPORTANT
+    
+
+
+    model = variant_model_from_config(config, sequence_model_checkpoint=checkpoint, checkpoint_path=None)
 
     #debugs remove later
-    # debug_log_dir = os.path.join(outdir, "batch_logs")
-    # os.makedirs(debug_log_dir, exist_ok=True)
-    # batch_log_file = os.path.join(debug_log_dir, "batch_debug.csv")
+    debug_log_dir = os.path.join(outdir, "batch_logs")
+    os.makedirs(debug_log_dir, exist_ok=True)
+    batch_log_file = os.path.join(debug_log_dir, "batch_debug.csv")
 
     
-    # # Write header
-    # with open(batch_log_file, "w", newline="") as f:
-    #     writer = csv.writer(f)
-    #     writer.writerow([
-    #         "epoch", "batch_idx", "loss",
-    #         "min_lfc", "max_lfc",
-    #         "min_ref_counts", "max_ref_counts",
-    #         "min_total_counts", "max_total_counts",
-    #         "min_bad_score", "max_bad_score",
-    #     ])
+    # Write header
+    with open(batch_log_file, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "epoch", "batch_idx", "loss",
+            "min_lfc", "max_lfc",
+            "min_ref_counts", "max_ref_counts",
+            "min_total_counts", "max_total_counts",
+            "min_bad_score", "max_bad_score",
+        ])
     
-    # # Attach file path to model
-    # model.batch_log_file = batch_log_file
-    # model.debug = True  # Enable debug mode
+    # Attach file path to model
+    model.batch_log_file = batch_log_file
+    model.debug = True  # Enable debug mode
 
     
     # Start training
@@ -194,6 +197,12 @@ if __name__ == "__main__":
         "--debug",
         action="store_true",
         help="Enable debug mode with limited training steps per epoch.",
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=5,
+        help="Number of worker processes for data loading.",
     )
 
     args = parser.parse_args()

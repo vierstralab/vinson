@@ -46,6 +46,7 @@ if __name__ == "__main__":
         help='Preset sbatch parameters for different hpcg-test nodes. Overrides nodelist, gpus_per_node and cpus_per_gpu if set.'
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug mode.")
+    parser.add_argument("--epochs", type=int, help="how many epochs to run")
 
     args = parser.parse_args()
     if args.model_type == "dhs":
@@ -68,6 +69,7 @@ if __name__ == "__main__":
         outdir=args.outdir,
         config=f"--config {args.config}" if args.config else "",
         debug="--debug" if args.debug else "",
+        epochs=f"--epochs {args.epochs}" if args.epochs is not None else "",
         checkpoint=f"--checkpoint {args.checkpoint}" if args.checkpoint else "",
         script_dir=SCRIPT_DIR.as_posix()
     )

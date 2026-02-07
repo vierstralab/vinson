@@ -1,7 +1,6 @@
 import numpy as np
 
 from genome_tools import GenomicInterval, VariantInterval
-from genome_tools.data.extractors import TabixExtractor
 
 from vinson.utils.data_formatting import VinsonData
 from vinson.utils.sequence_utils import one_hot_encode

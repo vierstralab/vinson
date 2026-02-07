@@ -24,7 +24,7 @@ from vinson.models.shared import MLPBlock, initialize_weights
 class AbstractSequenceModel(L.LightningModule):
     def __init__(
         self,
-        trunk_model: torch.nn.Module, # FIXME
+        trunk_model: torch.nn.Module,
         head_model: MLPBlock,
         n_tasks=1,
         lr_scheduler: Optional[str]=None,
@@ -51,6 +51,7 @@ class AbstractSequenceModel(L.LightningModule):
         if init_weights:
             self.trunk_model.apply(initialize_weights)
             self.head_model.apply(initialize_weights)
+            self.final.apply(initialize_weights)
 
     def init_metrics(self) -> None:
         raise NotImplementedError(
@@ -81,6 +82,8 @@ class SequenceOnlyModel(AbstractSequenceModel):
         lr_scheduler: Optional[str]=None,
         optimizer_kwargs: Optional[Dict[str, Any]]=None,
         lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
+        save_hyperparameters: bool = True,
+        init_weights: bool=True,
     ) -> None:
         super().__init__(
             trunk_model=trunk_model,
@@ -89,6 +92,7 @@ class SequenceOnlyModel(AbstractSequenceModel):
             optimizer_kwargs=optimizer_kwargs,
             lr_scheduler_kwargs=lr_scheduler_kwargs,
             n_tasks=n_tasks,
+            init_weights=init_weights,
         )
         self.regression = regression
         self.log_output = log_output
@@ -99,7 +103,8 @@ class SequenceOnlyModel(AbstractSequenceModel):
             else BCEWithLogitsLoss(reduction="none")
         )
         self.init_metrics()
-        self.save_hyperparameters(ignore=["trunk_model", "head_model"])
+        if save_hyperparameters:
+            self.save_hyperparameters(ignore=["trunk_model", "head_model"])
 
     def init_metrics(self) -> None:
         if self.regression:
@@ -165,9 +170,7 @@ class SequenceOnlyModel(AbstractSequenceModel):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         return y, indicator.float()  # y_hat, y
 
-    def _run_step(
-        self, batch: Dict[str, Any]
-    ):
+    def _run_step(self, batch: Dict[str, Any]):
         """
         Internal step function to parse batch and run forward + step
 
@@ -215,13 +218,18 @@ class SequenceOnlyModel(AbstractSequenceModel):
         if self.regression:
             if not self.log_output:
                 y_hat = torch.log(y_hat + 1e-6)
-            self.valid_metrics.update(y_hat, y)
+
+            y = torch.log(y + 1e-6)
+            self.valid_metrics.update(y_hat, y) # correlation of log counts
         else:
             self.valid_metrics.update(torch.sigmoid(y_hat), y.int())
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
         return loss
+    
+    def predict_step(self, batch, batch_idx: int=None) -> torch.Tensor:
+        return self._forward_from_batch(batch)
 
     def on_validation_epoch_end(self):
         metrics = self.valid_metrics.compute()
@@ -259,6 +267,7 @@ class SequenceEmbedModel(SequenceOnlyModel):
             optimizer_kwargs=optimizer_kwargs,
             lr_scheduler_kwargs=lr_scheduler_kwargs,
             init_weights=init_weights,
+            save_hyperparameters=False,
             **kwargs
         )
         self.embed_model = embed_model

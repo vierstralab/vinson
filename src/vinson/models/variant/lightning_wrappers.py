@@ -85,9 +85,9 @@ class VariantEmbedModel(AbstractSequenceModel):
 
         loss = self.criterion(
             y,
-            ref_counts=ref_counts,
-            total_counts=total_counts,
-            bad_score=bad_score,
+            ref_counts,
+            total_counts,
+            bad_score,
         )
 
         loss *= batch["weight"]

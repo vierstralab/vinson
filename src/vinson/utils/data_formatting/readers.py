@@ -100,9 +100,11 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str) -> V
     encoding_sources = {
         "sample_id": train_adata.obs_names,
         "chrom": train_adata.var["#chr"],
+        #"pos": train_adata.var["end"],
         'ref': train_adata.var['ref'],
         'alt': train_adata.var['alt']
     }
+
     if 'indiv_id' in train_adata.obsm:
         encoding_sources['indiv_id'] = train_adata.obsm['indiv_id']
 
@@ -111,7 +113,8 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str) -> V
 
     data = {
         'chrom': encoding_sources['chrom'][col_idx],
-        'pos': data['pos'][col_idx],
+        #'pos': encoding_sources['pos'][col_idx],
+        'pos': train_adata.var['end'].values[col_idx],
         'ref': encoding_sources['ref'][col_idx],
         'alt': encoding_sources['alt'][col_idx],
         'sample_id': encoding_sources["sample_id"][row_idx],
