@@ -74,26 +74,9 @@ class VinsonData:
         """Get data dict for a given index."""
         return_dict = {}
         for key, value in self.data.items():
-            # return_dict[key] = value[i]
-            # if key in self.encodings:
-            #     return_dict[key] = self._decode(key, return_dict[key])
-            x = value[i]
-
+            return_dict[key] = value[i]
             if key in self.encodings:
-                x = self._decode(key, x)
-
-                # --- critical: make it Python-native for torch collate ---
-                # scalar string
-                if isinstance(x, (np.str_, str)):
-                    x = str(x)
-                # vector of strings
-                elif isinstance(x, np.ndarray) and x.dtype == object:
-                    x = [str(t) for t in x.tolist()]
-                # vector of numpy unicode strings (if any remain)
-                elif isinstance(x, np.ndarray) and x.dtype.kind in ("U", "S"):
-                    x = x.astype(str).tolist()
-
-            return_dict[key] = x
+                return_dict[key] = self._decode(key, return_dict[key])
                 
         return return_dict
 
