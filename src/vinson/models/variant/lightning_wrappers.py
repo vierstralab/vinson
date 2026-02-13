@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional
 import copy
+import csv
 
 import torch
 
@@ -95,11 +96,38 @@ class VariantEmbedModel(AbstractSequenceModel):
 
         return loss, y, (ref_counts, total_counts, bad_score)
 
+    # def training_step(self, batch, batch_idx):
+    #     loss, *_ = self.step(batch, batch_idx)
+
+    #     self.log("loss", loss, on_step=True, on_epoch=False, sync_dist=True)
+
+    #     return loss
     def training_step(self, batch, batch_idx):
         loss, *_ = self.step(batch, batch_idx)
-
+    
+        if getattr(self, "debug", False) and hasattr(self, "batch_log_file"):
+            lfc = batch.get("lfc")
+            ref_counts = batch.get("ref_counts")
+            total_counts = batch.get("total_counts")
+            bad_score = batch.get("bad_score")
+    
+            with open(self.batch_log_file, "a", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    self.current_epoch,
+                    batch_idx,
+                    loss.item(),
+                    lfc.min().item() if lfc is not None else "",
+                    lfc.max().item() if lfc is not None else "",
+                    ref_counts.min().item() if ref_counts is not None else "",
+                    ref_counts.max().item() if ref_counts is not None else "",
+                    total_counts.min().item() if total_counts is not None else "",
+                    total_counts.max().item() if total_counts is not None else "",
+                    bad_score.min().item() if bad_score is not None else "",
+                    bad_score.max().item() if bad_score is not None else "",
+                ])
+    
         self.log("loss", loss, on_step=True, on_epoch=False, sync_dist=True)
-
         return loss
 
     def validation_step(self, batch, batch_idx):

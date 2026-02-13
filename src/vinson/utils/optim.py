@@ -4,6 +4,7 @@ import torch
 from .hparams import get_lr_scheduler_cls
 
 
+# TODO: move parsing to from_config.py
 def configure_optimizer(
     *,
     module_parameters,

@@ -36,6 +36,7 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=str, default=None, help='Path to custom config file')
     parser.add_argument("--env_path", type=str, default="/home/sabramov/miniconda3/envs/pytorch", help='Path to conda environment')
     parser.add_argument("--checkpoint", type=str, default=None, help='Path to existing checkpoint.')
+    parser.add_argument("--sequence_model_checkpoint", type=str, default=None, help='Path to dhs model checkpoint to load weights from for variant model')
     parser.add_argument('anndata', type=str, help='Path to anndata file')
     parser.add_argument('fasta', type=str, help='Path to fasta file')
     parser.add_argument('genotype', type=str, help='Path to genotype file')
@@ -68,6 +69,7 @@ if __name__ == "__main__":
         genotype=args.genotype,
         outdir=args.outdir,
         config=f"--config {args.config}" if args.config else "",
+        sequence_model_checkpoint=f"--sequence_model_checkpoint {args.sequence_model_checkpoint}" if args.sequence_model_checkpoint else "",
         debug="--debug" if args.debug else "",
         epochs=f"--epochs {args.epochs}" if args.epochs is not None else "",
         checkpoint=f"--checkpoint {args.checkpoint}" if args.checkpoint else "",

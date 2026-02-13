@@ -71,7 +71,7 @@ def main(args):
         devices=args.devices,
         logger_type=config["logging_params"]["logger_type"],
         val_check_interval=config["logging_params"]["val_check_interval"],
-        epochs = epochs,
+        epochs = 25,
         **trainer_kwargs, #should include max_epochs if want
     )
     
@@ -97,7 +97,7 @@ def main(args):
     
 
 
-    model = variant_model_from_config(config, sequence_model_checkpoint=checkpoint, checkpoint_path=None)
+    model = variant_model_from_config(config, sequence_model_checkpoint=args.sequence_model_checkpoint, checkpoint_path=checkpoint)
 
     #debugs remove later
     debug_log_dir = os.path.join(outdir, "batch_logs")
@@ -163,6 +163,12 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Path to checkpoint or 'last' to resume last checkpoint.",
+    )
+    parser.add_argument(
+        "--sequence_model_checkpoint",
+        type=str,
+        default=None,
+        help="Path to checkpoint to load weights from dhs model",
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument(

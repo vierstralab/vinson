@@ -6,6 +6,7 @@ import torch
 from datetime import datetime
 import mergedeep
 
+import torch
 from vinson.utils.helpers import read_yaml_config
 
 from vinson.models.sequence.lightning_wrappers import AbstractSequenceModel
@@ -26,6 +27,9 @@ from vinson.datasets.sequence import SequenceEmbedDataset
 from vinson.datasets.variant import VariantEmbedDataset
 
 from vinson.utils.data_formatting import extract_data_from_h5
+
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 MODEL_FACTORY_REGISTRY = {
@@ -80,6 +84,7 @@ def classifier_model_from_config(config: dict, checkpoint_path: str = None):
         model = CellClassifierModel.load_from_checkpoint(
             checkpoint_path=checkpoint_path,
             embedding=embedding,
+            map_location=device
         )
     else:
         scheduler_kwargs = _parse_scheduler_and_optimizer(config)
@@ -114,174 +119,87 @@ def _sequence_model_from_config(config):
     return torch_modules_kwargs
 
 
-# def dhs_model_from_config(config, checkpoint_path=None):
-#     model_type = config["model_type"]
-
-#     assert model_type in MODEL_FACTORY_REGISTRY, f"Model type {model_type} not supported for DHS models. Available types: {list(MODEL_FACTORY_REGISTRY.keys())}"
-
-#     LightningModelCls: AbstractSequenceModel = LIGHTNING_MODEL_REGISTRY[model_type]
-
-#     torch_modules_kwargs = _sequence_model_from_config(config)
-
-#     head = MLPBlock(
-#         **config['model_arch']['head']
-#     )
-
-#     torch_modules_kwargs = {
-#         **torch_modules_kwargs,
-#         "head_model": head,
-#     }
-
-#     if checkpoint_path is not None:
-#         model = LightningModelCls.load_from_checkpoint(
-#             checkpoint_path=checkpoint_path,
-#             strict=False,
-#             **torch_modules_kwargs,
-#         )
-    
-#     else:
-#         scheduler_kwargs = _parse_scheduler_and_optimizer(config)
-#         model = LightningModelCls(
-#             **torch_modules_kwargs,
-#             **scheduler_kwargs,
-#             **config["model_kwargs"],
-#         )
-#     return model
-
-
-# #need to remove config key needing model_kwargs and data_params
-# #MLP block expcets config param to be activations not activation
-# def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint_path=None):
-#     model_type = config["model_type"]
-#     assert model_type in ("basset_variant_embed", "legnet_variant_embed"), f"Model type {model_type} not supported for variant models. Available types: 'basset_variant_embed', 'legnet_variant_embed'"
-
-#     head = MLPBlock(
-#         **config['model_arch']['head']
-#     )
-
-#     scheduler_kwargs = _parse_scheduler_and_optimizer(config)
-    
-
-#     if checkpoint_path is not None:
-#         if sequence_model_checkpoint is not None:
-#             print('Ignoring sequence_model_checkpoint, as variant models load from a single checkpoint_path.')
-        
-#     #variant model doesnt currently have model_kwargs
-#     if sequence_model_checkpoint is not None and checkpoint_path is None:
-#         sequence_model = dhs_model_from_config(
-#             config,
-#             checkpoint_path=sequence_model_checkpoint,
-#         )
-#         variant_model = VariantEmbedModel.from_sequence_embed_model(
-#             sequence_embed_model=sequence_model,
-#             head_model=head,
-#             **scheduler_kwargs,
-#             **config.get('model_kwargs', {}),
-#         )
-#     else:
-#         torch_modules_kwargs = _sequence_model_from_config(config)
-#         torch_modules_kwargs['head_model'] = head
-
-#         if checkpoint_path is not None:
-#             variant_model = VariantEmbedModel.load_from_checkpoint(
-#                 checkpoint_path=checkpoint_path,
-#                 **torch_modules_kwargs,
-#             )
-#         else:
-#             variant_model = VariantEmbedModel(
-#                 **torch_modules_kwargs,
-#                 **scheduler_kwargs,
-#                 **config.get('model_kwargs', {}),
-#             )
-#     return variant_model
-
 def dhs_model_from_config(config, checkpoint_path=None):
-    """Build DHS sequence model from config and optional checkpoint."""
     model_type = config["model_type"]
-    assert model_type in MODEL_FACTORY_REGISTRY, (
-        f"Model type {model_type} not supported for DHS models. "
-        f"Available types: {list(MODEL_FACTORY_REGISTRY.keys())}"
-    )
+
+    assert model_type in MODEL_FACTORY_REGISTRY, f"Model type {model_type} not supported for DHS models. Available types: {list(MODEL_FACTORY_REGISTRY.keys())}"
 
     LightningModelCls: AbstractSequenceModel = LIGHTNING_MODEL_REGISTRY[model_type]
 
-    # build torch modules from config
     torch_modules_kwargs = _sequence_model_from_config(config)
 
-    # build head model
-    head_cfg = config['model_arch']['head'].copy()
-    # rename key if MLPBlock expects 'activations'
-    if 'activation' in head_cfg:
-        head_cfg['activations'] = head_cfg.pop('activation')
+    head = MLPBlock(
+        **config['model_arch']['head']
+    )
 
-    head = MLPBlock(**head_cfg)
-    torch_modules_kwargs['head_model'] = head
+    torch_modules_kwargs = {
+        **torch_modules_kwargs,
+        "head_model": head,
+    }
 
     if checkpoint_path is not None:
         model = LightningModelCls.load_from_checkpoint(
             checkpoint_path=checkpoint_path,
-            strict=False,
             **torch_modules_kwargs,
+            map_location=device
         )
+        
     else:
         scheduler_kwargs = _parse_scheduler_and_optimizer(config)
         model = LightningModelCls(
             **torch_modules_kwargs,
             **scheduler_kwargs,
+            **config["model_kwargs"],
         )
-
     return model
 
-
+#need to remove config key needing model_kwargs and data_params
+#MLP block expcets config param to be activations not activation
 def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint_path=None):
-    """Build variant model from config and optional checkpoint."""
     model_type = config["model_type"]
-    assert model_type in ("basset_variant_embed", "legnet_variant_embed"), (
-        f"Model type {model_type} not supported for variant models. "
-        f"Available types: 'basset_variant_embed', 'legnet_variant_embed'"
+    assert model_type in ("basset_variant_embed", "legnet_variant_embed"), f"Model type {model_type} not supported for variant models. Available types: 'basset_variant_embed', 'legnet_variant_embed'"
+
+    head = MLPBlock(
+        **config['model_arch']['head']
     )
 
-    # build head
-    head_cfg = config['model_arch']['head'].copy()
-    if 'activation' in head_cfg:
-        head_cfg['activations'] = head_cfg.pop('activation')
-    head = MLPBlock(**head_cfg)
-
     scheduler_kwargs = _parse_scheduler_and_optimizer(config)
+    
 
-    # load from single variant checkpoint if checkpoint_path provided
     if checkpoint_path is not None:
         if sequence_model_checkpoint is not None:
-            print("Ignoring sequence_model_checkpoint, loading from variant checkpoint_path only.")
-        variant_model = VariantEmbedModel.load_from_checkpoint(
-            checkpoint_path=checkpoint_path,
-            head_model=head,
-            **scheduler_kwargs,
-        )
-        return variant_model
-
-    # build from sequence model checkpoint if provided
-    if sequence_model_checkpoint is not None:
+            print('Ignoring sequence_model_checkpoint, as variant models load from a single checkpoint_path.')
+        
+    #variant model doesnt currently have model_kwargs
+    if sequence_model_checkpoint is not None and checkpoint_path is None:
         sequence_model = dhs_model_from_config(
             config,
             checkpoint_path=sequence_model_checkpoint,
         )
+        print('loading from checkpoint')
         variant_model = VariantEmbedModel.from_sequence_embed_model(
             sequence_embed_model=sequence_model,
             head_model=head,
             **scheduler_kwargs,
+            **config.get('model_kwargs', {}),
         )
     else:
-        # no checkpoint, build from scratch
         torch_modules_kwargs = _sequence_model_from_config(config)
         torch_modules_kwargs['head_model'] = head
-        variant_model = VariantEmbedModel(
-            **torch_modules_kwargs,
-            **scheduler_kwargs,
-        )
 
+        if checkpoint_path is not None:
+            variant_model = VariantEmbedModel.load_from_checkpoint(
+                checkpoint_path=checkpoint_path,
+                **torch_modules_kwargs,
+                map_location=device
+            )
+        else:
+            variant_model = VariantEmbedModel(
+                **torch_modules_kwargs,
+                **scheduler_kwargs,
+                **config.get('model_kwargs', {}),
+            )
     return variant_model
-
 
 def dataset_from_h5(
     h5_file: str,
