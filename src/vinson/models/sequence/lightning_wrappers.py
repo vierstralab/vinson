@@ -187,14 +187,14 @@ class SequenceOnlyModel(AbstractSequenceModel):
                 read_depth=batch["read_depth"],
                 bg=batch["bg"],
                 density=batch["density"],
-            ), weight
+            ), weight, y
         else:
             return self._run_step_classification(y, batch["class"] == 1), weight
 
     def step(
         self, batch: Dict[str, Any], batch_idx: int
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        (y_hat, y), weight = self._run_step(batch)
+        (y_hat, y), weight, y_density = self._run_step(batch)
 
         loss = self.criterion(y_hat, y)
         if loss.ndim == 1:
@@ -203,7 +203,7 @@ class SequenceOnlyModel(AbstractSequenceModel):
             loss = loss * weight[:, None]
         loss = loss.mean()
 
-        return loss, y_hat, y
+        return loss, y_hat, y, y_density
 
     def training_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.Tensor:
         loss, *_ = self.step(batch, batch_idx)
@@ -213,12 +213,13 @@ class SequenceOnlyModel(AbstractSequenceModel):
         return loss
 
     def validation_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.Tensor:
-        loss, y_hat, y = self.step(batch, batch_idx)
+        loss, y_hat, y, y_density = self.step(batch, batch_idx)
 
         if self.regression:
             if not self.log_output:
-                y_hat = torch.log(y_hat + 1e-6)
-            self.valid_metrics.update(y_hat, y)
+                y_hat = y_density
+                density = batch['density']
+            self.valid_metrics.update(y_hat, density)
         else:
             self.valid_metrics.update(torch.sigmoid(y_hat), y.int())
 
@@ -268,13 +269,13 @@ class SequenceEmbedModel(SequenceOnlyModel):
             save_hyperparameters=False,
             **kwargs
         )
-        self.embed_model = embed_model
-        if init_weights:
-            self.embed_model.apply(initialize_weights)
+        # self.embed_model = embed_model ##nn.Identity()
+        # if init_weights:
+        #     self.embed_model.apply(initialize_weights)
         self.save_hyperparameters(ignore=["trunk_model", "head_model", "embed_model"])
 
     def forward(self, seq: torch.Tensor, embedding: torch.Tensor) -> torch.Tensor:
-        x = self.embed_model(embedding)
+        x = embedding#self.embed_model(embedding)
         x = self.trunk_model(seq, x)
 
         x = self.head_model(x)

@@ -247,21 +247,21 @@ class LegNetTrunkEmbed(LegNetTrunk):
             activation=activation,
         )
         
-        self.n_embed_outputs = n_embed_outputs
+        self.n_embed_input = n_embed_outputs
         self.bias = nn.ModuleDict()
 
         in_ch_list = [self.stem_ch, *self.ef_block_sizes[:-1]] 
         for blc_id, in_ch in enumerate(in_ch_list):
             cur_block = f'blc{blc_id}'
-            #self.bias[cur_block] = nn.Linear(n_embed_outputs, in_ch)
+            # self.bias[cur_block] = nn.Linear(n_embed_outputs, in_ch)
             self.bias[cur_block] = nn.Sequential(
                 MLPBlock(
-                    n_inputs=n_embed_outputs,
-                    hidden_dims=[in_ch],
+                    n_inputs=self.n_embed_input,
+                    hidden_dims=[self.n_embed_input//2],
                     dropout=0.0,
                     activations='silu',
                 ),
-                nn.Linear(in_ch, in_ch)
+                nn.Linear(self.n_embed_input//2, in_ch)
             )
 
     def forward(self, x: torch.Tensor, embed: torch.Tensor) -> torch.Tensor:
