@@ -1,5 +1,7 @@
 import torch
+from typing import List
 
+from vinson.models.shared import MLPBlock
 
 class BassetTrunk(torch.nn.Module):
     def __init__(self, **kwargs) -> None:
@@ -57,11 +59,24 @@ class BassetTrunk(torch.nn.Module):
 
 
 class BassetTrunkEmbed(BassetTrunk):
-    def __init__(self, n_embed_outputs: int, **kwargs) -> None:
+    def __init__(self, embeds: List[MLPBlock], **kwargs) -> None:
         super().__init__(**kwargs)
 
-        self.bias2 = torch.nn.Linear(n_embed_outputs, self.layer2[0].out_channels)
-        self.bias3 = torch.nn.Linear(n_embed_outputs, self.layer3[0].out_channels)
+        if isinstance(embeds, MLPBlock):
+            embeds = [embeds] * 2
+
+        assert len(embeds) == 2, f"Number of embedding MLPs must match the number of blocks in the trunk. Expected 2, got {len(embeds)}"
+
+        self.bias2 = torch.nn.Sequential(
+            embeds[0],
+            torch.nn.Linear(embeds[0].output_dim, self.layer2[0].out_channels)
+        )
+
+        self.bias3 = torch.nn.Sequential(
+            embeds[1],
+            torch.nn.Linear(embeds[1].output_dim, self.layer3[0].out_channels)
+        )
+
 
     def forward(self, x: torch.Tensor, embed: torch.Tensor) -> torch.Tensor:
         x = self.layer1(x)

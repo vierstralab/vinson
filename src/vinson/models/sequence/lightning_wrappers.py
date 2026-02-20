@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union, List
 
 import lightning as L
 
@@ -252,7 +252,6 @@ class SequenceEmbedModel(SequenceOnlyModel):
             self,
             trunk_model: nn.Module,
             head_model: MLPBlock,
-            embed_model: MLPBlock,
             lr_scheduler: Optional[str]=None,
             optimizer_kwargs: Optional[Dict[str, Any]]=None,
             lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
@@ -269,15 +268,10 @@ class SequenceEmbedModel(SequenceOnlyModel):
             save_hyperparameters=False,
             **kwargs
         )
-        # self.embed_model = embed_model ##nn.Identity()
-        # if init_weights:
-        #     self.embed_model.apply(initialize_weights)
-        self.save_hyperparameters(ignore=["trunk_model", "head_model", "embed_model"])
+        self.save_hyperparameters(ignore=["trunk_model", "head_model"])
 
     def forward(self, seq: torch.Tensor, embedding: torch.Tensor) -> torch.Tensor:
-        x = embedding#self.embed_model(embedding)
-        x = self.trunk_model(seq, x)
-
+        x = self.trunk_model(seq, embedding)
         x = self.head_model(x)
         x = self.forward_final(x)
 

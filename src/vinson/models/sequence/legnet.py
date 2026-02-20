@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, List
 
 import torch
 import torch.nn as nn
@@ -233,7 +233,7 @@ class LegNetTrunkEmbed(LegNetTrunk):
             ef_block_sizes: Union[int, list],
             pool_sizes: list,
             resize_factor: int,
-            n_embed_outputs: int,
+            embeds: List[MLPBlock],
             activation=nn.SiLU,
         ) -> None:
         super().__init__(
@@ -247,21 +247,21 @@ class LegNetTrunkEmbed(LegNetTrunk):
             activation=activation,
         )
         
-        self.n_embed_input = n_embed_outputs
         self.bias = nn.ModuleDict()
 
-        in_ch_list = [self.stem_ch, *self.ef_block_sizes[:-1]] 
+        in_ch_list = [self.stem_ch, *self.ef_block_sizes[:-1]]
+        if isinstance(embeds, MLPBlock):
+            embeds = [embeds] * len(in_ch_list)
+        
+        assert len(embeds) == len(in_ch_list), f"Number of embedding MLPs must match the number of blocks in the trunk. Expected {len(in_ch_list)}, got {len(embeds)}"
+        
         for blc_id, in_ch in enumerate(in_ch_list):
             cur_block = f'blc{blc_id}'
+            embed = embeds[blc_id]
             # self.bias[cur_block] = nn.Linear(n_embed_outputs, in_ch)
             self.bias[cur_block] = nn.Sequential(
-                MLPBlock(
-                    n_inputs=self.n_embed_input,
-                    hidden_dims=[self.n_embed_input//2],
-                    dropout=0.0,
-                    activations='silu',
-                ),
-                nn.Linear(self.n_embed_input//2, in_ch)
+                embed,
+                nn.Linear(embed.output_dim, in_ch)
             )
 
     def forward(self, x: torch.Tensor, embed: torch.Tensor) -> torch.Tensor:

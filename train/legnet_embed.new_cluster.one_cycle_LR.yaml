@@ -4,32 +4,35 @@ model_kwargs:
   log_output: false
   n_tasks: 1
   regression: true
+  n_independent_embeds: 5
 
 model_arch:
   cell_embed:
     n_inputs: 637
-    hidden_dims: [256, 128]
+    hidden_dims: [637]
     batch_norm: true
-    dropout: 0.2
+    dropout: 0
     batch_norm_momentum: 0.1
     activations: 'silu'
+    order: 'fc-drop-bn-act'
   
   trunk:
-    in_ch : 4
+    in_ch: 4
     stem_ch: 96             
-    ef_block_sizes: [112, 128, 142, 158]
+    ef_block_sizes: [112, 128, 144, 160]
     ef_ks: 9       
     stem_ks: [6,9,12,15]             
     pool_sizes: [4, 4, 2, 2]            
     resize_factor: 4
 
   head:
-    n_inputs: 316 # x2 ef_block_size[-1]
-    hidden_dims: [316]
+    n_inputs: 320 # x2 ef_block_size[-1]
+    hidden_dims: [320]
     batch_norm: true
-    dropout: 0.2
+    dropout: 0.025
     batch_norm_momentum: 0.1
     activations: 'silu'
+    order: 'fc-drop-bn-act'
      
 hparams:
   batch_size: 1024

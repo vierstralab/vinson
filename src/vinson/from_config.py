@@ -99,11 +99,18 @@ def _sequence_model_from_config(config):
     model_type = config["model_type"]
     BaseModelCls = MODEL_FACTORY_REGISTRY[model_type]
 
-    torch_modules_kwargs = {}
     if model_type in ("basset_embed", "legnet_embed", "basset_variant_embed", "legnet_variant_embed"):
-        mlp_embedding = MLPBlock(**config["model_arch"]["cell_embed"])
-        torch_modules_kwargs["embed_model"] = mlp_embedding
-        config['model_arch']['trunk']['n_embed_outputs'] = mlp_embedding.output_dim
+        cell_embed_config = config['model_arch']['cell_embed']
+
+        n_independent_embeds = config['model_kwargs'].get('n_independent_embeds', 1)
+        if n_independent_embeds == 1:
+            embeddings_mlp = MLPBlock(**cell_embed_config)
+        else:
+            embeddings_mlp = [
+                MLPBlock(**config['model_arch']['cell_embed']) for _ in range(n_independent_embeds)
+            ]
+
+        config['model_arch']['trunk']['embeds'] = embeddings_mlp
 
     trunk = BaseModelCls(
         **config['model_arch']['trunk']
@@ -113,9 +120,7 @@ def _sequence_model_from_config(config):
         if config['model_arch']['head']['n_inputs'] is None:
             config['model_arch']['head']['n_inputs'] = trunk.output_dim
 
-    torch_modules_kwargs['trunk_model'] = trunk
-
-    return torch_modules_kwargs
+    return trunk
 
 
 def dhs_model_from_config(config, checkpoint_path=None):
@@ -125,28 +130,25 @@ def dhs_model_from_config(config, checkpoint_path=None):
 
     LightningModelCls: AbstractSequenceModel = LIGHTNING_MODEL_REGISTRY[model_type]
 
-    torch_modules_kwargs = _sequence_model_from_config(config)
+    trunk = _sequence_model_from_config(config)
 
     head = MLPBlock(
         **config['model_arch']['head']
     )
 
-    torch_modules_kwargs = {
-        **torch_modules_kwargs,
-        "head_model": head,
-    }
-
     if checkpoint_path is not None:
         model = LightningModelCls.load_from_checkpoint(
             checkpoint_path=checkpoint_path,
-            **torch_modules_kwargs,
+            trunk_model=trunk,
+            head_model=head,
             map_location=device
         )
     
     else:
         scheduler_kwargs = _parse_scheduler_and_optimizer(config)
         model = LightningModelCls(
-            **torch_modules_kwargs,
+            trunk_model=trunk,
+            head_model=head,
             **scheduler_kwargs,
             **config["model_kwargs"],
         )
@@ -180,18 +182,20 @@ def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint
             **config["model_kwargs"],
         )
     else:
-        torch_modules_kwargs = _sequence_model_from_config(config)
-        torch_modules_kwargs['head_model'] = head
+        trunk = _sequence_model_from_config(config)
+
 
         if checkpoint_path is not None:
             variant_model = VariantEmbedModel.load_from_checkpoint(
                 checkpoint_path=checkpoint_path,
-                **torch_modules_kwargs,
+                trunk_model=trunk,
+                head_model=head,
                 map_location=device
             )
         else:
             variant_model = VariantEmbedModel(
-                **torch_modules_kwargs,
+                trunk_model=trunk,
+                head_model=head,
                 **scheduler_kwargs,
                 **config["model_kwargs"],
             )

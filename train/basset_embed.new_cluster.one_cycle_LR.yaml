@@ -1,4 +1,9 @@
 model_type: basset_embed
+
+model_kwargs:
+  log_output: false
+  n_independent_embeds: 1
+
 model_arch:
   cell_embed:
     n_inputs: 637
@@ -16,9 +21,6 @@ model_arch:
 
   trunk:
     activation: silu
-
-model_kwargs:
-  log_output: false
 
 hparams:
   batch_size: 1024
