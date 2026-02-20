@@ -102,7 +102,7 @@ def _sequence_model_from_config(config):
     if model_type in ("basset_embed", "legnet_embed", "basset_variant_embed", "legnet_variant_embed"):
         cell_embed_config = config['model_arch']['cell_embed']
 
-        n_independent_embeds = config['model_kwargs'].get('n_independent_embeds', 1)
+        n_independent_embeds = config['model_arch'].get('n_independent_embeds', 1)
         if n_independent_embeds == 1:
             embeddings_mlp = MLPBlock(**cell_embed_config)
         else:

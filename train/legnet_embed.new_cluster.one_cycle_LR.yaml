@@ -4,9 +4,10 @@ model_kwargs:
   log_output: false
   n_tasks: 1
   regression: true
-  n_independent_embeds: 5
 
 model_arch:
+  n_independent_embeds: 5
+
   cell_embed:
     n_inputs: 637
     hidden_dims: [637]

@@ -5,12 +5,16 @@ model_kwargs:
   n_independent_embeds: 1
 
 model_arch:
+  n_independent_embeds: 5
+
   cell_embed:
     n_inputs: 637
-    hidden_dims: [256, 256]
+    hidden_dims: [637]
     batch_norm: true
+    dropout: 0
     batch_norm_momentum: 0.1
-    activation: silu
+    activations: 'silu'
+    order: 'fc-drop-bn-act'
   
   head:
     n_inputs: 256
