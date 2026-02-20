@@ -6,7 +6,7 @@ model_kwargs:
   regression: true
 
 model_arch:
-  n_independent_embeds: 5
+  n_independent_embeds: 4
 
   cell_embed:
     n_inputs: 637
