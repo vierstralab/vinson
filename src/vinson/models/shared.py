@@ -42,6 +42,8 @@ class MLPBlock(nn.Module):
         Whether to apply batch normalization after each layer. Scalars are broadcasted.
     batch_norm_momentum : float, optional
         Momentum parameter for batch normalization layers.
+    order : str, optional
+        Order of operations in each layer. Default is 'fc-drop-act-bn' (fully connected, dropout, activation, batch norm). Other valid order is 'fc-bn-act-drop'.
     """
     def __init__(
         self,
