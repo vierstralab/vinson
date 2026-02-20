@@ -15,7 +15,7 @@ model_arch:
     dropout: 0
     batch_norm_momentum: 0.1
     activations: 'silu'
-    order: 'fc-drop-bn-act'
+    order: 'fc-bn-act-drop' #'fc-drop-bn-act'
   
   trunk:
     in_ch: 4
@@ -33,7 +33,7 @@ model_arch:
     dropout: 0.025
     batch_norm_momentum: 0.1
     activations: 'silu'
-    order: 'fc-drop-bn-act'
+    order: 'fc-bn-act-drop' #'fc-drop-bn-act'
      
 hparams:
   batch_size: 1024
