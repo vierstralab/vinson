@@ -33,7 +33,7 @@ hparams:
   epochs: 3
 
   optimizer_kwargs:
-    wd: 1.0e-2
+    weight_decay: 1.0e-2
 
   lr_scheduler: OneCycleLR
   lr_scheduler_kwargs:
