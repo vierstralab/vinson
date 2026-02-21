@@ -2,79 +2,16 @@ import os
 import sys
 from argparse import ArgumentParser
 
-import torch
-import lightning as L
-from lightning.pytorch.loggers import CSVLogger
-from lightning.pytorch.callbacks import (
-    EarlyStopping,
-    ModelCheckpoint,
-    LearningRateMonitor,
-)
 
 from vinson.utils.helpers import save_config, generate_run_name
 
 from vinson.from_config import datamodule_from_config, read_configs, dhs_model_from_config 
 
-from vinson.run import set_global_seed, set_worker_seed
+from vinson.run import set_global_seed, set_worker_seed, init_multigpu_trainer, fit_model
 from vinson.utils.data_formatting import get_number_of_train_examples
 
 
-torch.set_float32_matmul_precision('high')
-
-
-def init_multigpu_trainer(
-        outdir,
-        accelerator,
-        strategy,
-        nodes,
-        devices,
-        logger_type,
-        val_check_interval,
-        **trainer_kwargs
-    ):
-    assert logger_type in ["csv"], "Only 'csv' logger is currently supported."
-    logger = CSVLogger(os.path.join(outdir, "logs"))
-
-    callbacks = [
-        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.005, patience=10),
-        ModelCheckpoint(
-            monitor="val_loss",
-            mode="min",
-            filename="{epoch}-{step}-{val_loss:.2f}",
-            dirpath=os.path.join(
-                outdir,
-                "checkpoints",
-            ),
-            save_top_k=5,
-            save_last="link",
-        ),
-        LearningRateMonitor(),
-    ]
-
-    trainer = L.Trainer(
-        logger=logger,
-        callbacks=callbacks,
-        max_epochs=20,
-        accelerator=accelerator,
-        strategy=strategy,
-        num_nodes=nodes,
-        devices=devices,
-        val_check_interval=val_check_interval,
-        log_every_n_steps=100,
-        gradient_clip_val=1.0,
-        reload_dataloaders_every_n_epochs=1,
-        num_sanity_val_steps=0,
-        **trainer_kwargs,
-       # precision='16-mixed',
-    )
-    return trainer
-
-
-def fit_model(model, trainer: L.Trainer, datamodule, checkpoint=None):
-    if checkpoint is not None:
-        trainer.fit(model, datamodule=datamodule, ckpt_path=checkpoint)
-    else:
-        trainer.fit(model, datamodule=datamodule)
+#torch.set_float32_matmul_precision('high')
 
 
 if __name__ == "__main__":
@@ -209,6 +146,7 @@ if __name__ == "__main__":
         devices=args.devices,
         logger_type=config["logging_params"]["logger_type"],
         val_check_interval=config["logging_params"]["val_check_interval"],
+        max_epochs=config["hparams"].get("epochs", 20),
         **trainer_kwargs
     )
     if args.num_workers == 1:
