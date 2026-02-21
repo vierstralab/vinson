@@ -28,7 +28,7 @@ model_arch:
 
   head:
     n_inputs: 320 # x2 ef_block_size[-1]
-    hidden_dims: [320]
+    hidden_dims: [320, 320]
     batch_norm: true
     dropout: 0.025
     batch_norm_momentum: 0.1
@@ -60,5 +60,5 @@ validation_augmentation_kwargs:
   noise: 0
   jitter: 0
 logging_params:
-  val_check_interval: 0.2
+  val_check_interval: 1
   logger_type: csv

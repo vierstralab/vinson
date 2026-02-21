@@ -459,6 +459,7 @@ class SequenceOnlyDataset(BaseSequenceDataset):
             "sample_id": sample_id,
         }
 
+
 class SequenceEmbedDataset(SequenceOnlyDataset):
 
     def __getitem__(self, i):
