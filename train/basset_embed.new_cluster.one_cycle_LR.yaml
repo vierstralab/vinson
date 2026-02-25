@@ -5,7 +5,7 @@ model_kwargs:
   n_independent_embeds: 1
 
 model_arch:
-  n_independent_embeds: 5
+  n_independent_embeds: 4
 
   cell_embed:
     n_inputs: 637
@@ -28,8 +28,6 @@ model_arch:
     activation: silu
 
 hparams:
-  batch_size: 1024
-
   epochs: 3
 
   optimizer_kwargs:
@@ -41,6 +39,10 @@ hparams:
     div_factor: 25
     final_div_factor: 10000
     total_steps: null
+
+dataloader_kwargs:
+  pre_jitter: false
+  batch_size: 1024
 
 train_augmentation_kwargs:
   reverse_complement: true

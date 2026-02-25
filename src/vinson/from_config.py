@@ -266,8 +266,15 @@ def datamodule_from_config(
         **config['validation_augmentation_kwargs'],
     }
     
+    if config.get('dataloader_kwargs') is None:
+        # Workaround for old configs that don't have dataloader_kwargs defined
+        config['dataloader_kwargs'] = {
+            'batch_size': config['hparams']['batch_size'],
+            'pre_jitter': False
+        }
+        
     dataloader_kwargs = {
-        'batch_size': config['hparams']['batch_size'],
+        **config['dataloader_kwargs'],
         **dataloader_kwargs,
     }
 
@@ -280,7 +287,7 @@ def datamodule_from_config(
             train_dataset_kwargs=train_dataset_kwargs,
             valid_dataset_kwargs=valid_dataset_kwargs,
             **dataloader_kwargs,
-            )
+        )
     else:
         return SeqEmbedDataModule(
             anndata_file=anndata_file,

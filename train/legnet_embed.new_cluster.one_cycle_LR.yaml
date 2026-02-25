@@ -1,5 +1,6 @@
 model_type:
   legnet_embed
+
 model_kwargs:        
   log_output: false
   n_tasks: 1
@@ -34,9 +35,8 @@ model_arch:
     batch_norm_momentum: 0.1
     activations: 'silu'
     order: 'fc-bn-act-drop' #'fc-drop-bn-act'
-     
+
 hparams:
-  batch_size: 1024
   epochs: 3
   optimizer_kwargs:
     weight_decay: 1.0e-2
@@ -51,14 +51,21 @@ data_params:
   clip_density: 20
   min_bg: 0.1
   negatives_weight: 1
+
+dataloader_kwargs:
+  pre_jitter: true
+  batch_size: 1024
+
 train_augmentation_kwargs:
   reverse_complement: true
   noise: 0.1
-  jitter: 20
+  jitter: 0 # pre-jitter is applied in the dataloader, so set to 0 here to avoid double jittering
+  
 validation_augmentation_kwargs:
   reverse_complement: false
   noise: 0
   jitter: 0
+
 logging_params:
   val_check_interval: 1
   logger_type: csv
