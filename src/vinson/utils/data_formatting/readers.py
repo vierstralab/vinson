@@ -38,6 +38,7 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
     
     if pre_jitter:
         data["offsets"] = None
+    print(data.keys())
     update_layers_dict(data, train_adata, suffix)
     row_idx, col_idx = get_examples_indices_from_layer(data["class"])
     encodings = {}
