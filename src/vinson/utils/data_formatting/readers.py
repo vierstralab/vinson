@@ -55,6 +55,8 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
     for key in encoded_vals:
         encode_inplace(encoded_vals, encodings, key)
 
+    if pre_jitter:
+        offsets = data['offsets'].data
 
     data = {
         'read_depth': train_adata.obs['nuclear_reads'].values[row_idx],
@@ -68,7 +70,7 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
     }
 
     if pre_jitter:
-        data['summit'] += data['offsets'].data
+        data['summit'] += offsets
 
     if 'indiv_id' in encoded_vals:
         data['indiv_id'] = encoded_vals["indiv_id"][row_idx]
