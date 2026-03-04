@@ -37,7 +37,7 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
     data = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
     
     if pre_jitter:
-        data["summit_jitter"] = None
+        data["offsets"] = None
     update_layers_dict(data, train_adata, suffix)
     row_idx, col_idx = get_examples_indices_from_layer(data["class"])
     encodings = {}
@@ -67,7 +67,7 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
     }
 
     if pre_jitter:
-        data['summit'] += data['summit_jitter'].data
+        data['summit'] += data['offsets'].data
 
     if 'indiv_id' in encoded_vals:
         data['indiv_id'] = encoded_vals["indiv_id"][row_idx]
