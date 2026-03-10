@@ -142,7 +142,7 @@ class SequenceOnlyModel(AbstractSequenceModel):
 
     def _forward_from_batch(self, batch: Dict[str, Any]) -> torch.Tensor:
         X_seq = batch["ohe_seq"]
-        y = self(X_seq).squeeze()
+        y = self(X_seq).squeeze(-1)
         return y
 
     def _run_step_regression(
