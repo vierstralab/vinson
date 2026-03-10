@@ -27,6 +27,8 @@ from vinson.datasets.variant import VariantEmbedDataset
 
 from vinson.utils.data_formatting import extract_data_from_h5
 
+from hotspot3.build.lib.hotspot3 import config
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -136,16 +138,18 @@ def dhs_model_from_config(config, checkpoint_path=None):
         **config['model_arch']['head']
     )
 
+    scheduler_kwargs = _parse_scheduler_and_optimizer(config)
     if checkpoint_path is not None:
         model = LightningModelCls.load_from_checkpoint(
             checkpoint_path=checkpoint_path,
+            map_location=device,
             trunk_model=trunk,
             head_model=head,
-            map_location=device
+            **scheduler_kwargs,
+            **config["model_kwargs"],
         )
     
     else:
-        scheduler_kwargs = _parse_scheduler_and_optimizer(config)
         model = LightningModelCls(
             trunk_model=trunk,
             head_model=head,
