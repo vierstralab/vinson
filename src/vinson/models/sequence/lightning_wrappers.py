@@ -280,7 +280,7 @@ class SequenceEmbedModel(SequenceOnlyModel):
     def _forward_from_batch(self, batch: Dict[str, Any]) -> torch.Tensor:
         X_seq = batch["ohe_seq"]
         X_embed = batch["embed"]
-        y = self(X_seq, X_embed).squeeze()
+        y = self(X_seq, X_embed).squeeze(-1)
         return y
 
     def training_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.Tensor:
