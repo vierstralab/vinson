@@ -27,8 +27,6 @@ from vinson.datasets.variant import VariantEmbedDataset
 
 from vinson.utils.data_formatting import extract_data_from_h5
 
-from hotspot3.build.lib.hotspot3 import config
-
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
