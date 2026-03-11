@@ -37,12 +37,14 @@ def get_bg_for_peaks(peaks_df: pd.DataFrame, stats_path):
             )
             remaining_peaks = peaks_without_bg.index.difference(non_merged.index)
 
-            remaining_peak_calls = peaks_df[['#chr', 'start', 'end', 'summit']].set_index(
+            remaining_peak_calls = peaks_df[
+                ['#chr', 'start', 'end', 'summit']
+            ].set_index(
                 ['#chr', 'summit']
             ).loc[
                 remaining_peaks
             ].reset_index().merge(
-                chrom_stats[['bg_r', 'bg_p']],
+                chrom_stats[['#chr', 'bg_r', 'bg_p']],
                 on='#chr',
                 how='left'
             ).set_index(
