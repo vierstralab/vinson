@@ -26,9 +26,30 @@ def get_bg_for_peaks(peaks_df: pd.DataFrame, stats_path):
         print(peaks_without_bg)
         non_merged = merged.loc[peaks_without_bg.index]
         non_merged.query('start < segment_end & end > segment_start', inplace=True)
-        assert len(non_merged) == len(peaks_without_bg), f"Could not find bg for all peaks without summit bg {len(non_merged)} vs {len(peaks_without_bg)}"
+
         non_merged['has_bg'] = True
         merged = pd.concat([merged.query('has_bg'), non_merged])
+
+        if len(non_merged) < len(peaks_without_bg):
+            print(f"Could not find bg for {len(peaks_without_bg) - len(non_merged)} peaks. Reverting to using chromsome-level bg estimates for these peaks.")
+            chrom_stats = pd.read_table(stats_path).query(
+                'fit_type == "global"'
+            )
+            remaining_peaks = peaks_without_bg.index.difference(non_merged.index)
+
+            remaining_peak_calls = peaks_df[['#chr', 'start', 'end', 'summit']].set_index(
+                ['#chr', 'summit']
+            ).loc[
+                remaining_peaks
+            ].reset_index().merge(
+                chrom_stats[['bg_r', 'bg_p']],
+                on='#chr',
+                how='left'
+            ).set_index(
+                ['#chr', 'summit']
+            )
+            remaining_peak_calls['has_bg'] = True
+            merged = pd.concat([merged, remaining_peak_calls])
 
     merged = merged.query('has_bg').loc[
         peaks_df.set_index(['#chr', 'summit']).index
@@ -36,6 +57,7 @@ def get_bg_for_peaks(peaks_df: pd.DataFrame, stats_path):
     bg = merged.eval('bg_r * bg_p / (1 - bg_p)').values
     assert len(bg) == len(peaks_df), f"Background length mismatch {len(bg)} vs {len(peaks_df)}"
     return bg
+
 
 def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> VinsonData:
     anndata_slice = anndata[sample_ids, :]
