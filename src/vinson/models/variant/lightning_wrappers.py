@@ -37,6 +37,10 @@ class VariantEmbedModel(AbstractSequenceModel):
         )
         self.embed_model = embed_model
         if init_weights:
+            # self.trunk_model.apply(initialize_weights)
+            # self.embed_model.apply(initialize_weights)
+            # self.head_model.apply(initialize_weights)
+            # self.final.apply(initialize_weights)
             self.embed_model.apply(initialize_weights)
 
         self.criterion = BinomialMixtureNLLLoss(relative=True, reduction="none")
@@ -63,7 +67,8 @@ class VariantEmbedModel(AbstractSequenceModel):
         alt_features = self.trunk_model(seq_alt, x)
 
         x = torch.subtract(ref_features, alt_features)
-
+        # x = torch.cat([ref_features, alt_features], dim=-1)
+        
         x = self.head_model(x)
         x = self.forward_final(x) # in variant model, outputs are always logits of ES -infinity to +infinity
         return x
@@ -179,8 +184,8 @@ class VariantEmbedModelWrapper(L.LightningModule):
             self.embedding_alt,
         ]:
             mod.eval()
-            for p in mod.parameters():
-                p.requires_grad = False
+            # for p in mod.parameters():
+            #     p.requires_grad = False
 
     def __getattr__(self, name):
         if name != "model":
@@ -196,6 +201,8 @@ class VariantEmbedModelWrapper(L.LightningModule):
         features_alt = self.trunk_alt(seq_alt, self.embedding_alt(embed.clone()))
 
         x = torch.subtract(features_ref, features_alt)
+        # x = torch.cat([features_ref, features_alt], dim=-1)
+
 
         x = self.model.head_model(x)
         x = self.model.forward_final(x)

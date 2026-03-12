@@ -67,11 +67,13 @@ def _parse_scheduler_and_optimizer(config: dict):
     scheduler_name = config['hparams'].get("lr_scheduler")
     scheduler_kwargs = config['hparams'].get("lr_scheduler_kwargs", {})
     optimizer_kwargs = config['hparams']["optimizer_kwargs"]
+
     return {
         'lr_scheduler': scheduler_name,
         'lr_scheduler_kwargs': scheduler_kwargs,
         'optimizer_kwargs': optimizer_kwargs
     }
+
 
 
 def classifier_model_from_config(config: dict, checkpoint_path: str = None):
@@ -119,6 +121,62 @@ def _sequence_model_from_config(config):
     return torch_modules_kwargs
 
 
+# def dhs_model_from_config(config, checkpoint_path=None):
+#     """
+#     Construct a DHS model from config.
+    
+#     If checkpoint_path is provided, only trunk_model and embed_model weights
+#     are loaded, ignoring the head_model to allow for transfer to VariantEmbedModel.
+#     """
+#     model_type = config["model_type"]
+#     assert model_type in MODEL_FACTORY_REGISTRY, (
+#         f"Model type {model_type} not supported for DHS models. "
+#         f"Available types: {list(MODEL_FACTORY_REGISTRY.keys())}"
+#     )
+
+#     LightningModelCls: AbstractSequenceModel = LIGHTNING_MODEL_REGISTRY[model_type]
+
+#     # Build base modules from config
+#     torch_modules_kwargs = _sequence_model_from_config(config)
+
+#     # Construct head as usual (needed for DHS training)
+#     head = MLPBlock(**config['model_arch']['head'])
+#     torch_modules_kwargs["head_model"] = head
+
+#     if checkpoint_path is not None:
+#         # Initialize the model (head included, will not load weights)
+#         scheduler_kwargs = _parse_scheduler_and_optimizer(config)
+#         model = LightningModelCls(
+#             **torch_modules_kwargs,
+#             **scheduler_kwargs,
+#             **config.get("model_kwargs", {}),
+#         )
+
+#         # Load checkpoint manually
+#         ckpt = torch.load(checkpoint_path, map_location=device)
+#         state_dict = ckpt["state_dict"]
+
+#         # Keep only trunk and embed weights, ignore head/final
+#         filtered_state = {
+#             k: v for k, v in state_dict.items()
+#             if k.startswith("trunk_model.") or k.startswith("embed_model.")
+#         }
+
+#         model.load_state_dict(filtered_state, strict=False)
+#         print(f"Loaded trunk + embed weights from {checkpoint_path}, skipped head.")
+
+#     else:
+#         # Normal DHS model initialization for training from scratch
+#         scheduler_kwargs = _parse_scheduler_and_optimizer(config)
+#         model = LightningModelCls(
+#             **torch_modules_kwargs,
+#             **scheduler_kwargs,
+#             **config.get("model_kwargs", {}),
+#         )
+
+#     return model
+
+
 def dhs_model_from_config(config, checkpoint_path=None):
     model_type = config["model_type"]
 
@@ -143,15 +201,16 @@ def dhs_model_from_config(config, checkpoint_path=None):
             **torch_modules_kwargs,
             map_location=device
         )
-        
+    
     else:
         scheduler_kwargs = _parse_scheduler_and_optimizer(config)
         model = LightningModelCls(
             **torch_modules_kwargs,
             **scheduler_kwargs,
-            **config["model_kwargs"],
+            **config.get('model_kwargs', {}),
         )
     return model
+
 
 #need to remove config key needing model_kwargs and data_params
 #MLP block expcets config param to be activations not activation
@@ -164,7 +223,6 @@ def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint
     )
 
     scheduler_kwargs = _parse_scheduler_and_optimizer(config)
-    
 
     if checkpoint_path is not None:
         if sequence_model_checkpoint is not None:
@@ -172,11 +230,21 @@ def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint
         
     #variant model doesnt currently have model_kwargs
     if sequence_model_checkpoint is not None and checkpoint_path is None:
-        sequence_model = dhs_model_from_config(
-            config,
-            checkpoint_path=sequence_model_checkpoint,
-        )
-        print('loading from checkpoint')
+         # Build DHS model WITHOUT loading checkpoint
+        sequence_model = dhs_model_from_config(config, checkpoint_path=None)
+
+        # Manually load only trunk + embed weights
+        ckpt = torch.load(sequence_model_checkpoint, map_location=device)
+        state_dict = ckpt["state_dict"]
+        #only load weights from trunk and embed, not head of dhs model
+        filtered_state = {
+            k: v
+            for k, v in state_dict.items()
+            if k.startswith("trunk_model.") or k.startswith("embed_model.")
+        }
+        sequence_model.load_state_dict(filtered_state, strict=False)
+        print(f"Loaded trunk + embed weights from {sequence_model_checkpoint}")
+
         variant_model = VariantEmbedModel.from_sequence_embed_model(
             sequence_embed_model=sequence_model,
             head_model=head,
@@ -199,7 +267,54 @@ def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint
                 **scheduler_kwargs,
                 **config.get('model_kwargs', {}),
             )
+
     return variant_model
+
+# def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint_path=None):
+#     model_type = config["model_type"]
+#     assert model_type in ("basset_variant_embed", "legnet_variant_embed"), f"Model type {model_type} not supported for variant models. Available types: 'basset_variant_embed', 'legnet_variant_embed'"
+
+#     head = MLPBlock(
+#         **config['model_arch']['head']
+#     )
+
+#     scheduler_kwargs = _parse_scheduler_and_optimizer(config)
+
+#     if checkpoint_path is not None:
+#         if sequence_model_checkpoint is not None:
+#             print('Ignoring sequence_model_checkpoint, as variant models load from a single checkpoint_path.')
+        
+
+#     if sequence_model_checkpoint is not None and checkpoint_path is None:
+#         sequence_model = dhs_model_from_config(
+#             config,
+#             checkpoint_path=sequence_model_checkpoint,
+#         )
+#         variant_model = VariantEmbedModel.from_sequence_embed_model(
+#             sequence_embed_model=sequence_model,
+#             head_model=head,
+#             **scheduler_kwargs,
+#             **config.get('model_kwargs', {}),
+#         )
+#     else:
+#         torch_modules_kwargs = _sequence_model_from_config(config)
+#         torch_modules_kwargs['head_model'] = head
+
+#         if checkpoint_path is not None:
+#             variant_model = VariantEmbedModel.load_from_checkpoint(
+#                 checkpoint_path=checkpoint_path,
+#                 **torch_modules_kwargs,
+#                 map_location=device
+#             )
+#         else:
+#             variant_model = VariantEmbedModel(
+#                 **torch_modules_kwargs,
+#                 **scheduler_kwargs,
+#                 **config.get('model_kwargs', {}),
+#             )
+#     return variant_model
+
+
 
 def dataset_from_h5(
     h5_file: str,

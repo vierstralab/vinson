@@ -71,7 +71,7 @@ def main(args):
         devices=args.devices,
         logger_type=config["logging_params"]["logger_type"],
         val_check_interval=config["logging_params"]["val_check_interval"],
-        epochs = 25,
+        epochs = epochs,
         **trainer_kwargs, #should include max_epochs if want
     )
     
@@ -121,7 +121,36 @@ def main(args):
     model.debug = True  # Enable debug mode
 
     
-    # Start training
+    
+    # if model.lr_scheduler == "OneCycleLR":
+    #     train_loader = datamodule.train_dataloader()
+    #     steps_per_epoch = len(train_loader)
+        
+    #     # If you use gradient accumulation or DDP, adjust
+    #     if hasattr(trainer, "accumulate_grad_batches"):
+    #         steps_per_epoch = steps_per_epoch // trainer.accumulate_grad_batches
+        
+    #     # If DDP, divide by number of devices
+    #     if hasattr(trainer, "num_devices"):
+    #         steps_per_epoch = steps_per_epoch // trainer.num_devices
+        
+    #     print(f"Estimated steps per epoch: {steps_per_epoch}")
+    #     model.lr_scheduler_kwargs["epochs"] = trainer.max_epochs
+    #     print(f"trainer epochs {trainer.max_epochs}")
+    #     model.lr_scheduler_kwargs["steps_per_epoch"] = steps_per_epoch
+
+    
+    # # Start training
+    # fro_file = os.path.join(debug_log_dir, "frozen_params.log")
+
+
+    # with open(fro_file, "w") as f:
+    #     for name, p in model.named_parameters():
+    #         status = "trainable" if p.requires_grad else "frozen"
+    #         f.write(f"{status}: {name}\n")
+
+
+
     fit_model(
         model,
         trainer,

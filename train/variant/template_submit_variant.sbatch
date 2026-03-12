@@ -25,8 +25,10 @@ srun python {script_dir}/variant/train_variant.py \
     --outdir {outdir} \
     --seed 42 \
     --genotype_file {genotype} \
+    {checkpoint} \
+    {sequence_model_checkpoint} \
+    {epochs} \
     {anndata} \
     {fasta} \
     {config} \
-    {debug} \
-    {checkpoint}
+    {debug} 

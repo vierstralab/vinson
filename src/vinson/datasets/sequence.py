@@ -13,7 +13,7 @@ from vinson.utils.helpers import replace_at
 import logging
 
 logger = logging.getLogger(__name__)
-
+import warnings
 
 class BaseSequenceDataset(Dataset):
     """
@@ -145,8 +145,7 @@ class BaseSequenceDataset(Dataset):
                         "alt",
                         "indiv_id",
                         "gt",
-                        "phase_block",
-                    ],
+                        "phase_block",                    ],
                     na_values={"phase_block": "."},
                 )
             else:
@@ -177,7 +176,7 @@ class BaseSequenceDataset(Dataset):
             self,
             interval: GenomicInterval,
             indiv_id: str,
-            reference_variant: VariantInterval=None
+            reference_variant: VariantInterval=None,
         ):
         """
         
@@ -209,7 +208,6 @@ class BaseSequenceDataset(Dataset):
                 variants = variants.rename(columns={"phase_block": "phase_set"})
             else:
                 variants["phase_set"] = None
-                #assert 'phase_set' in variants.columns, "Phased genotype data required for variant-aligned sequence extraction."
     
         # If reference_variant is provided, attach gt and phase_set to it
         if reference_variant is not None:
@@ -234,22 +232,14 @@ class BaseSequenceDataset(Dataset):
     
         # Convert variants to VariantInterval objects
         variants = df_to_variant_intervals(variants, extra_columns=extra_columns)
-    
-        # Check for ambiguous positions
-        # TO DO: clean up to remove ambiguous code, just throw warning
-        variants_by_pos = {}
+
         for v in variants:
-            variants_by_pos.setdefault(v.start, []).append(v)
-    
-        for pos, vars_at_pos in variants_by_pos.items():
-            if len(vars_at_pos) > 1:
-                
-                print(f"Ambiguous variants found at {pos} for {indiv_id}")
-                # TODO: handle ambiguous cases properly
-    
-            # Only one variant, safe to process
-            v = vars_at_pos[0]
-            rel = pos - interval.start
+
+            rel = v.start - interval.start
+
+            if rel >= len(interval) or rel <= 0:
+                #fixes error of trying to replace at end of sequence causing adding extra to end increasing seq len by one
+                continue
     
             # IUPAC sequence
             iupac_base = get_iupac_char_from_alleles(v.ref, v.alt)
@@ -282,12 +272,14 @@ class BaseSequenceDataset(Dataset):
             rel_pos = reference_variant.start - interval.start
             if reference_variant.gt == "1|0":
                 seq_ref, seq_alt = seq_alt, seq_ref
+                
             if (seq_ref[rel_pos] != reference_variant.ref) or (seq_alt[rel_pos] != reference_variant.alt):
                 raise ValueError(
                     f"Expected ref & alt alleles not found in correct position "
                     f"(reference_variant={reference_variant}, indiv_id={indiv_id})"
                 )
-    
+        # if len(seq_ref) != 1344 or len(seq_alt) != 1344:
+        #     warnings.warn(f"[DEBUG WARNING] in at end, {reference_variant}, {seq_ref}, alt {seq_alt}, {indiv_id}, ref {reference_variant.ref}, alt {reference_variant.alt}, interval {interval}")
         return len(variants), seq_iupac, seq_ref, seq_alt
 
 

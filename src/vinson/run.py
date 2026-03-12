@@ -55,7 +55,7 @@ def init_multigpu_trainer(
     logger = CSVLogger(os.path.join(outdir, "logs"))
 
     callbacks = [
-        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.005, patience=10),
+        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.005, patience=50),
         ModelCheckpoint(
             monitor="val_loss",
             mode="min",
@@ -80,6 +80,7 @@ def init_multigpu_trainer(
         gradient_clip_val=1.0,
         reload_dataloaders_every_n_epochs=1,
         num_sanity_val_steps=0,
+        sync_batchnorm=True,
         **trainer_kwargs,
     )
     return trainer

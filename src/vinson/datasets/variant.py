@@ -34,7 +34,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
     """
 
     def __init__(
-        self,
+        self,                                                           
         data: VinsonData,
         fasta_file: str,
         genotype_file: str = None,
@@ -151,14 +151,15 @@ class VariantEmbedDataset(BaseSequenceDataset):
         
         # Inject genotypes if genotype files provided
         #variant interval pos-1 because dataformatting is using end as pos
+        #include sample id?
         if self.include_genotypes:
             indiv_id = data_slice['indiv_id']   
             _, _, dna_seq_ref, dna_seq_alt = self.get_sample_sequence(
                 interval, 
                 indiv_id,
                 reference_variant=VariantInterval(
-                    chrom=chrom, start=pos-1, end=pos, ref=ref, alt=alt
-                )
+                    chrom=chrom, start=pos-1, end=pos, ref=ref, alt=alt,
+                ),
             )
         else:
             dna_seq_ref = self.fasta_extr[interval]

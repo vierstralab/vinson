@@ -18,4 +18,5 @@ def save_config(config, path):
         yaml.safe_dump(config, f)
 
 def replace_at(s, i, char):
+    #makes sequence length too long if replaces char at start or end of seq
     return s[:i] + char + s[i + 1:]

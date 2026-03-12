@@ -24,8 +24,11 @@ def configure_optimizer(
         **optimizer_kwargs,
     )
 
-    if lr_scheduler is None:
-        return optimizer
+    if lr_scheduler is None or str(lr_scheduler).lower() == "none":
+        return {
+            "optimizer": optimizer
+        }
+
 
     if lr_scheduler_kwargs is None:
         lr_scheduler_kwargs = {}

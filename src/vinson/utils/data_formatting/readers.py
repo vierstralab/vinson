@@ -100,7 +100,7 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str) -> V
     encoding_sources = {
         "sample_id": train_adata.obs_names,
         "chrom": train_adata.var["#chr"],
-        #"pos": train_adata.var["end"],
+        # "pos": train_adata.var["end"],
         'ref': train_adata.var['ref'],
         'alt': train_adata.var['alt']
     }
