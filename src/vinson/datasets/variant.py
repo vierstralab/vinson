@@ -230,19 +230,19 @@ class VariantInferenceDataset(BaseSequenceDataset):
         row = self.data[i]
         
         chrom = row["chrom"]
-        summit = row["summit"] # 0-based
+        pos = row["pos"] # 0-based
         ref = row["ref"]
         alt = row["alt"]
         sample_id = row["sample_id"]
 
         # base genomic context
-        interval = self._get_window(chrom, summit)
+        interval = self._get_window(chrom, pos)
         seq = self.fasta_extr[interval]
 
         # enforce alleles
-        center = summit - interval.start
+        center = pos - interval.start
         # optional sanity check
-        assert seq[center] == ref, f"Reference allele mismatch at {chrom}:{summit} for sample {sample_id}: expected {ref}, got {seq[center]}"
+        assert seq[center] == ref, f"Reference allele mismatch at {chrom}:{pos} for sample {sample_id}: expected {ref}, got {seq[center]}"
 
         seq_ref = replace_at(seq, center, ref)
         seq_alt = replace_at(seq, center, alt)
@@ -257,5 +257,5 @@ class VariantInferenceDataset(BaseSequenceDataset):
             "ohe_seq_alt": ohe_alt,
             "embed": embed,
             "chrom": chrom,
-            "summit": summit,
+            "pos": pos,
         }
