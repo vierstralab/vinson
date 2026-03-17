@@ -258,6 +258,7 @@ class VariantInferenceDataset(BaseSequenceDataset):
             "ohe_seq_ref": ohe_ref,
             "ohe_seq_alt": ohe_alt,
             "center_seq": center_base,
+            'seq': seq,
             "ref": ref,
             "alt": alt,
             "embed": embed,
