@@ -93,7 +93,6 @@ class BaseSequenceDataset(Dataset):
             interval.shift(shift, inplace=True)
         return interval
 
-
     def __getitem__(self, i):
         """
         Retrieve a single data item by index.
@@ -130,8 +129,7 @@ class BaseSequenceDataset(Dataset):
             x = x + np.random.normal(0, self.noise, len(x)).astype(np.float32)
 
         return x
-    
-                    
+                 
     def _init_fileread(self):
         # pysam is not thread-safe
         if not self.fasta_extr:
