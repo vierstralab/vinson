@@ -241,8 +241,10 @@ class VariantInferenceDataset(BaseSequenceDataset):
 
         # enforce alleles
         center = start - interval.start
+
+        center_base = seq[center].upper()
         # optional sanity check
-        assert seq[center] == ref or seq[center] == alt, f"Alleles mismatch at {chrom}:{start} for sample {sample_id}: expected {ref}/{alt}, got {seq[center]}"
+        assert center_base in (ref, alt), f"Alleles mismatch at {chrom}:{start} for sample {sample_id}: expected {ref}/{alt}, got {seq[center]}"
 
         seq_ref = replace_at(seq, center, ref)
         seq_alt = replace_at(seq, center, alt)
@@ -255,7 +257,7 @@ class VariantInferenceDataset(BaseSequenceDataset):
         return {
             "ohe_seq_ref": ohe_ref,
             "ohe_seq_alt": ohe_alt,
-            "center_seq": seq[center],
+            "center_seq": center_base,
             "ref": ref,
             "alt": alt,
             "embed": embed,
