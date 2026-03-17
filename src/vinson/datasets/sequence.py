@@ -85,6 +85,14 @@ class BaseSequenceDataset(Dataset):
             self.fasta_extr.close()
         if self.genotype_extr:
             self.genotype_extr.close()
+    
+    def _get_window(self, chrom, summit):
+        interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
+        if self.jitter > 0:
+            shift = np.random.randint(-self.jitter, self.jitter + 1)
+            interval.shift(shift, inplace=True)
+        return interval
+
 
     def __getitem__(self, i):
         """
@@ -391,12 +399,7 @@ class SequenceOnlyDataset(BaseSequenceDataset):
         is_multitask = density.ndim > 0
 
         # Define region
-        interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
-
-        # Jitter/shift region as necesary
-        if self.jitter > 0:
-            shift = np.random.randint(-self.jitter, self.jitter + 1)
-            interval.shift(shift, inplace=True)
+        interval = self._get_window(chrom, summit)
 
         # indiv_id is expected to be in self.data if genotypes are included
         if self.include_genotypes:
