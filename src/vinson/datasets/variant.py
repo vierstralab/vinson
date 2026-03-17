@@ -237,12 +237,12 @@ class VariantInferenceDataset(BaseSequenceDataset):
 
         # base genomic context
         interval = self._get_window(chrom, start)
-        seq = self.fasta_extr[interval]
+        seq = self.fasta_extr[interval].upper()
 
         # enforce alleles
         center = start - interval.start
 
-        center_base = seq[center].upper()
+        center_base = seq[center]
         # optional sanity check
         assert center_base in (ref, alt), f"Alleles mismatch at {chrom}:{start} for sample {sample_id}: expected {ref}/{alt}, got {seq[center]}"
 
