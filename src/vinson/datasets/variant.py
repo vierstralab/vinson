@@ -218,11 +218,12 @@ class VariantEmbedDataset(BaseSequenceDataset):
 
 class VariantInferenceDataset(BaseSequenceDataset):
 
-    def __init__(self, data: VinsonData, **kwargs):
+    def __init__(self, data: VinsonData, strict_ref_check=True, **kwargs):
         super().__init__(
             data=data,
             **kwargs
         )
+        self.strict_ref_check = strict_ref_check
         self.include_genotypes = False
 
     def __getitem__(self, i):
@@ -244,7 +245,11 @@ class VariantInferenceDataset(BaseSequenceDataset):
 
         center_base = seq[center]
         # optional sanity check
-        assert center_base in (ref, alt), f"Alleles mismatch at {chrom}:{start} for sample {sample_id}: expected {ref}/{alt}, got {seq[center]}"
+        msg = f"Alleles mismatch at {chrom}:{start} for sample {sample_id}: expected {ref}/{alt}, got {seq[center]}"
+        if self.strict_ref_check:
+            assert center_base in (ref, alt), msg
+        elif center_base not in (ref, alt):
+            logger.warning(msg + ". Proceeding anyway (strict_ref_check=False).")
 
         seq_ref = replace_at(seq, center, ref)
         seq_alt = replace_at(seq, center, alt)
