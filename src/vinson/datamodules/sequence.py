@@ -1,9 +1,7 @@
 import lightning.pytorch as L
 import numpy as np
 from torch.utils.data import DataLoader
-from vinson.utils.data_formatting import (
-    extract_data_from_train_anndata,
-)
+from vinson.utils.data_formatting import extract_data_from_train_anndata
 from vinson.datasets.sequence import SequenceEmbedDataset
 from itertools import cycle
 
@@ -27,6 +25,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         genotype_file=None,
         train_dataset_kwargs={},
         valid_dataset_kwargs={},
+        pre_jitter=False,
         **dataloader_kwargs,
     ):
         """
@@ -51,6 +50,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.train_dataset_kwargs = train_dataset_kwargs
         self.valid_dataset_kwargs = valid_dataset_kwargs
         self.dataloader_kwargs = dataloader_kwargs
+        self.pre_jitter = pre_jitter
         self.train_data = None
         self.validation_data = None
         self.train_size = None
@@ -72,7 +72,11 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.train_data = {}
         for name in tqdm(self.epoch_names, desc="Loading training data for epochs"):
             self.train_data[name] = self.get_data(
-                adata, name, dhs_split="train", sample_split="train"
+                adata,
+                name,
+                dhs_split="train",
+                sample_split="train",
+                pre_jitter=self.pre_jitter
             )
             if name == self.validation_epoch:
                 self.validation_data = {
@@ -81,6 +85,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
                         self.validation_epoch,
                         dhs_split="val",
                         sample_split="train",
+                        # don't apply pre-jitter to validation data
+                        pre_jitter=False,
                     )
                 }
             for layer in layer_names:
@@ -137,7 +143,11 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
     @staticmethod
     def get_data(
-        full_adata: ad.AnnData, suffix, dhs_split="train", sample_split="train"
+        full_adata: ad.AnnData,
+        suffix,
+        dhs_split="train",
+        sample_split="train",
+        pre_jitter=False
     ) -> VinsonData:
         """
         Generic method to extract data from anndata object for a given split
@@ -156,4 +166,4 @@ class SeqEmbedDataModule(L.LightningDataModule):
             full_adata.varm["split_data"] == dhs_split,
         ]
 
-        return extract_data_from_train_anndata(adata, suffix)
+        return extract_data_from_train_anndata(adata, suffix, pre_jitter=pre_jitter)

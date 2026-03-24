@@ -5,6 +5,7 @@ process generate_sample_validation_data {
     conda "${params.conda}"
     publishDir "${params.outdir}/validation_data"
     tag "${prefix}"
+    label "med_mem"
 
     input:
         val meta

@@ -46,7 +46,7 @@ def init_multigpu_trainer(
     devices=1,
     logger_type="csv",
     val_check_interval=1.0,
-    epochs = 5,
+    max_epochs=20,
     **trainer_kwargs,
 ):
     """Initialize a Lightning Trainer for multi-GPU runs."""
@@ -55,7 +55,7 @@ def init_multigpu_trainer(
     logger = CSVLogger(os.path.join(outdir, "logs"))
 
     callbacks = [
-        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.005, patience=50),
+        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.005, patience=30),
         ModelCheckpoint(
             monitor="val_loss",
             mode="min",
@@ -70,7 +70,7 @@ def init_multigpu_trainer(
     trainer = L.Trainer(
         logger=logger,
         callbacks=callbacks,
-        max_epochs=epochs,
+        max_epochs=max_epochs,
         accelerator=accelerator,
         strategy=strategy,
         num_nodes=nodes,

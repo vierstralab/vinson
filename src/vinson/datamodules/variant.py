@@ -37,8 +37,12 @@ class SeqEmbedVariantDataModule(SeqEmbedDataModule):
 
 
     @staticmethod
-    def get_data(full_adata: ad.AnnData, suffix: str,
-                 dhs_split="train", sample_split="train"):
+    def get_data(
+        full_adata: ad.AnnData,
+        suffix: str,
+        dhs_split="train",
+        sample_split="train",
+        pre_jitter=False):
         """Extract variant-level data from AnnData."""
         adata = full_adata[
             full_adata.obsm["split_data"] == sample_split,

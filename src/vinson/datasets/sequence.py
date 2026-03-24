@@ -308,7 +308,6 @@ class SequenceOnlyDataset(BaseSequenceDataset):
         Maximum number of bases to shift sequences.
     noise : float, default 0
         Standard deviation of Gaussian noise added to embeddings.
-
     """
     def __init__(
         self,
@@ -450,6 +449,7 @@ class SequenceOnlyDataset(BaseSequenceDataset):
             "summit": summit,
             "sample_id": sample_id,
         }
+
 
 class SequenceEmbedDataset(SequenceOnlyDataset):
 

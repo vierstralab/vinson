@@ -71,7 +71,7 @@ def main(args):
         devices=args.devices,
         logger_type=config["logging_params"]["logger_type"],
         val_check_interval=config["logging_params"]["val_check_interval"],
-        epochs = epochs,
+        max_epochs = epochs,
         **trainer_kwargs, #should include max_epochs if want
     )
     
@@ -91,65 +91,31 @@ def main(args):
         genotype_file=args.genotype_file,
         **dataloader_kwargs,
     )
-
     
-    datamodule.setup(stage="fit")  # <-- VERY IMPORTANT
-    
-
+    # datamodule.setup(stage="fit") 
 
     model = variant_model_from_config(config, sequence_model_checkpoint=args.sequence_model_checkpoint, checkpoint_path=checkpoint)
 
-    #debugs remove later
-    debug_log_dir = os.path.join(outdir, "batch_logs")
-    os.makedirs(debug_log_dir, exist_ok=True)
-    batch_log_file = os.path.join(debug_log_dir, "batch_debug.csv")
+    # #debugs remove later
+    # debug_log_dir = os.path.join(outdir, "batch_logs")
+    # os.makedirs(debug_log_dir, exist_ok=True)
+    # batch_log_file = os.path.join(debug_log_dir, "batch_debug.csv")
 
     
     # Write header
-    with open(batch_log_file, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "epoch", "batch_idx", "loss",
-            "min_lfc", "max_lfc",
-            "min_ref_counts", "max_ref_counts",
-            "min_total_counts", "max_total_counts",
-            "min_bad_score", "max_bad_score",
-        ])
+    # with open(batch_log_file, "w", newline="") as f:
+    #     writer = csv.writer(f)
+    #     writer.writerow([
+    #         "epoch", "batch_idx", "loss",
+    #         "min_lfc", "max_lfc",
+    #         "min_ref_counts", "max_ref_counts",
+    #         "min_total_counts", "max_total_counts",
+    #         "min_bad_score", "max_bad_score",
+    #     ])
     
-    # Attach file path to model
-    model.batch_log_file = batch_log_file
-    model.debug = True  # Enable debug mode
-
-    
-    
-    # if model.lr_scheduler == "OneCycleLR":
-    #     train_loader = datamodule.train_dataloader()
-    #     steps_per_epoch = len(train_loader)
-        
-    #     # If you use gradient accumulation or DDP, adjust
-    #     if hasattr(trainer, "accumulate_grad_batches"):
-    #         steps_per_epoch = steps_per_epoch // trainer.accumulate_grad_batches
-        
-    #     # If DDP, divide by number of devices
-    #     if hasattr(trainer, "num_devices"):
-    #         steps_per_epoch = steps_per_epoch // trainer.num_devices
-        
-    #     print(f"Estimated steps per epoch: {steps_per_epoch}")
-    #     model.lr_scheduler_kwargs["epochs"] = trainer.max_epochs
-    #     print(f"trainer epochs {trainer.max_epochs}")
-    #     model.lr_scheduler_kwargs["steps_per_epoch"] = steps_per_epoch
-
-    
-    # # Start training
-    # fro_file = os.path.join(debug_log_dir, "frozen_params.log")
-
-
-    # with open(fro_file, "w") as f:
-    #     for name, p in model.named_parameters():
-    #         status = "trainable" if p.requires_grad else "frozen"
-    #         f.write(f"{status}: {name}\n")
-
-
+    # # Attach file path to model
+    # model.batch_log_file = batch_log_file
+    # model.debug = True  # Enable debug mode
 
     fit_model(
         model,

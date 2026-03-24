@@ -1,0 +1,55 @@
+model_type:
+  legnet_variant_embed
+
+model_arch:
+  n_independent_embeds: 4
+
+  cell_embed:
+    n_inputs: 637
+    hidden_dims: [318]
+    batch_norm: true
+    dropout: 0
+    batch_norm_momentum: 0.1
+    activations: 'silu'
+    order: 'fc-drop-bn-act' #'fc-drop-bn-act'
+  
+  trunk:
+    in_ch: 4
+    stem_ch: 96             
+    ef_block_sizes: [112, 128, 144, 160]
+    ef_ks: 9       
+    stem_ks: [6, 9, 12, 15]             
+    pool_sizes: [4, 4, 2, 2]            
+    resize_factor: 4
+
+  head:
+    n_inputs: 640 # x2 ef_block_size[-1]
+    hidden_dims: [640, 640]
+    batch_norm: true
+    dropout: 0.05
+    batch_norm_momentum: 0.1
+    activations: 'silu'
+    order: 'fc-drop-bn-act' #'fc-drop-bn-act'
+    
+hparams:
+  batch_size: 256
+  epochs: 100
+  optimizer_kwargs:
+    lr: 1.0e-5
+  lr_scheduler: None
+
+
+dataloader_kwargs:
+  batch_size: 256
+
+train_augmentation_kwargs:
+  reverse_complement: true
+  jitter: 20
+  flip_alleles: true
+validation_augmentation_kwargs:
+  reverse_complement: false
+  jitter: 0
+  flip_alleles: false
+logging_params:
+  val_check_interval: 0.2
+  logger_type: csv

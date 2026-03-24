@@ -38,8 +38,8 @@ class VariantEmbedDataset(BaseSequenceDataset):
         data: VinsonData,
         fasta_file: str,
         genotype_file: str = None,
-        flip_alleles=True,
-        reverse_complement=True,
+        flip_alleles=False,
+        reverse_complement=False,
         jitter=0,
         noise=0,
     ):
