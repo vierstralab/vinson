@@ -255,9 +255,13 @@ def extract_data_from_backed_anndata_wide(
         with_embeddings=False
     )
 
-    data["sample_id"] = np.tile(
-        data["sample_id"],
-        len(data["dhs_id"])
+    if 'indiv_id' in data:
+        del data['indiv_id']
+
+    for field in ['sample_id', 'read_depth']:
+        data[field] = np.tile(
+        data[field],
+        [len(data["dhs_id"]), 1]
     )
 
     data, encodings = sanitize_data(data, encodings, is_variant=False)
