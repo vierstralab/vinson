@@ -218,7 +218,8 @@ class SequenceOnlyModel(AbstractSequenceModel):
         if self.regression:
             if not self.log_output:
                 y_hat = y_density
-                density = batch['density']
+                # density = batch['density']
+                density = batch["density"].squeeze(-1)
             self.valid_metrics.update(y_hat, density)
         else:
             self.valid_metrics.update(torch.sigmoid(y_hat), y.int())
