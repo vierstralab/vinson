@@ -238,6 +238,10 @@ class SequenceOnlyModel(AbstractSequenceModel):
         for k, v in metrics.items():
             v = torch.as_tensor(v)
             if v.numel() > 1:
+                # Log each task separately (Need to check which sample perform better)
+                for j in range(v.numel()):
+                    out[f"{k}_task{j:02d}"] = v[j]
+                    
                 out[k] = v.mean() # log mean over tasks for multi-task
             else:
                 out[k] = v.item()
