@@ -21,7 +21,6 @@ class VariantEmbedModel(AbstractSequenceModel):
         self,
         trunk_model: torch.nn.Module,
         head_model: MLPBlock,
-        # embed_model: MLPBlock,
         lr_scheduler: Optional[str]=None,
         optimizer_kwargs: Optional[Dict[str, Any]]=None,
         lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
@@ -99,7 +98,8 @@ class VariantEmbedModel(AbstractSequenceModel):
     def training_step(self, batch, batch_idx):
         loss, *_ = self.step(batch, batch_idx)
 
-        self.log("loss", loss, on_step=True, on_epoch=False, sync_dist=True)
+        self.log("loss", loss, on_step=True, on_epoch=False, 
+                 sync_dist=True,prog_bar=True)
 
         return loss
 
@@ -109,12 +109,22 @@ class VariantEmbedModel(AbstractSequenceModel):
 
         self.valid_metrics.update(y_hat, lfc)
 
-        self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True,prog_bar=True)
 
         return loss
 
     def predict_step(self, batch, batch_idx: int=None) -> torch.Tensor:
         return self._forward_from_batch(batch)
+
+    def freeze_trunk(self):
+        for param in self.trunk_model.parameters():
+            param.requires_grad = False
+        print("Trunk frozen.")
+
+    def unfreeze_trunk(self):
+        for param in self.trunk_model.parameters():
+            param.requires_grad = True
+        print("Trunk unfrozen.")
 
     @classmethod
     def from_sequence_embed_model(
@@ -131,6 +141,8 @@ class VariantEmbedModel(AbstractSequenceModel):
         )
         model.head_model.apply(initialize_weights)
         return model
+
+    
 
 
 class VariantEmbedModelWrapper(L.LightningModule):
@@ -165,7 +177,6 @@ class VariantEmbedModelWrapper(L.LightningModule):
         features_ref = self.trunk_ref(seq_ref, embed)
         features_alt = self.trunk_alt(seq_alt, embed.clone())
 
-        # x = torch.subtract(features_ref, features_alt)
         x = torch.cat([features_ref, features_alt], dim=-1)
 
 

@@ -6,8 +6,6 @@ import numpy as np
 import anndata as ad
 from argparse import ArgumentParser
 
-# from dnase_legnet.utils import AUC_callback,Pearsonr_callback, generate_name, read_configs_siamese
-
 import torch
 import lightning as L
 from lightning.pytorch.loggers import CSVLogger
@@ -18,8 +16,10 @@ from lightning.pytorch.callbacks import (
 )
 
 from vinson.utils.helpers import save_config, generate_run_name
-from vinson.run import set_global_seed,set_worker_seed,init_multigpu_trainer,fit_model
+from vinson.run import set_global_seed,set_worker_seed,init_multigpu_trainer, fit_model
 from vinson.from_config import read_configs,datamodule_from_config,variant_model_from_config
+from vinson.utils.data_formatting.adata_utils import get_number_of_train_examples
+
 
 torch.set_float32_matmul_precision('high')
 
@@ -56,19 +56,23 @@ def main(args):
         if args.checkpoint == "last"
         else args.checkpoint
     )
-    trainer_kwargs = {}
+    trainer_kwargs = config.get("trainer_kwargs", {})
+    
     if args.debug:
         epochs = 5
         trainer_kwargs["limit_train_batches"] = 100 * args.devices
         trainer_kwargs["limit_val_batches"] = 100 * args.devices
         config["logging_params"]["val_check_interval"] = 1.0
+    
+    early_stopping = config['hparams']['lr_scheduler'] != 'OneCycleLR'
         
     trainer = init_multigpu_trainer(
         outdir,
         accelerator=args.accelerator,
-        strategy=args.strategy,
+        strategy="ddp_find_unused_parameters_true",
         nodes=args.nodes,
         devices=args.devices,
+        early_stopping=early_stopping,
         logger_type=config["logging_params"]["logger_type"],
         val_check_interval=config["logging_params"]["val_check_interval"],
         max_epochs = epochs,
@@ -92,30 +96,19 @@ def main(args):
         **dataloader_kwargs,
     )
     
-    # datamodule.setup(stage="fit") 
+    datamodule.setup(stage="fit") 
 
     model = variant_model_from_config(config, sequence_model_checkpoint=args.sequence_model_checkpoint, checkpoint_path=checkpoint)
 
-    # #debugs remove later
-    # debug_log_dir = os.path.join(outdir, "batch_logs")
-    # os.makedirs(debug_log_dir, exist_ok=True)
-    # batch_log_file = os.path.join(debug_log_dir, "batch_debug.csv")
-
     
-    # Write header
-    # with open(batch_log_file, "w", newline="") as f:
-    #     writer = csv.writer(f)
-    #     writer.writerow([
-    #         "epoch", "batch_idx", "loss",
-    #         "min_lfc", "max_lfc",
-    #         "min_ref_counts", "max_ref_counts",
-    #         "min_total_counts", "max_total_counts",
-    #         "min_bad_score", "max_bad_score",
-    #     ])
-    
-    # # Attach file path to model
-    # model.batch_log_file = batch_log_file
-    # model.debug = True  # Enable debug mode
+    if config['hparams']['lr_scheduler'] == 'OneCycleLR':
+        if config['hparams']['lr_scheduler_kwargs'].get('total_steps') is None:
+            print('Setting total_steps for OneCycleLR...')
+            n_examples = get_number_of_train_examples(args.anndata_file,layer_prefix="ref_counts")
+            print(f"n_examples: {n_examples}")
+            config['hparams']['lr_scheduler_kwargs']['total_steps'] = round(n_examples / datamodule.dataloader_kwargs['batch_size'] / trainer.num_devices)
+        else:
+            print('total steps is in config')
 
     fit_model(
         model,

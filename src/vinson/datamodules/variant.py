@@ -3,7 +3,8 @@ import anndata as ad
 from .sequence import SeqEmbedDataModule
 
 from vinson.datasets.variant import VariantEmbedDataset
-from vinson.utils.data_formatting import extract_variant_data_from_anndata
+from vinson.utils.data_formatting.readers import extract_variant_data_from_anndata
+from vinson.utils.data_formatting.adata_utils import get_number_of_train_examples
 
 
 class SeqEmbedVariantDataModule(SeqEmbedDataModule):
@@ -18,7 +19,7 @@ class SeqEmbedVariantDataModule(SeqEmbedDataModule):
         if epoch is None:
             epoch = self.current_train_epoch
 
-        data = self.train_data[epoch]   # <-- already populated in setup()
+        data = self.train_data[epoch]
         return VariantEmbedDataset(
             data=data,
             fasta_file=self.fasta_file,
@@ -27,7 +28,7 @@ class SeqEmbedVariantDataModule(SeqEmbedDataModule):
         )
 
     def validation_dataset(self):
-        data = self.validation_data[self.validation_epoch]  # <-- already populated in setup()
+        data = self.validation_data[self.validation_epoch]  
         return VariantEmbedDataset(
             data=data,
             fasta_file=self.fasta_file,
@@ -44,6 +45,7 @@ class SeqEmbedVariantDataModule(SeqEmbedDataModule):
         sample_split="train",
         pre_jitter=False):
         """Extract variant-level data from AnnData."""
+        # TO DO: add in prejitter
         adata = full_adata[
             full_adata.obsm["split_data"] == sample_split,
             full_adata.varm["split_data"] == dhs_split,

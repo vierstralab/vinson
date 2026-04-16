@@ -203,8 +203,6 @@ def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint
         )
     else:
         trunk = _sequence_model_from_config(config)
-
-
         if checkpoint_path is not None:
             variant_model = VariantEmbedModel.load_from_checkpoint(
                 checkpoint_path=checkpoint_path,
@@ -213,15 +211,9 @@ def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint
                 map_location=device
             )
         else:
-            sequence_model = dhs_model_from_config(config, checkpoint_path=None)
-            # variant_model = VariantEmbedModel(
-            #     trunk_model=trunk,
-            #     head_model=head,
-            #     **scheduler_kwargs,
-            #     **config.get('model_kwargs', {}),
-            # )
-            variant_model = VariantEmbedModel.from_sequence_embed_model(
-                sequence_embed_model=sequence_model,
+            # sequence_model = dhs_model_from_config(config, checkpoint_path=None)
+            variant_model = VariantEmbedModel(
+                trunk_model=trunk,
                 head_model=head,
                 **scheduler_kwargs,
                 **config.get('model_kwargs', {}),

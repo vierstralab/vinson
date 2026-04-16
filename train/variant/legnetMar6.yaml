@@ -32,15 +32,16 @@ model_arch:
     order: 'fc-drop-bn-act' #'fc-drop-bn-act'
     
 hparams:
-  batch_size: 256
-  epochs: 100
-  optimizer_kwargs:
-    lr: 1.0e-5
+  batch_size: 128
+  optimizer_kwargs:
+    lr: 1.0e-5
   lr_scheduler: None
-
-
+    
 dataloader_kwargs:
-  batch_size: 256
+  batch_size: 128
+trainer_kwargs:
+  early_stopping_patience: 30
+  freeze_trunk_epochs: 1
 
 train_augmentation_kwargs:
   reverse_complement: true

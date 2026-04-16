@@ -270,6 +270,7 @@ class LegNetTrunkEmbed(LegNetTrunk):
                 embed,
                 nn.Linear(embed.output_dim, in_ch)
             )
+        
 
     def forward(self, x: torch.Tensor, embed: torch.Tensor) -> torch.Tensor:
         current_layer = self.stem(x)

@@ -28,7 +28,8 @@ def update_layers_dict(layers: dict, train_adata: ad.AnnData, suffix: str):
         layers[layer_name] = train_adata.layers[epoch_layer_name].tocoo()
 
 
-def get_number_of_train_examples(anndata_file):
+def get_number_of_train_examples(anndata_file,layer_prefix="class"):
+    #added layer prefix parameter because class is not layer of variant adata
     full_adata = ad.read_h5ad(anndata_file)
 
     if 'n_training_examples' in full_adata.uns:
@@ -40,7 +41,7 @@ def get_number_of_train_examples(anndata_file):
         ]
         n_examples = 0
         for epoch in adata.uns['epoch_names']:
-            layer_name = f"class.{epoch}"
+            layer_name = f"{layer_prefix}.{epoch}"
             if layer_name not in adata.layers:
                 raise ValueError(f"Layer {layer_name} not found in AnnData layers. Cannot determine number of training examples.")
             layer = adata.layers[layer_name]
