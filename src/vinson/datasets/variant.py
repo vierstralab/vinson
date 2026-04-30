@@ -11,6 +11,8 @@ from .sequence import BaseSequenceDataset, logger
 from genome_tools.data.extractors import FastaExtractor
 import warnings
 
+from vinson.utils.helpers import replace_at
+
 
 class VariantEmbedDataset(BaseSequenceDataset):
     """
@@ -211,4 +213,60 @@ class VariantEmbedDataset(BaseSequenceDataset):
             "weight": 1.0,
             "chrom": chrom,
             "pos": pos,
+        }
+
+
+class VariantInferenceDataset(BaseSequenceDataset):
+
+    def __init__(self, data: VinsonData, strict_ref_check=True, **kwargs):
+        super().__init__(
+            data=data,
+            **kwargs
+        )
+        self.strict_ref_check = strict_ref_check
+        self.include_genotypes = False
+
+    def __getitem__(self, i):
+        self._init_fileread()
+        row = self.data[i]
+        
+        chrom = row["chrom"]
+        start = row["pos"] - 1# 0-based
+        ref = row["ref"]
+        alt = row["alt"]
+        sample_id = row["sample_id"]
+
+        # base genomic context
+        interval = self._get_window(chrom, start)
+        seq = self.fasta_extr[interval].upper()
+
+        # enforce alleles
+        center = start - interval.start
+
+        center_base = seq[center]
+        # optional sanity check
+        msg = f"Alleles mismatch at {chrom}:{start} for sample {sample_id}: expected {ref}/{alt}, got {seq[center]}"
+        if self.strict_ref_check:
+            assert center_base in (ref, alt), msg
+        elif center_base not in (ref, alt):
+            logger.warning(msg + ". Proceeding anyway (strict_ref_check=False).")
+
+        seq_ref = replace_at(seq, center, ref)
+        seq_alt = replace_at(seq, center, alt)
+
+        ohe_ref = one_hot_encode(seq_ref)
+        ohe_alt = one_hot_encode(seq_alt)
+
+        embed = self.get_embedding_vec(sample_id)
+
+        return {
+            "ohe_seq_ref": ohe_ref,
+            "ohe_seq_alt": ohe_alt,
+            "center_seq": center_base,
+            'seq': seq,
+            "ref": ref,
+            "alt": alt,
+            "embed": embed,
+            "chrom": chrom,
+            "start": start,
         }

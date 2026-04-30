@@ -22,19 +22,23 @@ def extract_data_from_h5(h5_file, ref_adata: ad.AnnData, is_variant=False) -> Vi
     )
 
 
-def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str) -> VinsonData:
+def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_jitter=False) -> VinsonData:
     """
     Convert train AnnData object to H5 format and extract embeddings.
     Args:
         adata (ad.AnnData): AnnData object containing DHS data.
         suffix (str): Suffix of the epoch/layer to extract. Gets added to layer names as `{layer}.{suffix}`. E.g. epoch_1, epoch_2, etc.
+        pre_jitter (bool): Whether to apply pre-jitter to the data. 
     
     Returns:
         data (dict): Dictionary containing extracted data arrays.
         embeddings_df (pd.DataFrame): DataFrame containing motif embeddings.
     """
-    
     data = {"class": None, "density": None, "mean_bg_agg_cutcounts": None}
+    
+    if pre_jitter:
+        data["offsets"] = None
+    print(data.keys())
     update_layers_dict(data, train_adata, suffix)
     row_idx, col_idx = get_examples_indices_from_layer(data["class"])
     encodings = {}
@@ -51,17 +55,23 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str) -> Vin
     for key in encoded_vals:
         encode_inplace(encoded_vals, encodings, key)
 
+    if pre_jitter:
+        offsets = data['offsets'].data
 
     data = {
         'read_depth': train_adata.obs['nuclear_reads'].values[row_idx],
         'sample_id': encoded_vals["sample_id"][row_idx],
         'dhs_id': encoded_vals["dhs_id"][col_idx],
-        'chrom': encoded_vals["chrom"][col_idx],
         'summit': train_adata.var['dhs_summit'].values[col_idx],
+        'chrom': encoded_vals["chrom"][col_idx],
         'background': data['mean_bg_agg_cutcounts'].data,
         'class': data['class'].data,
         'density': data['density'].data,
     }
+
+    if pre_jitter:
+        data['summit'] += offsets
+
     if 'indiv_id' in encoded_vals:
         data['indiv_id'] = encoded_vals["indiv_id"][row_idx]
 
@@ -245,9 +255,13 @@ def extract_data_from_backed_anndata_wide(
         with_embeddings=False
     )
 
-    data["sample_id"] = np.tile(
-        data["sample_id"],
-        len(data["dhs_id"])
+    if 'indiv_id' in data:
+        del data['indiv_id']
+
+    for field in ['sample_id', 'read_depth']:
+        data[field] = np.tile(
+        data[field],
+        [len(data["dhs_id"]), 1]
     )
 
     data, encodings = sanitize_data(data, encodings, is_variant=False)

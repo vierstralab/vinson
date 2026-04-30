@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union, List
 
 import lightning as L
 
@@ -142,7 +142,7 @@ class SequenceOnlyModel(AbstractSequenceModel):
 
     def _forward_from_batch(self, batch: Dict[str, Any]) -> torch.Tensor:
         X_seq = batch["ohe_seq"]
-        y = self(X_seq).squeeze()
+        y = self(X_seq).squeeze(-1)
         return y
 
     def _run_step_regression(
@@ -187,14 +187,14 @@ class SequenceOnlyModel(AbstractSequenceModel):
                 read_depth=batch["read_depth"],
                 bg=batch["bg"],
                 density=batch["density"],
-            ), weight
+            ), weight, y
         else:
             return self._run_step_classification(y, batch["class"] == 1), weight
 
     def step(
         self, batch: Dict[str, Any], batch_idx: int
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        (y_hat, y), weight = self._run_step(batch)
+        (y_hat, y), weight, y_density = self._run_step(batch)
 
         loss = self.criterion(y_hat, y)
         if loss.ndim == 1:
@@ -203,7 +203,7 @@ class SequenceOnlyModel(AbstractSequenceModel):
             loss = loss * weight[:, None]
         loss = loss.mean()
 
-        return loss, y_hat, y
+        return loss, y_hat, y, y_density
 
     def training_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.Tensor:
         loss, *_ = self.step(batch, batch_idx)
@@ -213,7 +213,7 @@ class SequenceOnlyModel(AbstractSequenceModel):
         return loss
 
     def validation_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.Tensor:
-        loss, y_hat, y = self.step(batch, batch_idx)
+        loss, y_hat, y, y_density = self.step(batch, batch_idx)
 
         if self.regression:
             if not self.log_output:
@@ -253,7 +253,6 @@ class SequenceEmbedModel(SequenceOnlyModel):
             self,
             trunk_model: nn.Module,
             head_model: MLPBlock,
-            embed_model: MLPBlock,
             lr_scheduler: Optional[str]=None,
             optimizer_kwargs: Optional[Dict[str, Any]]=None,
             lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
@@ -270,15 +269,10 @@ class SequenceEmbedModel(SequenceOnlyModel):
             save_hyperparameters=False,
             **kwargs
         )
-        self.embed_model = embed_model
-        if init_weights:
-            self.embed_model.apply(initialize_weights)
-        self.save_hyperparameters(ignore=["trunk_model", "head_model", "embed_model"])
+        self.save_hyperparameters(ignore=["trunk_model", "head_model"])
 
     def forward(self, seq: torch.Tensor, embedding: torch.Tensor) -> torch.Tensor:
-        x = self.embed_model(embedding)
-        x = self.trunk_model(seq, x)
-
+        x = self.trunk_model(seq, embedding)
         x = self.head_model(x)
         x = self.forward_final(x)
 
@@ -287,7 +281,7 @@ class SequenceEmbedModel(SequenceOnlyModel):
     def _forward_from_batch(self, batch: Dict[str, Any]) -> torch.Tensor:
         X_seq = batch["ohe_seq"]
         X_embed = batch["embed"]
-        y = self(X_seq, X_embed).squeeze()
+        y = self(X_seq, X_embed).squeeze(-1)
         return y
 
     def training_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.Tensor:

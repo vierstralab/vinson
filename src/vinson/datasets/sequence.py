@@ -85,6 +85,13 @@ class BaseSequenceDataset(Dataset):
             self.fasta_extr.close()
         if self.genotype_extr:
             self.genotype_extr.close()
+    
+    def _get_window(self, chrom, summit):
+        interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
+        if self.jitter > 0:
+            shift = np.random.randint(-self.jitter, self.jitter + 1)
+            interval.shift(shift, inplace=True)
+        return interval
 
     def __getitem__(self, i):
         """
@@ -122,8 +129,7 @@ class BaseSequenceDataset(Dataset):
             x = x + np.random.normal(0, self.noise, len(x)).astype(np.float32)
 
         return x
-    
-                    
+                 
     def _init_fileread(self):
         # pysam is not thread-safe
         if not self.fasta_extr:
@@ -316,7 +322,6 @@ class SequenceOnlyDataset(BaseSequenceDataset):
         Maximum number of bases to shift sequences.
     noise : float, default 0
         Standard deviation of Gaussian noise added to embeddings.
-
     """
     def __init__(
         self,
@@ -392,12 +397,7 @@ class SequenceOnlyDataset(BaseSequenceDataset):
         is_multitask = density.ndim > 0
 
         # Define region
-        interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
-
-        # Jitter/shift region as necesary
-        if self.jitter > 0:
-            shift = np.random.randint(-self.jitter, self.jitter + 1)
-            interval.shift(shift, inplace=True)
+        interval = self._get_window(chrom, summit)
 
         # indiv_id is expected to be in self.data if genotypes are included
         if self.include_genotypes:
@@ -458,6 +458,7 @@ class SequenceOnlyDataset(BaseSequenceDataset):
             "summit": summit,
             "sample_id": sample_id,
         }
+
 
 class SequenceEmbedDataset(SequenceOnlyDataset):
 

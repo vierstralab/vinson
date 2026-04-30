@@ -42,6 +42,8 @@ class MLPBlock(nn.Module):
         Whether to apply batch normalization after each layer. Scalars are broadcasted.
     batch_norm_momentum : float, optional
         Momentum parameter for batch normalization layers.
+    order : str, optional
+        Order of operations in each layer. Default is 'fc-drop-act-bn' (fully connected, dropout, activation, batch norm). Other valid order is 'fc-bn-act-drop'.
     """
     def __init__(
         self,
@@ -51,10 +53,13 @@ class MLPBlock(nn.Module):
         batch_norm: Union[bool, List[bool]] = True,
         activations: Union[List[str], str] = "silu",
         batch_norm_momentum: float = 0.1,
+        order: str = "fc-drop-act-bn",
     ):
         super().__init__()
 
         hidden_dims = get_hidden_dims(hidden_dims)
+
+        self.order = order
         n_layers = len(hidden_dims)
 
         dims = [n_inputs] + hidden_dims
@@ -105,13 +110,23 @@ class MLPBlock(nn.Module):
         for fc, bn, act, drop in zip(
             self.fcs, self.batch_norms, self.activations, self.dropouts
         ):
-            x = fc(x)
-            x = drop(x)
-            x = act(x)
-            x = bn(x)
+            order = self.order.split("-")
+            order_map = {
+                "fc": fc,
+                "bn": bn,
+                "act": act,
+                "drop": drop
+            }
+            for layer in order:
+                x = order_map[layer](x)
+            # x = fc(x)
+            # x = drop(x)
+            # x = act(x)
+            # x = bn(x)
 
             # x = fc(x)
+            # x = drop(x)
             # x = bn(x)
             # x = act(x)
-            # x = drop(x)
+
         return x
