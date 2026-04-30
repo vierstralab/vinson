@@ -1,5 +1,3 @@
-from typing import Union
-
 import anndata as ad
 
 from datetime import datetime
