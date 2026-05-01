@@ -8,7 +8,7 @@ process predict_variants {
     tag "${prefix}"
 
     input:
-        tuple val(meta), path(variant_dataset)
+        tuple val(meta), path(variant_dataset), val(sample_id)
     
     output:
         tuple val(meta), path(variant_dataset), path(name)
@@ -23,6 +23,7 @@ process predict_variants {
         ${meta.fasta_file} \
         ${meta.checkpoint} \
         ${meta.model_config} \
+        ${sample_id}
         ${name}
     """
 }
@@ -31,7 +32,7 @@ process predict_variants {
 workflow {
     Channel.fromPath(params.samples_file)
         | splitCsv(header:true, sep:'\t')
-        | map(it -> tuple(it, file(it.variant_dataset)))
+        | map(it -> tuple(it, file(it.variant_dataset), it.sample_id))
         | predict_variants
  
 

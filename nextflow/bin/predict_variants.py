@@ -55,7 +55,11 @@ if __name__ == "__main__":
     checkpoint = sys.argv[4]
     config_path = sys.argv[5]
 
-    name = sys.argv[6]
+    sample_id = sys.argv[6]
+    name = sys.argv[7]
+
+    variants['sample_id'] = sample_id
+
 
     dl = make_loader(
         variants_df=variants,
