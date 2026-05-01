@@ -17,7 +17,7 @@ process predict_variants {
     prefix = meta.prefix
     name = "${prefix}.predictions_annotated.tsv"
     """
-    python3 $moduleDir/bin/predict_DHS_model.py \
+    python3 $moduleDir/bin/predict_variants.py \
         ${variant_dataset} \
         ${meta.zarr_anndata} \
         ${meta.fasta_file} \
