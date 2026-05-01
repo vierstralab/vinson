@@ -23,7 +23,7 @@ process predict_variants {
         ${meta.fasta_file} \
         ${meta.checkpoint} \
         ${meta.model_config} \
-        ${sample_id}
+        ${sample_id} \
         ${name}
     """
 }
