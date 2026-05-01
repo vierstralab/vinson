@@ -8,11 +8,11 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from vinson.datasets.variant import VariantInferenceDataset
 from genome_tools.data.anndata import read_zarr_backed
-import sys
+import argparse
 import pandas as pd
 
 
-def make_loader(variants_df, anndata, fasta_file):
+def make_loader(variants_df, anndata, fasta_file, num_workers=10):
     loaded_data = VinsonData(
         data=variants_df.to_dict(orient='list'),
         embeddings_df=anndata.obsm['motif_embeddings'],
@@ -23,7 +23,7 @@ def make_loader(variants_df, anndata, fasta_file):
         fasta_file=fasta_file,
         strict_ref_check=False
     )
-    return DataLoader(dataset_qtl, batch_size=128, num_workers=10)
+    return DataLoader(dataset_qtl, batch_size=128, num_workers=num_workers)
 
 
 def predict(model, dataloader):
@@ -48,23 +48,40 @@ def predict(model, dataloader):
 
 
 if __name__ == "__main__":
-    variants = pd.read_table(sys.argv[1])
-    anndata = read_zarr_backed(sys.argv[2])
-    fasta = sys.argv[3]
 
-    checkpoint = sys.argv[4]
-    config_path = sys.argv[5]
+    parser = argparse.ArgumentParser(description="Predict variants with DHS model")
+    parser.add_argument("variant_dataset", type=str, help="Path to DHS dataset (.tsv file)")
 
-    sample_id = sys.argv[6]
-    name = sys.argv[7]
+    parser.add_argument("anndata", type=str, help="Path to full AnnData file")
+    parser.add_argument("fasta_file", type=str, help="Path to reference FASTA file")
+    parser.add_argument("model_checkpoint", type=str, help="Path to model checkpoint")
+    parser.add_argument("model_config_path", type=str, help="Path to model config YAML file")
+    parser.add_argument("sample_id", type=str, help="Path to model config YAML file")
 
-    variants['sample_id'] = sample_id
+
+    parser.add_argument("--batch_size", type=int, default=128)
+    parser.add_argument("--num_workers", type=int, default=8)
+
+    parser.add_argument("--output", type=str, required=True, help="Path to save model predictions (.npy file)")
+    args = parser.parse_args()
+
+    variants = pd.read_table(args.variant_dataset)
+    anndata = read_zarr_backed(args.anndata)
+    fasta = args.fasta_file
+
+    checkpoint = args.model_checkpoint
+    config_path = args.model_config_path
+
+    name = args.output
+
+    variants['sample_id'] = args.sample_id
 
 
     dl = make_loader(
         variants_df=variants,
         anndata=anndata,
-        fasta_file=fasta
+        fasta_file=fasta,
+        num_workers=args.num_workers
     )
     model_config = read_configs(config_path)
 

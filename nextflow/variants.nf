@@ -24,7 +24,8 @@ process predict_variants {
         ${meta.checkpoint} \
         ${meta.model_config} \
         ${sample_id} \
-        ${name}
+        ${name} \
+        --num_workers ${task.cpus}
     """
 }
 
