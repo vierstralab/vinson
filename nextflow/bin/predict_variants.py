@@ -11,6 +11,7 @@ from genome_tools.data.anndata import read_zarr_backed
 import argparse
 import pandas as pd
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def make_loader(variants_df, anndata, fasta_file, num_workers=10):
     loaded_data = VinsonData(
@@ -23,7 +24,12 @@ def make_loader(variants_df, anndata, fasta_file, num_workers=10):
         fasta_file=fasta_file,
         strict_ref_check=False
     )
-    return DataLoader(dataset_qtl, batch_size=128, num_workers=num_workers)
+    return DataLoader(
+        dataset_qtl,
+        batch_size=256,
+        num_workers=num_workers,
+        pin_memory=torch.cuda.is_available()
+    )
 
 
 def predict(model, dataloader):
@@ -31,9 +37,9 @@ def predict(model, dataloader):
     pred_alt_all = []
 
     for batch in tqdm(dataloader):
-        ohe_ref = batch["ohe_seq_ref"]
-        ohe_alt = batch["ohe_seq_alt"]
-        embed = batch["embed"]
+        ohe_ref = batch["ohe_seq_ref"].to(device, non_blocking=True)
+        ohe_alt = batch["ohe_seq_alt"].to(device, non_blocking=True)
+        embed = batch["embed"].to(device, non_blocking=True)
 
         pred_ref = model(ohe_ref, embed)   # (B,)
         pred_alt = model(ohe_alt, embed)
@@ -85,7 +91,7 @@ if __name__ == "__main__":
     )
     model_config = read_configs(config_path)
 
-    model_predict = dhs_model_from_config(model_config, checkpoint).eval()
+    model_predict = dhs_model_from_config(model_config, checkpoint).to(device).eval()
     pred_ref, pred_alt = predict(model_predict, dl)
     variants["pred_ref"] = pred_ref
     variants["pred_alt"] = pred_alt
