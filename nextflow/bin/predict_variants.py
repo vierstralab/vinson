@@ -13,10 +13,11 @@ import pandas as pd
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-def make_loader(variants_df, anndata, fasta_file, num_workers=10):
+
+def make_loader(variants_df, motif_embeddings_df, fasta_file, num_workers=10):
     loaded_data = VinsonData(
         data=variants_df.to_dict(orient='list'),
-        embeddings_df=anndata.obsm['motif_embeddings'],
+        embeddings_df=motif_embeddings_df,
         encodings={}
     )
     dataset_qtl = VariantInferenceDataset(
@@ -62,7 +63,7 @@ if __name__ == "__main__":
     parser.add_argument("fasta_file", type=str, help="Path to reference FASTA file")
     parser.add_argument("model_checkpoint", type=str, help="Path to model checkpoint")
     parser.add_argument("model_config_path", type=str, help="Path to model config YAML file")
-    parser.add_argument("sample_id", type=str, help="Path to model config YAML file")
+    parser.add_argument("sample_id", type=str, help="Comma separated sample id(s). If multiple ids provided - averages the embedding")
 
 
     parser.add_argument("--batch_size", type=int, default=128)
@@ -79,13 +80,16 @@ if __name__ == "__main__":
     config_path = args.model_config_path
 
     name = args.output
-
     variants['sample_id'] = args.sample_id
 
-
+    sample_ids = args.sample_id.split(',')
+    motif_embeddings_df = anndata.obsm['motif_embeddings'].loc[sample_ids]
+    if len(sample_ids) > 1:
+        motif_embeddings_df = motif_embeddings_df.mean(axis=0).rename(args.sample_id).to_frame().T
+        
     dl = make_loader(
         variants_df=variants,
-        anndata=anndata,
+        motif_embeddings_df=motif_embeddings_df,
         fasta_file=fasta,
         num_workers=args.num_workers
     )
