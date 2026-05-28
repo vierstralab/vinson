@@ -70,6 +70,7 @@ def get_dataloader(predict_data, anndata):
 
 if __name__ == "__main__":
 
+    print(sys.argv)
     prefix = sys.argv[1]
 
     with open(sys.argv[2]) as f:
