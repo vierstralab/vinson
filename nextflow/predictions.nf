@@ -64,7 +64,8 @@ process annotate_with_predictions {
     publishDir "${params.outdir}/"
 
     input:
-        tuple path(samples_file), val(base_path)
+        path(samples_file)
+        val(base_path)
 
     output:
         path name
