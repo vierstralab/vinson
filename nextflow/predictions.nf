@@ -118,8 +118,8 @@ process predict_fasta {
     """
     echo "${meta.seq}" > fasta.tmp
     python3 $moduleDir/bin/predict_fasta.py \
-        ${meta.prefix}
-        fasta.tmp
+        ${meta.prefix} \
+        fasta.tmp \
         ${meta.zarr_anndata} \
         ${meta.checkpoint} \
         ${meta.model_config} \
