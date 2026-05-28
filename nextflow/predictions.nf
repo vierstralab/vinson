@@ -64,7 +64,7 @@ process annotate_with_predictions {
     publishDir "${params.outdir}/"
 
     input:
-        path samples_file
+        tuple path(samples_file), val(base_path)
 
     output:
         path name
@@ -74,7 +74,7 @@ process annotate_with_predictions {
     """
     python3 $moduleDir/bin/annotate_meta.py \
         ${samples_file} \
-        ${params.outdir}/ \
+        ${base_path}/ \
         ${name}
     """
 }
@@ -87,7 +87,7 @@ workflow {
         | predict
         | visualize_cell_selective_predictions
     
-    annotate_with_predictions(params.samples_file)
+    annotate_with_predictions(params.samples_file, "${params.outdir}/predictions/")
     
 }
 
@@ -132,4 +132,7 @@ workflow predictFasta {
     Channel.fromPath(params.samples_file)
         | splitCsv(header:true, sep:'\t')
         | predict_fasta
+    
+    annotate_with_predictions(params.samples_file, "${params.outdir}/fasta_predictions/")
+
 }
