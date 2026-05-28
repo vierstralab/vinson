@@ -97,3 +97,39 @@ workflow visualize {
         | map(it -> tuple(it, file(it.dhs_dataset), file("${params.outdir}/predictions/${row.prefix}/${row.prefix}.npy")))
         | visualize_cell_selective_predictions
 }
+
+
+process predict_fasta {
+
+    conda "${params.conda}"
+    publishDir "${params.outdir}/fasta_predictions/${prefix}", pattern: "${name}"
+    label "gpu"
+    tag "${prefix}"
+
+    input:
+        val meta
+    
+    output:
+        tuple val(meta), path(name)
+    
+    script:
+    prefix = "${meta.prefix}"
+    name = "${prefix}.npy"
+    """
+    echo "${meta.seq}" > fasta.tmp
+    python3 $moduleDir/bin/predict_fasta.py \
+        ${meta.prefix}
+        fasta.tmp
+        ${meta.zarr_anndata} \
+        ${meta.checkpoint} \
+        ${meta.model_config} \
+        ${name}
+    """
+
+}
+
+workflow predictFasta {
+    Channel.fromPath(params.samples_file)
+        | splitCsv(header:true, sep:'\t')
+        | predict_fasta
+}

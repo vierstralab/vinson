@@ -12,6 +12,27 @@ from vinson.datasets.sequence import SequenceEmbedDataset
 from genome_tools.data.anndata import read_zarr_backed
 
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
+def predict_from_checkpoint(model_config, model_checkpoint, dataloader):
+    model_predict = dhs_model_from_config(
+        model_config,
+        checkpoint_path=model_checkpoint,
+    ).eval()
+
+    trainer = L.Trainer(
+        accelerator=device,
+        devices=1,
+        logger=False,
+        enable_checkpointing=False,
+        # limit_predict_batches=10
+    )
+
+    y_hat_all = trainer.predict(model_predict, dataloaders=dataloader)
+    y_hat_all = torch.cat(y_hat_all).cpu().numpy()
+    return y_hat_all
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Predict DHS model")
     parser.add_argument("h5_data", type=str, help="Path to DHS dataset (.h5 file)")
@@ -54,8 +75,6 @@ if __name__ == "__main__":
         **dataset_kwargs,
     )
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
     dataloader = DataLoader(
         dataset,
         batch_size=args.batch_size,
@@ -65,20 +84,10 @@ if __name__ == "__main__":
         drop_last=False,
     )
 
-    model_predict = dhs_model_from_config(
+    y_hat_all = predict_from_checkpoint(
         model_config,
-        checkpoint_path=args.model_checkpoint,
-    ).eval()
-
-    trainer = L.Trainer(
-        accelerator=device,
-        devices=1,
-        logger=False,
-        enable_checkpointing=False,
-        # limit_predict_batches=10
+        args.model_checkpoint,
+        dataloader=dataloader
     )
-
-    y_hat_all = trainer.predict(model_predict, dataloaders=dataloader)
-    y_hat_all = torch.cat(y_hat_all).cpu().numpy()
 
     np.save(args.output, y_hat_all)
