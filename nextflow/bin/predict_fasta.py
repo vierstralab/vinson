@@ -56,7 +56,7 @@ def pad_with_N(seq, num=100):
 
 def get_dataloader(predict_data, anndata):
     sample_ids = anndata.obs.index.values
-    embeds = anndata.obsm.loc[sample_ids].values.astype(np.float32)
+    embeds = anndata.obsm['motif_embeddings'].loc[sample_ids].values.astype(np.float32)
     predict_data['sample_id'] = [sample_ids] * len(predict_data)
     predict_data['embed'] = [embeds] * len(predict_data)
     predict_data = predict_data.explode(['sample_id', 'embed'])
