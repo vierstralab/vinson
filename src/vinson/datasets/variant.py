@@ -1,7 +1,7 @@
 import numpy as np
 
 from genome_tools import GenomicInterval, VariantInterval
-
+from vinson.utils.helpers import replace_at
 from vinson.utils.data_formatting import VinsonData
 from vinson.utils.sequence_utils import one_hot_encode
 
@@ -53,8 +53,9 @@ class VariantEmbedDataset(BaseSequenceDataset):
         )
 
         self.flip_alleles = flip_alleles
-        self.genotype_extr: TabixExtractor = None
         self.fasta_extr: FastaExtractor = None
+        self.genotype_file = genotype_file
+        self.genotype_extr: TabixExtractor = None
 
         assert set(
             [
@@ -75,10 +76,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
 
             self.include_genotypes = True
         else:
-            raise ValueError(
-                "Genotype file is required but not provided. "
-                "Please specify `genotype_file` to enable variant-aware training."
-            )
+            self.include_genotypes = False
   
 
     def __getitem__(self, i):
@@ -116,17 +114,6 @@ class VariantEmbedDataset(BaseSequenceDataset):
         """
         self._init_fileread()
 
-        # chrom, pos, ref, alt, ref_counts, total_counts, bad, lfc, sample_id = (
-        #     self.data["chrom"][i],
-        #     self.data["pos"][i],
-        #     self.data["ref"][i],
-        #     self.data["alt"][i],
-        #     self.data["ref_counts"][i],
-        #     self.data["total_counts"][i],
-        #     self.data["BAD"][i],
-        #     self.data["logit_es"][i],
-        #     self.data["sample_id"][i],
-        # )
         data_slice = self.data[i]
         chrom = data_slice['chrom']
         pos = data_slice['pos']
@@ -138,8 +125,6 @@ class VariantEmbedDataset(BaseSequenceDataset):
         lfc = data_slice['logit_es']
         sample_id = data_slice['sample_id']
 
-        # FIXME: Decode categorical variables
-
         variant = GenomicInterval(chrom, pos, pos)
         interval = variant.widen(self.seqlen // 2)
 
@@ -150,8 +135,6 @@ class VariantEmbedDataset(BaseSequenceDataset):
         rel_pos = pos - interval.start
         
         # Inject genotypes if genotype files provided
-        #variant interval pos-1 because dataformatting is using end as pos
-        #include sample id?
         if self.include_genotypes:
             indiv_id = data_slice['indiv_id']   
             _, _, dna_seq_ref, dna_seq_alt = self.get_sample_sequence(
@@ -162,12 +145,18 @@ class VariantEmbedDataset(BaseSequenceDataset):
                 ),
             )
         else:
-            dna_seq_ref = self.fasta_extr[interval]
-            dna_seq_alt = dna_seq_ref[:rel_pos] + alt + dna_seq_ref[rel_pos + 1 :]
+            dna_seq_ref = dna_seq_alt = self.fasta_extr[interval]
+            start = pos-1 
+            end = pos
+            rel = start - interval.start
+            dna_seq_ref = replace_at(dna_seq_ref, rel, ref)
+            dna_seq_alt = replace_at(dna_seq_alt, rel, alt)
+            # changed: end is pos and start is pos-1 need to be changed to match 
+            # dna_seq_alt = dna_seq_ref[:rel_pos] + alt + dna_seq_ref[rel_pos + 1 :]
         if len(dna_seq_ref) != 1344 or len(dna_seq_alt) != 1344:
             warnings.warn(
             f"[DEBUG WARNING] idx={i}, chrom={chrom}, pos={pos}, "
-            f"ref_seq length={len(dna_seq_ref)} alt_len expected seqlen={len(dna_seq_alt)}, relpos {rel_pos}, alt {alt}, ref {ref} indiv {indiv_id}"
+            f"ref_seq length={len(dna_seq_ref)} alt_len expected seqlen={len(dna_seq_alt)}, relpos {rel_pos}, alt {alt}, ref {ref}"
         )
 
         try:

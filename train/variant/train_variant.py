@@ -64,7 +64,11 @@ def main(args):
         trainer_kwargs["limit_val_batches"] = 100 * args.devices
         config["logging_params"]["val_check_interval"] = 1.0
     
-    early_stopping = config['hparams']['lr_scheduler'] != 'OneCycleLR'
+    if config['hparams']['lr_scheduler'] == 'OneCycleLR':
+        early_stopping = False
+    else:
+        early_stopping = True
+        
         
     trainer = init_multigpu_trainer(
         outdir,
@@ -98,17 +102,44 @@ def main(args):
     
     datamodule.setup(stage="fit") 
 
-    model = variant_model_from_config(config, sequence_model_checkpoint=args.sequence_model_checkpoint, checkpoint_path=checkpoint)
-
     
     if config['hparams']['lr_scheduler'] == 'OneCycleLR':
         if config['hparams']['lr_scheduler_kwargs'].get('total_steps') is None:
-            print('Setting total_steps for OneCycleLR...')
-            n_examples = get_number_of_train_examples(args.anndata_file,layer_prefix="ref_counts")
-            print(f"n_examples: {n_examples}")
-            config['hparams']['lr_scheduler_kwargs']['total_steps'] = round(n_examples / datamodule.dataloader_kwargs['batch_size'] / trainer.num_devices)
+    
+            print("Setting total_steps for OneCycleLR...")
+    
+            train_loader = datamodule.train_dataloader()
+    
+            steps_per_epoch = len(train_loader)
+    
+            accumulate_grad_batches = trainer.accumulate_grad_batches
+            if accumulate_grad_batches is None:
+                accumulate_grad_batches = 1
+    
+            optimizer_steps_per_epoch = (
+                steps_per_epoch + accumulate_grad_batches - 1
+            ) // accumulate_grad_batches
+    
+            total_steps = optimizer_steps_per_epoch * epochs
+    
+            config['hparams']['lr_scheduler_kwargs']['total_steps'] = total_steps
+    
+            print(
+                f"steps_per_epoch={steps_per_epoch}, "
+                f"accumulate_grad_batches={accumulate_grad_batches}, "
+                f"optimizer_steps_per_epoch={optimizer_steps_per_epoch}, "
+                f"epochs={epochs}, "
+                f"total_steps={total_steps}"
+            )
+    
         else:
-            print('total steps is in config')
+            print(
+                "Using OneCycleLR total_steps from config: "
+                f"{config['hparams']['lr_scheduler_kwargs']['total_steps']}"
+            )
+
+    
+    model = variant_model_from_config(config, sequence_model_checkpoint=args.sequence_model_checkpoint, checkpoint_path=checkpoint)
 
     fit_model(
         model,
@@ -146,6 +177,7 @@ if __name__ == "__main__":
         default=None,
         help="Path to Tabix indexed genotype file.",
     )
+   
     parser.add_argument(
         "--checkpoint",
         type=str,

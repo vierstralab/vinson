@@ -36,7 +36,12 @@ if __name__ == "__main__":
     parser.add_argument("--sequence_model_checkpoint", type=str, default=None, help='Path to dhs model checkpoint to load weights from for variant model')
     parser.add_argument('anndata', type=str, help='Path to anndata file')
     parser.add_argument('fasta', type=str, help='Path to fasta file')
-    parser.add_argument('genotype', type=str, help='Path to genotype file')
+    parser.add_argument(
+        "--genotype_file",
+        type=str,
+        default=None,
+        help="Path to genotype file",
+    )
     parser.add_argument('outdir', type=str, help='Path to output directory')
     parser.add_argument(
         '--preset', choices=('hpcg05-a100', 'hpcg04-heavy', 'hpcg01'), 
@@ -63,7 +68,12 @@ if __name__ == "__main__":
         env_path=args.env_path,
         anndata=args.anndata,
         fasta=args.fasta,
-        genotype=args.genotype,
+        # genotype=args.genotype,
+        genotype_file=(
+            f"--genotype_file {args.genotype_file}"
+            if args.genotype_file is not None
+            else ""
+        ),
         outdir=args.outdir,
         config=f"--config {args.config}" if args.config else "",
         sequence_model_checkpoint=f"--sequence_model_checkpoint {args.sequence_model_checkpoint}" if args.sequence_model_checkpoint else "",

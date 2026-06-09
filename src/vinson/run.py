@@ -74,7 +74,7 @@ def init_multigpu_trainer(
     freeze_trunk_epochs = trainer_kwargs.pop("freeze_trunk_epochs", 0)
 
     callbacks = [
-        EarlyStopping(monitor="val_loss", mode="min", min_delta=early_stopping_min_delta, patience=early_stopping_patience),
+        # EarlyStopping(monitor="val_loss", mode="min", min_delta=early_stopping_min_delta, patience=early_stopping_patience),
         ModelCheckpoint(
             monitor="val_loss",
             mode="min",
