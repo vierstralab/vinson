@@ -61,7 +61,7 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
         "chrom": train_adata.var["#chr"],
     }
 
-    _parse_indiv_info(train_adata, encoding_sources)
+    _parse_indiv_info(train_adata, encoded_vals)
 
 
     for key in encoded_vals:
