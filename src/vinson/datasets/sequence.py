@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import os 
 
 from torch.utils.data import Dataset
 import gzip
@@ -9,11 +10,11 @@ from genome_tools.data.extractors import FastaExtractor, TabixExtractor
 
 from vinson.utils.data_formatting import VinsonData
 from vinson.utils.sequence_utils import one_hot_encode, get_iupac_char_from_alleles
-from vinson.utils.helpers import replace_at
+from vinson.utils.helpers import replace_at, detect_genotype_format
 import logging
 
 logger = logging.getLogger(__name__)
-
+import warnings
 
 class BaseSequenceDataset(Dataset):
     """
@@ -62,20 +63,23 @@ class BaseSequenceDataset(Dataset):
         self.jitter = jitter
         self.noise = noise
         self.genotype_file = genotype_file
-        
+
         assert seqlen % 2 == 0, "Error 'seqlen' must be a even number!"
         self.seqlen = seqlen
+        
 
         self.fasta_extr: FastaExtractor = None
         self.genotype_extr: TabixExtractor = None
-        if self.genotype_file is not None:
-            assert 'indiv_id' in self.data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
-            self.include_genotypes = True
+        self.include_genotypes = genotype_file is not None
+        
+        if self.include_genotypes:
+            assert "indiv_id" in self.data.keys(), (
+                "Sample to genotype mapping must include 'indiv_id' column."
+            )
         else:
             logger.info(
                 "No genotyping files provided -- continuing without sample genotypes."
             )
-            self.include_genotypes = False
 
     def __del__(self):
         """
@@ -129,61 +133,68 @@ class BaseSequenceDataset(Dataset):
             x = x + np.random.normal(0, self.noise, len(x)).astype(np.float32)
 
         return x
-                 
+
+    
+    def _make_genotype_extractor(self, genotype_file):
+
+        phased, has_header = detect_genotype_format(genotype_file)
+    
+        skiprows = 1 if has_header else 0
+    
+        if phased:
+    
+            # print(f"[INFO] Using phased genotype format ({genotype_file})")
+    
+            return TabixExtractor(
+                genotype_file,
+                skiprows=skiprows,
+                columns=[
+                    "chrom",
+                    "start",
+                    "end",
+                    "ref",
+                    "alt",
+                    "indiv_id",
+                    "gt",
+                    "phase_set",
+                ],
+                na_values={"phase_set": "."},
+            )
+    
+        # print(f"[INFO] Using unphased genotype format ({genotype_file})")
+    
+        return TabixExtractor(
+            genotype_file,
+            skiprows=skiprows,
+            columns=[
+                "chrom",
+                "start",
+                "end",
+                "ref",
+                "alt",
+                "indiv_id",
+                "gt",
+            ],
+            na_values=".",
+        )
+
+
     def _init_fileread(self):
-        # pysam is not thread-safe
+
         if not self.fasta_extr:
             self.fasta_extr = FastaExtractor(self.fasta_file)
-        if self.include_genotypes and not self.genotype_extr:
-            # Check header
-            with gzip.open(self.genotype_file, "rt") as f:
-                phased = "phase_set" in f.readline()
-            if phased:
-                # print(f"[INFO] Detected phased genotype format ({self.genotype_file})")
-                self.genotype_extr = TabixExtractor(
-                    self.genotype_file,
-                    skiprows=1,
-                    columns=[
-                        "chrom",
-                        "start",
-                        "end",
-                        "ref",
-                        "alt",
-                        "indiv_id",
-                        "gt",
-                        "phase_block",
-                    ],
-                    na_values={"phase_block": "."},
-                )
-            else:
-                print(f"[INFO] Using unphased genotype format ({self.genotype_file})")
-                self.genotype_extr = TabixExtractor(
-                    self.genotype_file,
-                    columns=[
-                        "chrom",
-                        "start",
-                        "end",
-                        "rs_id",
-                        "ref",
-                        "alt",
-                        "af_ref",
-                        "af_alt",
-                        "gt",
-                        "_0",
-                        "_1",
-                        "_2",
-                        "_3",
-                        "indiv_id",
-                    ],
-                    na_values=".",
-                )
 
+        if self.include_genotypes and self.genotype_extr is None:
+            self.genotype_extr = self._make_genotype_extractor(
+                self.genotype_file
+            )
+            
     
     def get_sample_sequence(
             self,
             interval: GenomicInterval,
             indiv_id: str,
-            reference_variant: VariantInterval=None
+            reference_variant: VariantInterval=None,
         ):
         """
         
@@ -193,14 +204,25 @@ class BaseSequenceDataset(Dataset):
         seq = self.fasta_extr[interval]
         seq_iupac = seq_ref = seq_alt = str(seq) # modify all 3 regardless
 
+        if isinstance(indiv_id, (np.ndarray, list)):
+            indiv_id = np.asarray(indiv_id).item()
+    
+        if pd.isna(indiv_id) or indiv_id in ("None", ""):
+            return 0, seq_iupac, seq_ref, seq_alt
+    
+        assert isinstance(indiv_id, str), f"indiv_id must be str, got {type(indiv_id)}: {indiv_id}"
+        assert (
+            "INDIV" in indiv_id
+        ), f"INDIV_ID format incorrect ({indiv_id}, {type(indiv_id)})."
+    
+        # Extract variants
+        
         try:
             variants = self.genotype_extr[interval]
-            if pd.isna(indiv_id) or indiv_id in ("None", ""):
-                raise ValueError
         except ValueError:
             return 0, seq_iupac, seq_ref, seq_alt
-        assert 'INDIV' in indiv_id, f"INDIV_ID format incorrect ({indiv_id}, {type(indiv_id)})."
         
+        # hotfix
         if variants["indiv_id"].str.endswith(".bed.gz").any():
             key = f"{indiv_id}.bed.gz"
         else:
@@ -211,12 +233,8 @@ class BaseSequenceDataset(Dataset):
         extra_columns = ('gt', )
         #get phased info if exists make sure right format
         if "phase_set" not in variants.columns:
-            if "phase_block" in variants.columns:
-                variants = variants.rename(columns={"phase_block": "phase_set"})
-            else:
-                variants["phase_set"] = None
-                #assert 'phase_set' in variants.columns, "Phased genotype data required for variant-aligned sequence extraction."
-    
+            variants["phase_set"] = None
+            
         # If reference_variant is provided, attach gt and phase_set to it
         if reference_variant is not None:
             #if variant spcified not just genotype from dhs model
@@ -240,22 +258,14 @@ class BaseSequenceDataset(Dataset):
     
         # Convert variants to VariantInterval objects
         variants = df_to_variant_intervals(variants, extra_columns=extra_columns)
-    
-        # Check for ambiguous positions
-        # TO DO: clean up to remove ambiguous code, just throw warning
-        variants_by_pos = {}
+
         for v in variants:
-            variants_by_pos.setdefault(v.start, []).append(v)
-    
-        for pos, vars_at_pos in variants_by_pos.items():
-            if len(vars_at_pos) > 1:
-                
-                print(f"Ambiguous variants found at {pos} for {indiv_id}")
-                # TODO: handle ambiguous cases properly
-    
-            # Only one variant, safe to process
-            v = vars_at_pos[0]
-            rel = pos - interval.start
+
+            rel = v.start - interval.start
+
+            if rel >= len(interval) or rel <= 0:
+                #fixes error of trying to replace at end of sequence causing adding extra to end increasing seq len by one
+                continue
     
             # IUPAC sequence
             iupac_base = get_iupac_char_from_alleles(v.ref, v.alt)
@@ -288,12 +298,13 @@ class BaseSequenceDataset(Dataset):
             rel_pos = reference_variant.start - interval.start
             if reference_variant.gt == "1|0":
                 seq_ref, seq_alt = seq_alt, seq_ref
+                
             if (seq_ref[rel_pos] != reference_variant.ref) or (seq_alt[rel_pos] != reference_variant.alt):
                 raise ValueError(
                     f"Expected ref & alt alleles not found in correct position "
                     f"(reference_variant={reference_variant}, indiv_id={indiv_id})"
                 )
-    
+
         return len(variants), seq_iupac, seq_ref, seq_alt
 
 

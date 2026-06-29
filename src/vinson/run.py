@@ -5,6 +5,7 @@ import torch
 import lightning as L
 
 from lightning.pytorch.callbacks import (
+    Callback,
     EarlyStopping,
     ModelCheckpoint,
     LearningRateMonitor,
@@ -37,6 +38,20 @@ def init_single_gpu_trainer(
     # TODO: implement single gpu trainer
     pass
 
+class FreezeTrunkWarmupCallback(Callback):
+    def __init__(self, freeze_epochs=1):
+        self.freeze_epochs = freeze_epochs
+
+    def on_fit_start(self, trainer, pl_module):
+        if self.freeze_epochs > 0:
+            print(f"Freezing trunk for first {self.freeze_epochs} epoch(s)")
+            pl_module.freeze_trunk()
+
+    def on_train_epoch_start(self, trainer, pl_module):
+        if trainer.current_epoch == self.freeze_epochs:
+            print(f"Unfreezing trunk at epoch {trainer.current_epoch}")
+            pl_module.unfreeze_trunk()
+
 
 def init_multigpu_trainer(
     outdir,
@@ -47,15 +62,19 @@ def init_multigpu_trainer(
     logger_type="csv",
     val_check_interval=1.0,
     max_epochs=20,
+    early_stopping=True,
+    early_stopping_patience=10,
+    early_stopping_min_delta=0.005,
     **trainer_kwargs,
 ):
     """Initialize a Lightning Trainer for multi-GPU runs."""
     assert logger_type in ["csv"], "Only 'csv' logger is currently supported."
 
     logger = CSVLogger(os.path.join(outdir, "logs"))
+    freeze_trunk_epochs = trainer_kwargs.pop("freeze_trunk_epochs", 0)
 
     callbacks = [
-        EarlyStopping(monitor="val_loss", mode="min", min_delta=0.005, patience=10),
+        # EarlyStopping(monitor="val_loss", mode="min", min_delta=early_stopping_min_delta, patience=early_stopping_patience),
         ModelCheckpoint(
             monitor="val_loss",
             mode="min",
@@ -66,7 +85,20 @@ def init_multigpu_trainer(
         ),
         LearningRateMonitor(),
     ]
+    if freeze_trunk_epochs > 0:
+        callbacks.append(FreezeTrunkWarmupCallback(freeze_epochs=freeze_trunk_epochs))
 
+    if early_stopping:
+        callbacks.append(
+            EarlyStopping(
+                monitor="val_loss",
+                mode="min",
+                min_delta=early_stopping_min_delta,
+                patience=early_stopping_patience,
+            )
+        )
+    
+    
     trainer = L.Trainer(
         logger=logger,
         callbacks=callbacks,
@@ -76,8 +108,8 @@ def init_multigpu_trainer(
         num_nodes=nodes,
         devices=devices,
         val_check_interval=val_check_interval,
-        log_every_n_steps=100,
-        gradient_clip_val=1.0,
+        log_every_n_steps=10,
+        # gradient_clip_val=1.0,
         reload_dataloaders_every_n_epochs=1,
         num_sanity_val_steps=0,
         sync_batchnorm=True,

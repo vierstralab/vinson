@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from vinson.models.shared import MLPBlock
 
-
 class StemConv(nn.Module):
     def __init__(self, in_ch: int, out_ch: int, filter_sizes: Union[int, list], groups: int = 1):
         super(StemConv, self).__init__()
@@ -257,12 +256,21 @@ class LegNetTrunkEmbed(LegNetTrunk):
         
         for blc_id, in_ch in enumerate(in_ch_list):
             cur_block = f'blc{blc_id}'
+            # self.bias[cur_block] = nn.Sequential(
+            #     MLPBlock(
+            #         n_inputs=n_embed_outputs,
+            #         hidden_dims=[in_ch],
+            #         dropout=0.0,
+            #         activations='silu',
+            #     ),
+            #     nn.Linear(in_ch, in_ch)
             embed = embeds[blc_id]
             # self.bias[cur_block] = nn.Linear(n_embed_outputs, in_ch)
             self.bias[cur_block] = nn.Sequential(
                 embed,
                 nn.Linear(embed.output_dim, in_ch)
             )
+        
 
     def forward(self, x: torch.Tensor, embed: torch.Tensor) -> torch.Tensor:
         current_layer = self.stem(x)

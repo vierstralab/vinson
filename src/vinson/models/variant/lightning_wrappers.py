@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional
 import copy
+import csv
 
 import torch
 
@@ -20,7 +21,6 @@ class VariantEmbedModel(AbstractSequenceModel):
         self,
         trunk_model: torch.nn.Module,
         head_model: MLPBlock,
-        embed_model: MLPBlock,
         lr_scheduler: Optional[str]=None,
         optimizer_kwargs: Optional[Dict[str, Any]]=None,
         lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
@@ -34,13 +34,12 @@ class VariantEmbedModel(AbstractSequenceModel):
             lr_scheduler_kwargs=lr_scheduler_kwargs,
             init_weights=init_weights,
         )
-        self.embed_model = embed_model
-        if init_weights:
-            self.embed_model.apply(initialize_weights)
+        
 
         self.criterion = BinomialMixtureNLLLoss(relative=True, reduction="none")
         self.init_metrics()
-        self.save_hyperparameters(ignore=["trunk_model", "head_model", "embed_model"])
+        
+        self.save_hyperparameters(ignore=["trunk_model", "head_model"])
 
     def init_metrics(self):
         self.train_metrics = MetricCollection(
@@ -57,12 +56,13 @@ class VariantEmbedModel(AbstractSequenceModel):
         return x
 
     def forward(self, seq_ref, seq_alt, embed):
-        x = self.embed_model(embed)
-        ref_features = self.trunk_model(seq_ref, x)
-        alt_features = self.trunk_model(seq_alt, x)
+        # x = self.embed_model(embed)
+        ref_features = self.trunk_model(seq_ref, embed)
+        alt_features = self.trunk_model(seq_alt, embed)
 
-        x = torch.subtract(ref_features, alt_features)
-
+        # x = torch.subtract(ref_features, alt_features)
+        x = torch.cat([ref_features, alt_features], dim=-1)
+        
         x = self.head_model(x)
         x = self.forward_final(x) # in variant model, outputs are always logits of ES -infinity to +infinity
         return x
@@ -85,9 +85,9 @@ class VariantEmbedModel(AbstractSequenceModel):
 
         loss = self.criterion(
             y,
-            ref_counts=ref_counts,
-            total_counts=total_counts,
-            bad_score=bad_score,
+            ref_counts,
+            total_counts,
+            bad_score,
         )
 
         loss *= batch["weight"]
@@ -98,7 +98,8 @@ class VariantEmbedModel(AbstractSequenceModel):
     def training_step(self, batch, batch_idx):
         loss, *_ = self.step(batch, batch_idx)
 
-        self.log("loss", loss, on_step=True, on_epoch=False, sync_dist=True)
+        self.log("loss", loss, on_step=True, on_epoch=False, 
+                 sync_dist=True,prog_bar=True)
 
         return loss
 
@@ -108,9 +109,22 @@ class VariantEmbedModel(AbstractSequenceModel):
 
         self.valid_metrics.update(y_hat, lfc)
 
-        self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True,prog_bar=True)
 
         return loss
+
+    def predict_step(self, batch, batch_idx: int=None) -> torch.Tensor:
+        return self._forward_from_batch(batch)
+
+    def freeze_trunk(self):
+        for param in self.trunk_model.parameters():
+            param.requires_grad = False
+        print("Trunk frozen.")
+
+    def unfreeze_trunk(self):
+        for param in self.trunk_model.parameters():
+            param.requires_grad = True
+        print("Trunk unfrozen.")
 
     @classmethod
     def from_sequence_embed_model(
@@ -121,13 +135,14 @@ class VariantEmbedModel(AbstractSequenceModel):
     ):
         model = cls(
             trunk_model=sequence_embed_model.trunk_model,
-            embed_model=sequence_embed_model.embed_model,
             head_model=head_model,
             init_weights=False,
             **kwargs,
         )
         model.head_model.apply(initialize_weights)
         return model
+
+    
 
 
 class VariantEmbedModelWrapper(L.LightningModule):
@@ -136,11 +151,7 @@ class VariantEmbedModelWrapper(L.LightningModule):
     def __init__(self, model: VariantEmbedModel):
         super().__init__()
         self.model = model
-
-        # Make independent ref/alt branches
-        self.embedding_ref = copy.deepcopy(model.embed_model)
-        self.embedding_alt = copy.deepcopy(model.embed_model)
-
+        
         self.trunk_ref = copy.deepcopy(model.trunk_model)
         self.trunk_alt = copy.deepcopy(model.trunk_model)
 
@@ -151,9 +162,7 @@ class VariantEmbedModelWrapper(L.LightningModule):
             self.embedding_alt,
         ]:
             mod.eval()
-            for p in mod.parameters():
-                p.requires_grad = False
-
+            
     def __getattr__(self, name):
         if name != "model":
             try:
@@ -164,10 +173,12 @@ class VariantEmbedModelWrapper(L.LightningModule):
 
     def forward(self, seq_ref, seq_alt, embed: torch.Tensor) -> torch.Tensor:
         """ """
-        features_ref = self.trunk_ref(seq_ref, self.embedding_ref(embed))
-        features_alt = self.trunk_alt(seq_alt, self.embedding_alt(embed.clone()))
+        
+        features_ref = self.trunk_ref(seq_ref, embed)
+        features_alt = self.trunk_alt(seq_alt, embed.clone())
 
-        x = torch.subtract(features_ref, features_alt)
+        x = torch.cat([features_ref, features_alt], dim=-1)
+
 
         x = self.model.head_model(x)
         x = self.model.forward_final(x)

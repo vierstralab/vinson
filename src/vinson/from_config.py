@@ -1,4 +1,5 @@
 import anndata as ad
+import torch 
 
 from datetime import datetime
 import mergedeep
@@ -24,6 +25,8 @@ from vinson.datasets.sequence import SequenceEmbedDataset
 from vinson.datasets.variant import VariantEmbedDataset
 
 from vinson.utils.data_formatting import extract_data_from_h5
+from vinson.models.shared import initialize_weights
+
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -64,11 +67,13 @@ def _parse_scheduler_and_optimizer(config: dict):
     scheduler_name = config['hparams'].get("lr_scheduler")
     scheduler_kwargs = config['hparams'].get("lr_scheduler_kwargs", {})
     optimizer_kwargs = config['hparams']["optimizer_kwargs"]
+
     return {
         'lr_scheduler': scheduler_name,
         'lr_scheduler_kwargs': scheduler_kwargs,
         'optimizer_kwargs': optimizer_kwargs
     }
+
 
 
 def classifier_model_from_config(config: dict, checkpoint_path: str = None):
@@ -120,7 +125,6 @@ def _sequence_model_from_config(config):
 
     return trunk
 
-
 def dhs_model_from_config(config, checkpoint_path=None):
     model_type = config["model_type"]
 
@@ -150,11 +154,13 @@ def dhs_model_from_config(config, checkpoint_path=None):
             trunk_model=trunk,
             head_model=head,
             **scheduler_kwargs,
-            **config["model_kwargs"],
+            **config.get('model_kwargs', {}),
         )
     return model
 
 
+#need to remove config key needing model_kwargs and data_params
+#MLP block expcets config param to be activations not activation
 def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint_path=None):
     model_type = config["model_type"]
     assert model_type in ("basset_variant_embed", "legnet_variant_embed"), f"Model type {model_type} not supported for variant models. Available types: 'basset_variant_embed', 'legnet_variant_embed'"
@@ -169,22 +175,32 @@ def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint
         if sequence_model_checkpoint is not None:
             print('Ignoring sequence_model_checkpoint, as variant models load from a single checkpoint_path.')
         
-
+    #variant model doesnt currently have model_kwargs
     if sequence_model_checkpoint is not None and checkpoint_path is None:
-        sequence_model = dhs_model_from_config(
-            config,
-            checkpoint_path=sequence_model_checkpoint,
-        )
+         # Build DHS model WITHOUT loading checkpoint
+        sequence_model = dhs_model_from_config(config, checkpoint_path=None)
+
+        # Manually load only trunk + embed weights
+        ckpt = torch.load(sequence_model_checkpoint, map_location=device)
+        state_dict = ckpt["state_dict"]
+        #only load weights from trunk and embed, not head of dhs model
+        filtered_state = {
+            k: v
+            for k, v in state_dict.items()
+            if k.startswith("trunk_model.")
+        }
+
+        sequence_model.load_state_dict(filtered_state, strict=False)
+        print(f"Loaded trunk + embed weights from {sequence_model_checkpoint}")
+
         variant_model = VariantEmbedModel.from_sequence_embed_model(
             sequence_embed_model=sequence_model,
             head_model=head,
             **scheduler_kwargs,
-            **config["model_kwargs"],
+            **config.get('model_kwargs', {}),
         )
     else:
         trunk = _sequence_model_from_config(config)
-
-
         if checkpoint_path is not None:
             variant_model = VariantEmbedModel.load_from_checkpoint(
                 checkpoint_path=checkpoint_path,
@@ -193,14 +209,15 @@ def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint
                 map_location=device
             )
         else:
+            # sequence_model = dhs_model_from_config(config, checkpoint_path=None)
             variant_model = VariantEmbedModel(
                 trunk_model=trunk,
                 head_model=head,
                 **scheduler_kwargs,
-                **config["model_kwargs"],
+                **config.get('model_kwargs', {}),
             )
-    return variant_model
 
+    return variant_model
 
 
 def dataset_from_h5(
@@ -256,13 +273,14 @@ def datamodule_from_config(
         batch_size (int): Batch size for dataloaders.
         **dataloader_kwargs: Additional arguments for dataloaders.
     """
+    #currenly no dataparams for variant
     train_dataset_kwargs = {
-        **config['data_params'],
+        **config.get('data_params', {}),
         **config['train_augmentation_kwargs'],
     }
 
     valid_dataset_kwargs = {
-        **config['data_params'],
+        **config.get('data_params', {}),
         **config['validation_augmentation_kwargs'],
     }
     
@@ -279,7 +297,7 @@ def datamodule_from_config(
     }
 
     # DataModule to handle datasets updates and dataloader init
-    if config["model_type"] in ('vinson_variant_embed', 'legnet_variant_embed'):
+    if config["model_type"] in ('vinson_variant_embed', 'legnet_variant_embed','basset_variant_embed'):
         return SeqEmbedVariantDataModule(
             anndata_file=anndata_file,
             fasta_file=fasta_file,

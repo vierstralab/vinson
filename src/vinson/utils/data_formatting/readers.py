@@ -101,7 +101,7 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
     )
 
 
-def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str) -> VinsonData:
+def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str, pre_jitter=False) -> VinsonData:
     """
     Convert AnnData object to H5 format and extract embeddings.
     Args:
@@ -122,6 +122,7 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str) -> V
     encoding_sources = {
         "sample_id": train_adata.obs_names,
         "chrom": train_adata.var["#chr"],
+        # "pos": train_adata.var["end"],
         'ref': train_adata.var['ref'],
         'alt': train_adata.var['alt']
     }
@@ -133,7 +134,8 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str) -> V
 
     data = {
         'chrom': encoding_sources['chrom'][col_idx],
-        'pos': data['pos'][col_idx],
+        #'pos': encoding_sources['pos'][col_idx],
+        'pos': train_adata.var['end'].values[col_idx],
         'ref': encoding_sources['ref'][col_idx],
         'alt': encoding_sources['alt'][col_idx],
         'sample_id': encoding_sources["sample_id"][row_idx],

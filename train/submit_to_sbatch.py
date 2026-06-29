@@ -17,9 +17,6 @@ VARIANT_TEMPLATE = SCRIPT_DIR / "variant" / "template_submit_variant.sbatch"
 # run as 
 # python submit_to_sbatch.py /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT22//epoch_1.h5ad /net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa /net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model --config  /home/sabramov/packages/vinson/train/train_dhs_new_cluster_config.yaml
 
-#python submit_to_sbatch.py /net/seq/data2/projects/sabramov/ENCODE4/ML/NOV17/variant_train_adata.h5ad /net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa /net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz /net/seq/data2/projects/mbrannon/variant_model_vinson --config /home/mbrannon/.local/src/vinson/train/variant/default_train_variant.config.yml --model_type variant
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -36,9 +33,15 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=str, default=None, help='Path to custom config file')
     parser.add_argument("--env_path", type=str, default="/home/sabramov/miniconda3/envs/pytorch", help='Path to conda environment')
     parser.add_argument("--checkpoint", type=str, default=None, help='Path to existing checkpoint.')
+    parser.add_argument("--sequence_model_checkpoint", type=str, default=None, help='Path to dhs model checkpoint to load weights from for variant model')
     parser.add_argument('anndata', type=str, help='Path to anndata file')
     parser.add_argument('fasta', type=str, help='Path to fasta file')
-    parser.add_argument('genotype', type=str, help='Path to genotype file')
+    parser.add_argument(
+        "--genotype_file",
+        type=str,
+        default=None,
+        help="Path to genotype file",
+    )
     parser.add_argument('outdir', type=str, help='Path to output directory')
     parser.add_argument(
         '--preset', choices=('hpcg05-a100', 'hpcg04-heavy', 'hpcg01'), 
@@ -46,6 +49,7 @@ if __name__ == "__main__":
         help='Preset sbatch parameters for different hpcg-test nodes. Overrides nodelist, gpus_per_node and cpus_per_gpu if set.'
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug mode.")
+    parser.add_argument("--epochs", type=int, help="how many epochs to run")
 
     args = parser.parse_args()
     if args.model_type == "dhs":
@@ -64,10 +68,17 @@ if __name__ == "__main__":
         env_path=args.env_path,
         anndata=args.anndata,
         fasta=args.fasta,
-        genotype=args.genotype,
+        # genotype=args.genotype,
+        genotype_file=(
+            f"--genotype_file {args.genotype_file}"
+            if args.genotype_file is not None
+            else ""
+        ),
         outdir=args.outdir,
         config=f"--config {args.config}" if args.config else "",
+        sequence_model_checkpoint=f"--sequence_model_checkpoint {args.sequence_model_checkpoint}" if args.sequence_model_checkpoint else "",
         debug="--debug" if args.debug else "",
+        epochs=f"--epochs {args.epochs}" if args.epochs is not None else "",
         checkpoint=f"--checkpoint {args.checkpoint}" if args.checkpoint else "",
         script_dir=SCRIPT_DIR.as_posix()
     )
