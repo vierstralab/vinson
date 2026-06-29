@@ -38,13 +38,13 @@ process get_groups {
 
     """
     python3 - << EOF
-import anndata as ad
+    import anndata as ad
 
-adata = ad.read_h5ad("${anndata}")
+    adata = ad.read_h5ad("${anndata}")
 
-for g in adata.var["group_id"].unique():
-    print(g)
-EOF
+    for g in adata.var["group_id"].unique():
+        print(g)
+    EOF
     """
 }
 
@@ -119,31 +119,23 @@ process concat_results {
 
 
 workflow {
-
-    predictions =
-        Channel.fromPath(params.samples_file)
+    predictions = Channel.fromPath(params.samples_file)
             | splitCsv(header:true, sep:'\t')
             | map { tuple(it, file(it.dhs_dataset)) }
-            | predict
-
-    predictions \
-        | combine_predictions \
-        | collect \
-        | concat_results
+            | predict \
+            | combine_predictions \
+            | collect \
+            | concat_results
 }
 
 workflow aggregate {
-
-    predictions =
-        Channel.fromPath(params.samples_file)
+    predictions = Channel.fromPath(params.samples_file)
             | splitCsv(header:true, sep:'\t')
             | map { tuple(it, file(it.dhs_dataset)) }
             | predict
-
-    predictions \
-        | aggregate_group \
-        | collect \
-        | concat_results
+            | aggregate_group \
+            | collect \
+            | concat_results
 }
 
 
