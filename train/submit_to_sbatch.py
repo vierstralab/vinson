@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+import subprocess
+from datetime import datetime
+import argparse
+from pathlib import Path
+import os
+
+
+# TODO: refactor to use a common sbatch submission utility for dhs and variant models
+
+
+# Get the absolute path of the directory where this script lives
+SCRIPT_DIR = Path(__file__).resolve().parent
+DHS_TEMPLATE = SCRIPT_DIR / "dhs" / "template_submit_dhs.sbatch"
+VARIANT_TEMPLATE = SCRIPT_DIR / "variant" / "template_submit_variant.sbatch"
+
+# run as 
+# python submit_to_sbatch.py /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/training_data/OCT22//epoch_1.h5ad /net/seq/data/genomes/human/GRCh38/noalts/GRCh38_no_alts.fa /net/seq/data2/projects/sabramov/ENCODE4/dnase-wasp.v5/output/all_variants_stats.bed.gz /net/seq/data2/projects/ENCODE4Plus/REGULOME/sequence_to_accessibility_model/vinson_model --config  /home/sabramov/packages/vinson/train/train_dhs_new_cluster_config.yaml
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model_type",
+        choices=("dhs", "variant"),
+        default="dhs",
+        help="Which model to run: dhs or variant."
+    )
+    parser.add_argument("--run_name", type=str, default=None, help="Run name, if not provided, a unique name will be generated")
+    parser.add_argument("--gpus_per_node", type=int, default=8)
+    parser.add_argument("--cpus_per_gpu", type=int, default=4, help='Number of CPU cores per GPU. One cpu per gpu will be reserved for training, the rest for the data loading.')
+    parser.add_argument("--mem", type=str, default='0', help='Memory per node')
+    parser.add_argument("--nodelist", type=str, default=None, help='Names of nodes to use. Formatted according to sbatch --nodelist option.')
+    parser.add_argument("--config", type=str, default=None, help='Path to custom config file')
+    parser.add_argument("--env_path", type=str, default="/home/sabramov/miniconda3/envs/pytorch", help='Path to conda environment')
+    parser.add_argument("--checkpoint", type=str, default=None, help='Path to existing checkpoint.')
+    parser.add_argument("--sequence_model_checkpoint", type=str, default=None, help='Path to dhs model checkpoint to load weights from for variant model')
+    parser.add_argument('anndata', type=str, help='Path to anndata file')
+    parser.add_argument('fasta', type=str, help='Path to fasta file')
+    parser.add_argument(
+        "--genotype_file",
+        type=str,
+        default=None,
+        help="Path to genotype file",
+    )
+    parser.add_argument('outdir', type=str, help='Path to output directory')
+    parser.add_argument(
+        '--preset', choices=('hpcg05-a100', 'hpcg04-heavy', 'hpcg01'), 
+        default=None, 
+        help='Preset sbatch parameters for different hpcg-test nodes. Overrides nodelist, gpus_per_node and cpus_per_gpu if set.'
+    )
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode.")
+    parser.add_argument("--epochs", type=int, help="how many epochs to run")
+
+    args = parser.parse_args()
+    if args.model_type == "dhs":
+        TEMPLATE_PATH = DHS_TEMPLATE
+    else:
+        TEMPLATE_PATH = VARIANT_TEMPLATE
+
+    cfg = dict(
+        partition="hpcg-test",
+        nodes=1,
+        gpus_per_node=args.gpus_per_node,
+        cpus_per_task=args.cpus_per_gpu,
+        nodelist=args.nodelist,
+        mem=args.mem,
+        time="36:00:00",
+        env_path=args.env_path,
+        anndata=args.anndata,
+        fasta=args.fasta,
+        # genotype=args.genotype,
+        genotype_file=(
+            f"--genotype_file {args.genotype_file}"
+            if args.genotype_file is not None
+            else ""
+        ),
+        outdir=args.outdir,
+        config=f"--config {args.config}" if args.config else "",
+        sequence_model_checkpoint=f"--sequence_model_checkpoint {args.sequence_model_checkpoint}" if args.sequence_model_checkpoint else "",
+        debug="--debug" if args.debug else "",
+        epochs=f"--epochs {args.epochs}" if args.epochs is not None else "",
+        checkpoint=f"--checkpoint {args.checkpoint}" if args.checkpoint else "",
+        script_dir=SCRIPT_DIR.as_posix()
+    )
+
+    # Apply preset if provided
+    if args.preset is not None:
+        cfg['nodelist'] = args.preset
+        if args.preset == 'hpcg05-a100':
+            cfg['gpus_per_node'] = 8
+            cfg['cpus_per_task'] = 12
+        elif args.preset == 'hpcg04-heavy':
+            cfg['gpus_per_node'] = 8
+            cfg['cpus_per_task'] = 4
+        elif args.preset == 'hpcg01':
+            cfg['gpus_per_node'] = 4
+            cfg['cpus_per_task'] = 4
+
+    # Generate run name
+    if args.run_name is None:
+        print('Generating run name...')
+        run_name = subprocess.check_output(
+            [f"{cfg['env_path']}/bin/python", "-c", "from vinson.utils.helpers import generate_run_name; print(generate_run_name())"],
+            text=True
+        ).strip()
+    else:
+        run_name = args.run_name
+
+    timestamp = datetime.now().strftime("%Y_%m_%d")
+    cfg["run_name"] = f"{timestamp}_{run_name}"
+    
+    # ---- render & submit ----
+    with open(TEMPLATE_PATH) as f:
+        script = f.read().format(**cfg)
+
+    outdir = cfg['outdir'] + "/" + cfg['run_name']
+    os.makedirs(outdir, exist_ok=True)
+
+    script_path = f"{outdir}/submit.sh"
+    with open(script_path, "w") as f:
+        f.write(script)
+    cmd = ["sbatch", script_path]
+    if cfg['nodelist'] is not None:
+        cmd.insert(1, f"--nodelist={cfg['nodelist']}")
+    subprocess.run(cmd)
+    print(f"Submitted run: {cfg['run_name']}")
+    print(f"Outdir: {outdir}")
