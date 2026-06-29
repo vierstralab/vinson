@@ -9,6 +9,18 @@ from .encoding import sanitize_data, encode_inplace
 from .container import VinsonData
 
 
+def _parse_indiv_info(adata_slice, data):
+    if "genotype_cluster" in adata_slice.obs:
+        data["indiv_id"] = pd.Series(adata_slice.obsm["genotype_cluster"], index=adata_slice.obs_names)
+    elif "indiv_id" in adata_slice.obsm:
+        # Deprecated format
+        print('Deprecated: indiv_id found in .obsm; expected .obs["genotype_cluster"]')
+        data["indiv_id"] = pd.Series(adata_slice.obsm["indiv_id"], index=adata_slice.obs_names)
+    else:
+        return False
+    return True
+        
+
 def extract_data_from_h5(h5_file, ref_adata: ad.AnnData, is_variant=False) -> VinsonData:
     with h5py.File(h5_file, 'r') as f:
         data = {}
@@ -49,8 +61,8 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
         "chrom": train_adata.var["#chr"],
     }
 
-    if "indiv_id" in train_adata.obsm:
-        encoded_vals["indiv_id"] = train_adata.obsm["indiv_id"]
+    _parse_indiv_info(train_adata, encoding_sources)
+
 
     for key in encoded_vals:
         encode_inplace(encoded_vals, encodings, key)
@@ -113,8 +125,8 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str) -> V
         'ref': train_adata.var['ref'],
         'alt': train_adata.var['alt']
     }
-    if 'indiv_id' in train_adata.obsm:
-        encoding_sources['indiv_id'] = train_adata.obsm['indiv_id']
+
+    _parse_indiv_info(train_adata, encoding_sources)
 
     for key in encoding_sources:
         encode_inplace(encoding_sources, encodings, key)
@@ -144,6 +156,7 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str) -> V
     )
 
 
+
 def _extract_wide_raw(
     backed_anndata,
     dhs_ids=None,
@@ -166,8 +179,8 @@ def _extract_wide_raw(
 
     to_encode_keys = ["sample_id", "dhs_id", "chrom"]
 
-    if "indiv_id" in adata_slice.obsm:
-        data["indiv_id"] = pd.Series(adata_slice.obsm["indiv_id"], index=adata_slice.obs_names)
+    has_indiv_id = _parse_indiv_info(adata_slice, data)
+    if has_indiv_id:
         to_encode_keys.append("indiv_id")
     
     encodings = {}
@@ -215,7 +228,6 @@ def extract_data_from_backed_anndata(
 
     for layer in ['density', 'background', 'class', *extra_layers]:
         data[layer] = data[layer].flatten()
-    
 
     for key in ['indiv_id', 'read_depth']:
         if key not in data:
