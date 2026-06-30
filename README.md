@@ -37,6 +37,15 @@ A DHS model is a convolutional model that consists of  **trunk** and **head**. T
 
 The Lightning wrapper (`SequenceOnlyModel` for sequence-only trunks, `SequenceEmbedModel` for embed-conditioned trunks) handles the training/validation loop, loss, and optimizer.
 
+# Loading a trained checkpoint
+
+```python
+from vinson.from_config import read_configs, dhs_model_from_config
+
+config = read_configs("<run_dir>/run_config.yaml")
+model = dhs_model_from_config(config, checkpoint_path="<run_dir>/checkpoints/last.ckpt").eval()
+```
+
 # Config format
 
 Every model is fully described by a single YAML config (see `train/dhs/default_train_dhs.config.yaml` for the schema). During training, each run saves the resolved config, along with a timestamp and the command line used to start the run, to `run_config.yaml`.
@@ -64,14 +73,7 @@ Key fields:
   - `negatives_weight` — loss weight multiplier applied to negative (non-accessible) examples
 - `logging_params` — `val_check_interval`, `logger_type`
 
-# Loading a trained checkpoint
 
-```python
-from vinson.from_config import read_configs, dhs_model_from_config
-
-config = read_configs("<run_dir>/run_config.yaml")
-model = dhs_model_from_config(config, checkpoint_path="<run_dir>/checkpoints/last.ckpt").eval()
-```
 
 # Training data format
 
