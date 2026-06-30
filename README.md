@@ -187,7 +187,7 @@ Writes to `<outdir>/predictions/<prefix>/`: `<prefix>.npy` (raw predictions) and
 
 # Authors
 
-Developed by:
+Developed by (alphabetically by last name):
 
 - Sergey Abramov
 - Alexandr Boytsov
