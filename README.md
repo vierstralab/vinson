@@ -17,6 +17,7 @@ vinson is a sequence-to-function modeling framework for chromatin accessibility 
 
 ## Prerequisites
 `conda` (or `mamba`), `python >= 3.9`, a CUDA-capable GPU for training/prediction.
+<FIXME>
 
 ## Install vinson
 ```bash
@@ -32,22 +33,24 @@ python train/dhs/train_dhs.py --help
 
 # Model architecture
 
-A DHS model is a convolutional **trunk** (`BassetTrunk` or `LegNetTrunk`, see [`vinson/models/sequence/`](src/vinson/models/sequence/)) that accepts a one-hot encoded sequence as input. Depending on the head, the model either predicts accessibility for many samples at once from a single shared (multi-task) head, or is conditioned on a per-sample cell-type embedding injected into the trunk (`BassetTrunkEmbed` / `LegNetTrunkEmbed`) and predicts a single sample's signal per example. Either way, the trunk's output feeds into a fully connected head that predicts the accessibility signal.
+A DHS model is a convolutional model that consists of  **trunk** and **head**. The trunk accepts a one-hot encoded sequence as input and it's output feeds into a fully connected head that predicts the accessibility. The model either predicts accessibility for many samples at once (`BassetTrunk` or `LegNetTrunk`, see [`vinson/models/sequence/`](src/vinson/models/sequence/)) or predicts a single value depending on the embedding injected into the trunk (`BassetTrunkEmbed` / `LegNetTrunkEmbed`)
 
 The Lightning wrapper (`SequenceOnlyModel` for sequence-only trunks, `SequenceEmbedModel` for embed-conditioned trunks) handles the training/validation loop, loss, and optimizer.
 
 # Config format
 
-Every model is fully described by a single YAML config (see `train/dhs/default_train_dhs.config.yaml` for the schema). At training time, each run saves the resolved config, along with a timestamp and the command line used to start the run, as `run_config.yaml`.
+Every model is fully described by a single YAML config (see `train/dhs/default_train_dhs.config.yaml` for the schema). During training, each run saves the resolved config, along with a timestamp and the command line used to start the run, to `run_config.yaml`.
 
 Key fields:
 
 - `model_type` — selects a trunk/Lightning-module pair from the registry in [`vinson/from_config.py`](src/vinson/from_config.py):
 
-  | `model_type` | Trunk | Lightning module |
-  | --- | --- | --- |
-  | `basset` / `legnet` | `BassetTrunk` / `LegNetTrunk` — sequence only | `SequenceOnlyModel` |
-  | `basset_embed` / `legnet_embed` | `BassetTrunkEmbed` / `LegNetTrunkEmbed` — sequence + cell-type embedding | `SequenceEmbedModel` |
+| `model_type` | Trunk | Lightning module |
+| --- | --- | --- |
+| `basset` | `BassetTrunk` — sequence only | `SequenceOnlyModel` |
+| `legnet` | `LegNetTrunk` — sequence only | `SequenceOnlyModel` |
+| `basset_embed` | `BassetTrunkEmbed` — sequence + cell-type embedding | `SequenceEmbedModel` |
+| `legnet_embed` | `LegNetTrunkEmbed` — sequence + cell-type embedding | `SequenceEmbedModel` |
 
 - `model_arch` — `trunk` and `head` configuration. For `*_embed` model types it also requires a `cell_embed` configuration (kwargs for the fully connected block that injects the cell-type embedding into the model).
 - `hparams` — `batch_size`, `optimizer_kwargs.lr`, `lr_scheduler`, …
@@ -72,7 +75,7 @@ model = dhs_model_from_config(config, checkpoint_path="<run_dir>/checkpoints/las
 
 # Training data format
 
-Training datasets are AnnData objects (`.h5ad`) read through [`vinson/utils/data_formatting`](src/vinson/utils/data_formatting). At minimum, a DHS training example requires `chrom`, `summit`, `class`, `density`, `background`, `read_depth`, and `sample_id`; per-sample cell-type embeddings are looked up by `sample_id` (in `.obsm['motif_embeddings']`). To incorporate individual variants, `indiv_id` should be present in the dataset, along with a tabix file containing the genotype information.
+Training datasets are AnnData objects (`.h5ad`) read through [`vinson/utils/data_formatting`](src/vinson/utils/data_formatting). At a minimum, a DHS training example requires `chrom`, `summit`, `class`, `density`, `background`, `read_depth`, and `sample_id`; per-sample cell-type embeddings are looked up by `sample_id` (in `.obsm['motif_embeddings']`). To incorporate individual variants, `indiv_id` should be present in the dataset, along with a tabix file containing the genotype information.
 
 # Training
 
