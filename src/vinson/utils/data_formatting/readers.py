@@ -54,7 +54,7 @@ def parse_genotype_file(genotype_file):
 
 def _parse_indiv_info(adata_slice, data):
     if "genotype_cluster" in adata_slice.obs:
-        data["indiv_id"] = pd.Series(adata_slice.obs["genotype_cluster"], index=adata_slice.obs_names)
+        data["indiv_id"] = adata_slice.obs["genotype_cluster"]
     elif "indiv_id" in adata_slice.obsm:
         # Deprecated format
         print('Deprecated: indiv_id found in .obsm; expected .obs["genotype_cluster"]')
