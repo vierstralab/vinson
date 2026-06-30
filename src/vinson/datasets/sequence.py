@@ -10,7 +10,9 @@ from genome_tools.data.extractors import FastaExtractor, TabixExtractor
 
 from vinson.utils.data_formatting import VinsonData
 from vinson.utils.sequence_utils import one_hot_encode, get_iupac_char_from_alleles
-from vinson.utils.helpers import replace_at, detect_genotype_format
+from vinson.utils.helpers import replace_at
+
+from vinson.utils.data_formatting.readers import parse_genotype_file
 import logging
 
 logger = logging.getLogger(__name__)
@@ -134,50 +136,6 @@ class BaseSequenceDataset(Dataset):
 
         return x
 
-    
-    def _make_genotype_extractor(self, genotype_file):
-
-        phased, has_header = detect_genotype_format(genotype_file)
-    
-        skiprows = 1 if has_header else 0
-    
-        if phased:
-    
-            # print(f"[INFO] Using phased genotype format ({genotype_file})")
-    
-            return TabixExtractor(
-                genotype_file,
-                skiprows=skiprows,
-                columns=[
-                    "chrom",
-                    "start",
-                    "end",
-                    "ref",
-                    "alt",
-                    "indiv_id",
-                    "gt",
-                    "phase_set",
-                ],
-                na_values={"phase_set": "."},
-            )
-    
-        # print(f"[INFO] Using unphased genotype format ({genotype_file})")
-    
-        return TabixExtractor(
-            genotype_file,
-            skiprows=skiprows,
-            columns=[
-                "chrom",
-                "start",
-                "end",
-                "ref",
-                "alt",
-                "indiv_id",
-                "gt",
-            ],
-            na_values=".",
-        )
-
 
     def _init_fileread(self):
 
@@ -185,7 +143,7 @@ class BaseSequenceDataset(Dataset):
             self.fasta_extr = FastaExtractor(self.fasta_file)
 
         if self.include_genotypes and self.genotype_extr is None:
-            self.genotype_extr = self._make_genotype_extractor(
+            self.genotype_extr = parse_genotype_file(
                 self.genotype_file
             )
             
@@ -502,7 +460,7 @@ class SequenceEmbedDataset(SequenceOnlyDataset):
         """
         data = super().__getitem__(i)
         if data["density"].ndim > 0:
-            raise ValueError("Multitask model not supported in SequenceEmbedDataset.")
+            raise ValueError("Multitask model is not supported in SequenceEmbedDataset.")
         
         # Get embeddings
         data['embed'] = self.get_embedding_vec(data['sample_id'])

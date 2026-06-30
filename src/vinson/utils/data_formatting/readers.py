@@ -3,11 +3,54 @@ import anndata as ad
 import h5py
 import pandas as pd
 
+from vinson.utils.helpers import detect_genotype_format
 from .adata_utils import slice_adata, compute_if_dask, get_examples_indices_from_layer, update_layers_dict
 from .encoding import sanitize_data, encode_inplace
 
 from .container import VinsonData
 
+from genome_tools.data.extractors import TabixExtractor
+
+
+def parse_genotype_file(genotype_file):
+
+    phased, has_header = detect_genotype_format(genotype_file)
+
+    skiprows = 1 if has_header else 0
+
+    if phased:
+        # print(f"[INFO] Using phased genotype format ({genotype_file})")
+        return TabixExtractor(
+            genotype_file,
+            skiprows=skiprows,
+            columns=[
+                "chrom",
+                "start",
+                "end",
+                "ref",
+                "alt",
+                "indiv_id",
+                "gt",
+                "phase_set",
+            ],
+            na_values={"phase_set": "."},
+        )
+
+    # print(f"[INFO] Using unphased genotype format ({genotype_file})")
+    return TabixExtractor(
+        genotype_file,
+        skiprows=skiprows,
+        columns=[
+            "chrom",
+            "start",
+            "end",
+            "ref",
+            "alt",
+            "indiv_id",
+            "gt",
+        ],
+        na_values=".",
+    )
 
 def _parse_indiv_info(adata_slice, data):
     if "genotype_cluster" in adata_slice.obs:
