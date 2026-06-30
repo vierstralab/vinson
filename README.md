@@ -1,12 +1,12 @@
 # vinson
 
-vinson is a sequence-to-function modeling framework for chromatin accessibility (DNase I hypersensitivity, DHS) and variant effect prediction.
+vinson is a package wrapping the core code and processing pipelines for sequence-to-function modeling of chromatin accessibility (DNase I hypersensitivity) and variant effect prediction, along with a cell-type classifier built on the sample embeddings.
 
 It has three main components, each documented in its own README:
 
-- [Cell type classifier](docs/cell_classifier.md) — classifier of a cell-type based on per-sample embeddings
 - [Accessibility (DHS) sequence-to-function model](docs/accessibility_model.md) — predicts chromatin accessibility from DNA sequence, optionally incorporating the cell-type embedding
 - [Variant effect model](docs/variant_model.md) — predicts the allelic effect of a variant on accessibility
+- [Cell type classifier](docs/cell_classifier.md) — classifier of a cell-type based on per-sample embeddings
 
 
 # Table of contents
