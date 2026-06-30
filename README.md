@@ -188,9 +188,10 @@ Writes to `<outdir>/predictions/<prefix>/`: `<prefix>.npy` (raw predictions) and
 Developed by:
 
 - Sergey Abramov
+- Alexandr Boytsov
 - Madeline Brannon
 - Sergey Bushuev
-- Alexandr Boytsov
+- Anas Fathul
 - Jeff Vierstra
 
 Altius Institute for Biomedical Sciences
