@@ -77,7 +77,49 @@ model = dhs_model_from_config(config, checkpoint_path="<run_dir>/checkpoints/las
 
 Training datasets are AnnData objects (`.h5ad`) read through [`vinson/utils/data_formatting`](src/vinson/utils/data_formatting). At a minimum, a DHS training example requires `chrom`, `summit`, `class`, `density`, `background`, `read_depth`, and `sample_id`; per-sample cell-type embeddings are looked up by `sample_id` (in `.obsm['motif_embeddings']`). To incorporate individual variants, `indiv_id` should be present in the dataset, along with a tabix file containing the genotype information.
 
+> TODO: document the `VinsonData` container ([`vinson/utils/data_formatting/container.py`](src/vinson/utils/data_formatting/container.py)) and the full AnnData/Zarr schema.
+
 # Training
+
+## Python API
+
+The model is a Lightning `LightningModule`, so it trains with a standard Lightning `Trainer`:
+
+```python
+import lightning as L
+from vinson.from_config import read_configs, dhs_model_from_config, datamodule_from_config
+
+config = read_configs("<model_config>")
+model = dhs_model_from_config(config)
+
+datamodule = datamodule_from_config(
+    config,
+    anndata_file="<train_anndata_file>",
+    fasta_file="<fasta_file>",
+    genotype_file=None,
+)
+
+trainer = L.Trainer(max_epochs=20, accelerator="gpu", devices=1)
+trainer.fit(model, datamodule=datamodule)
+```
+
+Alternatively, build the dataset directly from a `VinsonData` object — e.g. loaded from an `.h5` file — and pass plain dataloaders to `trainer.fit` instead of a datamodule:
+
+```python
+from torch.utils.data import DataLoader
+from vinson.utils.data_formatting import extract_data_from_h5
+from vinson.datasets.sequence import SequenceEmbedDataset
+
+data = extract_data_from_h5("<h5_file>", ref_adata="<adata_with_sample_embeds>", is_variant=False)
+dataset = SequenceEmbedDataset(data=data, fasta_file="<fasta_file>")
+train_loader = DataLoader(dataset, batch_size=64, shuffle=True)
+
+trainer.fit(model, train_dataloaders=train_loader)
+```
+
+## Training script
+
+`train/dhs/train_dhs.py` wraps the above into a CLI.
 
 ```bash
 python train/dhs/train_dhs.py <anndata_file> <fasta_file> \
@@ -97,7 +139,10 @@ python train/dhs/train_dhs.py <anndata_file> <fasta_file> \
 
 The script writes to `<outdir>/<run_name>/`: `run_config.yaml`, `checkpoints/*.ckpt`, and CSV training/validation logs.
 
-To run training as a job on a SLURM-enabled cluster, use:
+## SLURM submission
+
+`train/submit_to_sbatch.py` wraps `train_dhs.py` for `sbatch`: it renders `train/dhs/template_submit_dhs.sbatch` with the given arguments and submits it.
+
 ```bash
 python train/submit_to_sbatch.py --model_type dhs <anndata_file> <fasta_file> <outdir> \
     --genotype_file <genotype.bed.gz> \
@@ -105,7 +150,7 @@ python train/submit_to_sbatch.py --model_type dhs <anndata_file> <fasta_file> <o
     --gpus_per_node 4
 ```
 
-This renders and submits an `sbatch` script from `train/dhs/template_submit_dhs.sbatch`, with additional arguments controlling the job: `--run_name`, `--gpus_per_node`, `--cpus_per_gpu`, `--mem`, `--nodelist`, `--preset` (cluster-specific node presets), `--checkpoint`, `--epochs`, `--debug`.
+Additional arguments controlling the job: `--run_name`, `--gpus_per_node`, `--cpus_per_gpu`, `--mem`, `--nodelist`, `--preset` (cluster-specific node presets), `--checkpoint`, `--epochs`, `--debug`.
 
 # Prediction
 
@@ -142,8 +187,9 @@ Writes to `<outdir>/predictions/<prefix>/`: `<prefix>.npy` (raw predictions) and
 
 Developed by:
 
-- Madeline Brannon
 - Sergey Abramov
+- Madeline Brannon
+- Sergey Bushuev
 - Alexandr Boytsov
 - Jeff Vierstra
 
