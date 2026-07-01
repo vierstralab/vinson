@@ -80,7 +80,7 @@ class VinsonData:
             x = value[i]
 
             if key in self.encodings:
-            #     return_dict[key] = self._decode(key, return_dict[key])
+                # return_dict[key] = self._decode(key, return_dict[key])
                 x = self._decode(key, x)
 
                 # --- critical: make it Python-native for torch collate ---
@@ -95,7 +95,6 @@ class VinsonData:
                     x = x.astype(str).tolist()
 
             return_dict[key] = x
-
         return return_dict
 
     def write_h5(self, h5_file: str):
