@@ -83,7 +83,6 @@ class VinsonData:
                 # return_dict[key] = self._decode(key, return_dict[key])
                 x = self._decode(key, x)
 
-                # --- critical: make it Python-native for torch collate ---
                 # scalar string
                 if isinstance(x, (np.str_, str)):
                     x = str(x)
