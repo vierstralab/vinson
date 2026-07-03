@@ -18,7 +18,6 @@ It has three main components, each documented in its own README:
 
 ## Prerequisites
 `conda` (or `mamba`), `python >= 3.9`, a CUDA-capable GPU for training/prediction.
-<FIXME>
 
 ## Install vinson
 ```bash
@@ -41,6 +40,7 @@ Developed by (alphabetically by last name):
 - Madeline Brannon
 - Sergey Bushuev
 - Anas Fathul
+- Dmitry Penzar
 - Jeff Vierstra
 
 Altius Institute for Biomedical Sciences

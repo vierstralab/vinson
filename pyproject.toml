@@ -4,10 +4,37 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vinson"
-version = "0.0.1"
-description = "Model to predict DNase I accessibility"
+version = "1.0.0"
+description = "Codebase to predict DNase I accessibility"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+    "torch",
+    "lightning",
+    "torchmetrics",
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "anndata",
+    "dask",
+    "h5py",
+    "matplotlib",
+    "seaborn",
+    "mergedeep",
+    "numba",
+    "pyBigWig",
+    "tqdm",
+    "PyYAML",
+    "genome-tools",
+    "funkybob",
+    "tangermeme",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "build",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

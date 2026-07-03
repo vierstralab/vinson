@@ -9,7 +9,6 @@ Part of [vinson](../README.md). Classifies cell type (and other sample metadata,
 - [Config format](#config-format)
 - [Training data format](#training-data-format)
 - [Training](#training)
-- [Evaluation and thresholding](#evaluation-and-thresholding)
 
 # Model architecture
 
