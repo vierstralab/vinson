@@ -7,7 +7,7 @@ Part of [vinson](../README.md). Predicts chromatin accessibility directly from D
 - [Model architecture](#model-architecture)
 - [Loading a trained checkpoint](#loading-a-trained-checkpoint)
 - [Config format](#config-format)
-- [Training data format](#training-data-format)
+- [Train/prediction data format](#trainprediction-data-format)
 - [Training](#training)
 - [Prediction](#prediction)
 
@@ -53,11 +53,56 @@ Key fields:
   - `negatives_weight` — loss weight multiplier applied to negative (non-accessible) examples
 - `logging_params` — `val_check_interval`, `logger_type`
 
-# Training data format
+# Train/prediction data format
 
-Training datasets are AnnData objects (`.h5ad`) read through [`vinson/utils/data_formatting`](../src/vinson/utils/data_formatting). At a minimum, a DHS training example requires `chrom`, `summit`, `class`, `density`, `background`, `read_depth`, and `sample_id`; per-sample cell-type embeddings are looked up by `sample_id` (in `.obsm['motif_embeddings']`). To incorporate individual variants, `indiv_id` should be present in the dataset, along with a tabix file containing the genotype information.
+`SequenceDataset` and `SequenceEmbedDataset` ([`vinson/datasets/sequence.py`](../src/vinson/datasets/sequence.py)) wrap the data used to train/predict with the model, extracting one-hot encoded sequence windows around each DHS on the fly from a `fasta_file`.
 
-> TODO: document the `VinsonData` container ([`vinson/utils/data_formatting/container.py`](../src/vinson/utils/data_formatting/container.py)) and the full AnnData/Zarr schema.
+```python
+SequenceEmbedDataset(data=data, fasta_file="<fasta_file>") # optionally can provide genotype_file
+```
+
+`data` is a `VinsonData` container ([`vinson/utils/data_formatting/container.py`](../src/vinson/utils/data_formatting/container.py)) — a lightweight wrapper around parallel arrays, one entry per training/prediction example (`chrom`, `summit`, `class`, `density`, `background`, `read_depth`, `sample_id`, optionally `indiv_id`), plus an optional per-sample `embeddings_df` (cell-type embeddings, indexed by `sample_id`). Categorical fields (e.g. `chrom`, `sample_id`) are integer-encoded on construction; the original values are recoverable via `.decode(key)` or `.to_df()`. `VinsonData` is normally built via one of the `extract_data_from_*` helpers below, rather than constructed directly.
+
+## From train Anndata
+Training datasets are a single AnnData object (`.h5ad`) per training run, read through [`vinson/utils/data_formatting`](../src/vinson/utils/data_formatting), with the following schema:
+
+- `var`: `#chr`, `start`, `dhs_summit` — DHS coordinates.
+- `uns.epoch_names` — list of epoch suffixes (e.g. `epoch_1`, `epoch_2`, …) used to look up that epoch's layers, `{layer}.{epoch_name}`.
+- `uns.n_training_examples` — total number of training examples across all epochs, cached so it doesn't need to be recomputed by summing nonzero entries over every epoch layer (e.g. to compute total steps for a OneCycle LR schedule).
+- `varm.dhs_weight` — per-DHS loss weight, multiplied by the `negatives_weight` multiplier (see [Config format](#config-format)) to give each example's final training loss weight; can be used to give higher weight to cell-selective DHSs.
+- `obsm.split_data` / `varm.split_data` — `train`/`val` labels along the sample (`obsm`) and DHS (`varm`) axes, e.g. holding out all DHSs on chr9 and chr22 for validation.
+- `obsm.motif_embeddings` — DataFrame indexed by `sample_id`, one column per motif/TF, holding the normalized per-sample motif-proportion embedding.
+- `layers`: `binary`, plus `class.<epoch_name>`, `density.<epoch_name>`, `mean_bg_agg_cutcounts.<epoch_name>` for each name in `uns.epoch_names` (e.g. `class.epoch_1`, `class.epoch_2`, …); if that epoch was extracted with `pre_jitter=True`, `offsets.<epoch_name>` is present as well.
+  - `binary` — whether the individual sample's peak call overlaps the DHS
+  - `density` — cuts density in the 151 bp window around the summit, normalized to library size (`not_normalized_density * 1e6 / total_nuclear_reads`)
+  - `mean_bg_agg_cutcounts` — the background cuts density, not normalized to library size
+
+The per-epoch layers are stored as sparse (CSR) matrices containing only the examples selected for that epoch.
+
+To incorporate individual variants, `obsm.indiv_id` — a `pd.DataFrame` with an `indiv_id` column — should be present in the dataset, along with a tabix file containing the genotype information.
+
+`extract_data_from_train_anndata(train_adata, suffix, pre_jitter=False)` ([`vinson/utils/data_formatting/readers.py`](../src/vinson/utils/data_formatting/readers.py)) builds a `VinsonData` from a training AnnData for a chosen epoch. `suffix` selects which epoch's layers to read (layers are named `{layer}.{suffix}`, e.g. `class.epoch_1`). With `pre_jitter=False`, each example's `summit` is left at the DHS's stored `dhs_summit` and jitter is instead applied on the fly during training (see `train_augmentation_kwargs.jitter` in [Config format](#config-format)). With `pre_jitter=True`, the epoch's density was already computed at a jittered offset from the summit, so the per-example offsets stored in the `offsets.<suffix>` layer are added to `summit`, yielding the actual genomic position at which density was extracted.
+
+## From h5 file
+`extract_data_from_h5(h5_file, ref_adata, is_variant=False)` reads a previously-written `.h5` file (written by `VinsonData.write_h5`) and pairs it with cell-type embeddings looked up from `ref_adata.obsm['motif_embeddings']` — `ref_adata` is an `ad.AnnData` object, either a backed reference AnnData or a training AnnData, as long as it has `.obsm['motif_embeddings']`.
+
+The `.h5` file has one top-level dataset per `VinsonData` field it was written from — the same fields as the training AnnData schema above: `chrom`, `summit`, `class`, `density`, `background`, `read_depth`, `sample_id`, `dhs_id`, and optionally `indiv_id` / `dhs_weight`.
+
+```python
+from vinson.utils.data_formatting import extract_data_from_h5
+
+data = extract_data_from_h5("<h5_file>", ref_adata="<adata_with_sample_embeds>", is_variant=False)
+```
+
+## From anndata file
+`extract_data_from_backed_anndata(backed_anndata, dhs_ids=None, sample_ids=None, use_sample_peaks=False, extra_layers=())` builds a `VinsonData` directly from a (Zarr-)backed reference AnnData — used for prediction/validation rather than training — by broadcasting every requested `sample_id` x `dhs_id` pair into one row per example. `use_sample_peaks=True` filters to DHSs called as peaks (`class == 1`) in each sample. `extract_data_from_backed_anndata_wide` does the same but skips embeddings and keeps one row per DHS with samples as columns, for a wide per-DHS prediction layout (e.g. the cell-selectivity prediction described under [Prediction](#prediction)) instead of the flattened per-example format.
+
+## Useful post-processing functions
+
+[`vinson/postprocessing/utils.py`](../src/vinson/postprocessing/utils.py):
+- `annotate_eval_dataset_with_layers(eval_dataset, annotate_counts=False, annotate_log_density=False, **kwargs)` — annotates a predictions dataframe (`VinsonData.to_df()` with added prediction column `pred_corrected_density`) with background-corrected density/count columns (and optionally their log-transforms) for comparing predictions against observed data (including or excluding the background).
+
+[`vinson/postprocessing/interpretation.py`](../src/vinson/postprocessing/interpretation.py) — DeepLIFT/SHAP-based sequence attribution (`deep_lift_shap`, built on `tangermeme`), for identifying which bases/motifs drive a model's prediction for a given input sequence.
 
 # Training
 
@@ -109,7 +154,7 @@ python train/dhs/train_dhs.py <anndata_file> <fasta_file> \
     --devices 4
 ```
 
-- `<anndata_file>` — training AnnData (see [Training data format](#training-data-format))
+- `<anndata_file>` — training AnnData (see [Train/prediction data format](#trainprediction-data-format))
 - `<fasta_file>` — reference genome used to extract and augment sequences on the fly
 - `--config` — see [Config format](#config-format) for the contents of the config file
 - `--genotype_file` (tabix-indexed, optional) — if provided, each training example's sequence has the individual's genotype (matched by `indiv_id`) injected before one-hot encoding, instead of using the reference allele at every position
