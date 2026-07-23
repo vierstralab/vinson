@@ -126,6 +126,24 @@ class NegativeBinomialLoss(torch.nn.Module):
         else:
             return nll
 
+class NegativeBinomialLossWithParameters(torch.nn.Module):
+    """
+    Computes the NB -log-likelihood of the input given parameters NB(p, r)
+    """
+    def __init__(self, reduction: str = "mean"):
+        super(NegativeBinomialLossWithParameters, self).__init__()
+        self.reduction = reduction
+
+    def forward(self, input: torch.Tensor, p: torch.Tensor, r: torch.Tensor):
+        
+        nll = -(r * torch.log(p) + input * torch.log1p(-p))
+
+        if self.reduction == "sum":
+            return nll.sum()
+        elif self.reduction == "mean":
+            return nll.mean()
+        else:
+            return nll
 
 class PoissonNLLLoss(torch.nn.Module):
     """
