@@ -81,6 +81,8 @@ def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> VinsonDa
         }
         if 'indiv_id' in anndata_slice.obsm:
             data_bundle['indiv_id'] = np.array([sample_slice.obsm['indiv_id'][0] for _ in range(len(peaks))], dtype=np.str_)
+        elif 'genotype_id' in anndata_slice.obs:
+            data_bundle['indiv_id'] = np.array([sample_slice.obsm['genotype_id'][0] for _ in range(len(peaks))], dtype=np.str_)
         else:
             print('Warning: indiv_id not found in anndata.obsm', flush=True)
         data.append(data_bundle)
