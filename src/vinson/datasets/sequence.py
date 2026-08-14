@@ -72,7 +72,7 @@ class BaseSequenceDataset(Dataset):
 
         self.fasta_extr: FastaExtractor = None
         self.genotype_extr: TabixExtractor = None
-        self.include_genotypes = genotype_file is not None
+        self.include_genotypes = genotype_file is not None and genotype_file != ''
         
         if self.include_genotypes:
             assert "indiv_id" in self.data.keys(), (
