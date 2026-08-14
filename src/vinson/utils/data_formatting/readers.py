@@ -53,7 +53,10 @@ def parse_genotype_file(genotype_file):
     )
 
 def _parse_indiv_info(adata_slice, data):
+    if "genotype_id" in adata_slice.obs:
+        data["indiv_id"] = adata_slice.obs["genotype_id"]
     if "genotype_cluster" in adata_slice.obs:
+        # Deprecated format
         data["indiv_id"] = adata_slice.obs["genotype_cluster"]
     elif "indiv_id" in adata_slice.obsm:
         # Deprecated format
