@@ -55,7 +55,7 @@ workflow {
         | generate_sample_validation_data // meta, dhs_dataset
         | predict
     
-    annotate_with_predictions(params.validation_samples_file, "${params.outdir}/predictions/")
+    annotate_with_predictions(params.validation_samples_file, "${params.outdir}")
 }
 
 workflow dhsValidation {
@@ -64,7 +64,7 @@ workflow dhsValidation {
         | generate_dhs_validation_data
         | predict
     
-    annotate_with_predictions(params.validation_dhs_file, "${params.outdir}/predictions/")
+    annotate_with_predictions(params.validation_dhs_file, "${params.outdir}")
 }
 
 

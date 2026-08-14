@@ -88,7 +88,7 @@ workflow {
         | predict
         | visualize_cell_selective_predictions
     
-    annotate_with_predictions(params.samples_file, "${params.outdir}/predictions/")
+    annotate_with_predictions(params.samples_file, "${params.outdir}")
     
 }
 
