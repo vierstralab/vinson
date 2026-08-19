@@ -103,7 +103,7 @@ workflow visualize {
 process predict_fasta {
 
     conda "${params.conda}"
-    publishDir "${params.outdir}/fasta_predictions/${prefix}", pattern: "${name}"
+    publishDir "${params.outdir}/predictions/${prefix}", pattern: "${name}"
     label "gpu"
     tag "${prefix}"
 
@@ -134,6 +134,6 @@ workflow predictFasta {
         | splitCsv(header:true, sep:'\t')
         | predict_fasta
     
-    annotate_with_predictions(params.samples_file, "${params.outdir}/fasta_predictions/")
+    annotate_with_predictions(params.samples_file, "${params.outdir}/")
 
 }
