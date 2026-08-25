@@ -158,18 +158,14 @@ class VariantEmbedModelWrapper(L.LightningModule):
         for mod in [
             self.trunk_ref,
             self.trunk_alt,
-            self.embedding_ref,
-            self.embedding_alt,
         ]:
             mod.eval()
             
     def __getattr__(self, name):
-        if name != "model":
-            try:
-                return getattr(self.model, name)
-            except AttributeError:
-                pass
-        raise AttributeError(f"{self.model} has no attribute {name}")
+        try:
+            return super().__getattr__(name)          # resolves 'model' from _modules
+        except AttributeError:
+            return getattr(super().__getattr__("model"), name)
 
     def forward(self, seq_ref, seq_alt, embed: torch.Tensor) -> torch.Tensor:
         """ """

@@ -162,7 +162,7 @@ def dhs_model_from_config(config, checkpoint_path=None):
 
 #need to remove config key needing model_kwargs and data_params
 #MLP block expcets config param to be activations not activation
-def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint_path=None):
+def variant_model_from_config(config, *, sequence_model_checkpoint=None, checkpoint_path=None):
     model_type = config["model_type"]
     assert model_type in ("basset_variant_embed", "legnet_variant_embed"), f"Model type {model_type} not supported for variant models. Available types: 'basset_variant_embed', 'legnet_variant_embed'"
 
