@@ -234,3 +234,81 @@ class ModelWrapper(torch.nn.Module):
             **kwargs,
         )
         return attributions
+
+
+class VariantModelWrapper(torch.nn.Module):
+
+    def __init__(self, model):
+        super().__init__()
+        self.model = model.eval()
+
+    def forward(
+        self,
+        seq_ref,
+        seq_alt,
+        embed,
+    ):
+        return self.model(
+            seq_ref,
+            seq_alt,
+            embed,
+        )
+
+    def get_variant_sequence_attributions(
+        self,
+        ref_seq,
+        alt_seq,
+        embed,
+        device=None,
+        random_state=42,
+        **kwargs,
+    ):
+
+        if device is None:
+            device = (
+                "cuda"
+                if torch.cuda.is_available()
+                else "cpu"
+            )
+
+        self.to(device)
+        self.eval()
+
+        ref_seq = ref_seq.to(device)
+        alt_seq = alt_seq.to(device)
+        embed = embed.to(device)
+
+
+        ref_attr = deep_lift_shap(
+            self,
+            ref_seq,
+            args=(
+                alt_seq,
+                embed,
+            ),
+            device=device,
+            references=dinucleotide_shuffle,
+            random_state=random_state,
+            **kwargs,
+        )
+
+
+        alt_attr = deep_lift_shap(
+            self,
+            alt_seq,
+            args=(
+                ref_seq,
+                embed,
+            ),
+            device=device,
+            references=dinucleotide_shuffle,
+            random_state=random_state,
+            **kwargs,
+        )
+
+
+        return {
+            "ref": ref_attr.detach().cpu(),
+            "alt": alt_attr.detach().cpu(),
+        }
+

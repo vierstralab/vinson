@@ -28,26 +28,6 @@ process predict {
     """
 }
 
-process get_groups {
-
-    input:
-        path anndata
-
-    output:
-        stdout
-
-    """
-    python3 - << EOF
-    import anndata as ad
-
-    adata = ad.read_h5ad("${anndata}")
-
-    for g in adata.var["group_id"].unique():
-        print(g)
-    EOF
-    """
-}
-
 process combine_predictions {
 
     conda "${params.conda}"
@@ -73,7 +53,6 @@ process combine_predictions {
     """
 }
 
-
 process aggregate_group {
 
     conda "${params.conda}"
@@ -84,6 +63,8 @@ process aggregate_group {
 
     input:
         tuple val(meta), path(h5_file), path(pred_file)
+        val aggregation_type
+        path annotation_file
 
     output:
         path "${meta.prefix}.parquet"
@@ -95,9 +76,12 @@ process aggregate_group {
         ${h5_file} \
         ${pred_file} \
         ${meta.prefix} \
-        ${meta.prefix}.parquet
+        ${meta.prefix}.parquet \
+        ${aggregation_type} \
+        ${annotation_file}
     """
 }
+
 process concat_results {
 
     conda "${params.conda}"
@@ -129,13 +113,20 @@ workflow {
 }
 
 workflow aggregate {
-    predictions = Channel.fromPath(params.samples_file)
-            | splitCsv(header:true, sep:'\t')
-            | map { tuple(it, file(it.dhs_dataset)) }
-            | predict
-            | aggregate_group \
-            | collect \
-            | concat_results
-}
 
+    predictions = Channel.fromPath(params.samples_file)
+        | splitCsv(header:true, sep:'\t')
+        | map { tuple(it, file(it.dhs_dataset)) }
+        | predict
+
+    aggregated = aggregate_group(
+        predictions,
+        params.aggregation_type,
+        file(params.tested_annotation_file)
+    )
+
+    aggregated
+        | collect
+        | concat_results
+}
 

@@ -3,6 +3,7 @@ import torch
 
 from datetime import datetime
 import mergedeep
+from typing import Union
 
 import torch
 from vinson.utils.helpers import read_yaml_config
