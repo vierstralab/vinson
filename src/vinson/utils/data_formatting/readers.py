@@ -57,11 +57,12 @@ def _parse_indiv_info(adata_slice, data):
         data["indiv_id"] = adata_slice.obs["genotype_id"]
     elif "genotype_cluster" in adata_slice.obs:
         # Deprecated format
+        print('Deprecated: genotype_cluster found in .obs; expected .obs["genotype_id"]')
         data["indiv_id"] = adata_slice.obs["genotype_cluster"]
     elif "indiv_id" in adata_slice.obsm:
         # Deprecated format
-        print('Deprecated: indiv_id found in .obsm; expected .obs["genotype_cluster"]')
-        data["indiv_id"] = pd.Series(adata_slice.obsm["indiv_id"], index=adata_slice.obs_names)
+        print('Deprecated: indiv_id found in .obsm; expected .obs["genotype_id"]')
+        data["indiv_id"] = pd.Series(adata_slice.obsm["indiv_id"][:, 0], index=adata_slice.obs_names)
     else:
         return False
     return True

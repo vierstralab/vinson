@@ -20,63 +20,6 @@ logger = logging.getLogger(__name__)
 import warnings
 
 
-
-class MutagenesisDataset:
-    def __init__(self, source, fasta_file, seqlen, strict_ref_check=True):
-        self.records = list(source.groups())
-        self.fasta_file = fasta_file
-        self.seqlen = seqlen
-        self.strict_ref_check = strict_ref_check
-        self.fasta_extr = None
-        self._cache = {}
-
-    @staticmethod
-    def apply_variants(seq, interval_start, variants, strict=True):
-        for v in variants:
-            rel = v.start - interval_start
-            if rel <= 0 or rel >= len(seq):
-                continue
-            if strict and seq[rel:rel + len(v.ref)] != v.ref:
-                raise AssertionError(f"ref mismatch {v.chrom}:{v.start} expected {v.ref}")
-            seq = replace_at(seq, rel, v.alt)
-        return seq
-
-    def _init_fileread(self):
-        if self.fasta_extr is None:
-            self.fasta_extr = FastaExtractor(self.fasta_file)
-
-    def _wildtype(self, chrom, center):
-        key = (chrom, center)
-        if key not in self._cache:
-            iv = GenomicInterval(chrom, center, center).widen(self.seqlen // 2)
-            self._cache[key] = (iv.start, str(self.fasta_extr[iv]).upper())
-        return self._cache[key]
-
-    def __len__(self):
-        return len(self.records)
-
-    def __getitem__(self, i):
-        self._init_fileread()
-        center, sample_id, ref_edits, alt_edits = self.records[i]
-        chrom = (ref_edits + alt_edits)[0].chrom
-        start, wt = self._wildtype(chrom, center)
-        return {
-            "ohe_seq_ref": one_hot_encode(
-                self.apply_variants(
-                    wt,
-                    start,
-                    ref_edits,
-                    self.strict_ref_check
-                ), dtype=np.float32),
-            "ohe_seq_alt": one_hot_encode(apply_variants(wt, start, alt_edits, self.strict_ref_check), dtype=np.float32),
-            "sample_id": sample_id,
-            "ref_edits": ref_edits,
-            "alt_edits": alt_edits,
-            "chrom": chrom,
-            "center": center,
-        }
-
-
 class BaseSequenceDataset(Dataset):
     """
     Base PyTorch Dataset for genomic sequence and embedding data.
