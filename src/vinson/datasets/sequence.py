@@ -12,11 +12,70 @@ from vinson.utils.data_formatting import VinsonData
 from vinson.utils.sequence_utils import one_hot_encode, get_iupac_char_from_alleles
 from vinson.utils.helpers import replace_at
 
+from vinson.datasets.utils import TabixConnector, DataFrameConnector, IUPACSource
 from vinson.utils.data_formatting.readers import parse_genotype_file
 import logging
 
 logger = logging.getLogger(__name__)
 import warnings
+
+
+
+class MutagenesisDataset:
+    def __init__(self, source, fasta_file, seqlen, strict_ref_check=True):
+        self.records = list(source.groups())
+        self.fasta_file = fasta_file
+        self.seqlen = seqlen
+        self.strict_ref_check = strict_ref_check
+        self.fasta_extr = None
+        self._cache = {}
+
+    @staticmethod
+    def apply_variants(seq, interval_start, variants, strict=True):
+        for v in variants:
+            rel = v.start - interval_start
+            if rel <= 0 or rel >= len(seq):
+                continue
+            if strict and seq[rel:rel + len(v.ref)] != v.ref:
+                raise AssertionError(f"ref mismatch {v.chrom}:{v.start} expected {v.ref}")
+            seq = replace_at(seq, rel, v.alt)
+        return seq
+
+    def _init_fileread(self):
+        if self.fasta_extr is None:
+            self.fasta_extr = FastaExtractor(self.fasta_file)
+
+    def _wildtype(self, chrom, center):
+        key = (chrom, center)
+        if key not in self._cache:
+            iv = GenomicInterval(chrom, center, center).widen(self.seqlen // 2)
+            self._cache[key] = (iv.start, str(self.fasta_extr[iv]).upper())
+        return self._cache[key]
+
+    def __len__(self):
+        return len(self.records)
+
+    def __getitem__(self, i):
+        self._init_fileread()
+        center, sample_id, ref_edits, alt_edits = self.records[i]
+        chrom = (ref_edits + alt_edits)[0].chrom
+        start, wt = self._wildtype(chrom, center)
+        return {
+            "ohe_seq_ref": one_hot_encode(
+                self.apply_variants(
+                    wt,
+                    start,
+                    ref_edits,
+                    self.strict_ref_check
+                ), dtype=np.float32),
+            "ohe_seq_alt": one_hot_encode(apply_variants(wt, start, alt_edits, self.strict_ref_check), dtype=np.float32),
+            "sample_id": sample_id,
+            "ref_edits": ref_edits,
+            "alt_edits": alt_edits,
+            "chrom": chrom,
+            "center": center,
+        }
+
 
 class BaseSequenceDataset(Dataset):
     """
@@ -66,12 +125,13 @@ class BaseSequenceDataset(Dataset):
         self.noise = noise
         self.genotype_file = genotype_file
 
+        self.source = self.get_source()
+
         assert seqlen % 2 == 0, "Error 'seqlen' must be a even number!"
         self.seqlen = seqlen
-        
 
         self.fasta_extr: FastaExtractor = None
-        self.genotype_extr: TabixExtractor = None
+ 
         self.include_genotypes = genotype_file is not None and genotype_file != ''
         
         if self.include_genotypes:
@@ -83,14 +143,21 @@ class BaseSequenceDataset(Dataset):
                 "No genotyping files provided -- continuing without sample genotypes."
             )
 
+    def get_connector(self):
+        if isinstance(self.genotype_file, pd.DataFrame):
+            return DataFrameConnector
+        else:
+            return TabixConnector
+
+    def get_source(self):
+        return IUPACSource(self.get_connector())
+
     def __del__(self):
         """
         Clean up open file handles for extractors.
         """
         if self.fasta_extr:
             self.fasta_extr.close()
-        if self.genotype_extr:
-            self.genotype_extr.close()
     
     def _get_window(self, chrom, summit):
         interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
@@ -138,16 +205,23 @@ class BaseSequenceDataset(Dataset):
 
 
     def _init_fileread(self):
-
         if not self.fasta_extr:
             self.fasta_extr = FastaExtractor(self.fasta_file)
 
-        if self.include_genotypes and self.genotype_extr is None:
-            self.genotype_extr = parse_genotype_file(
-                self.genotype_file
-            )
-            
-    
+    @staticmethod
+    def _normalize_indiv_id(indiv_id):     
+        if isinstance(indiv_id, (np.ndarray, list)):
+            indiv_id = np.asarray(indiv_id).item()
+        if pd.isna(indiv_id) or indiv_id in ("None", ""):
+            indiv_id = ""
+        else:
+            assert isinstance(indiv_id, str), f"indiv_id must be str, got {type(indiv_id)}: {indiv_id}"
+            assert (
+                "INDIV" in indiv_id
+            ), f"INDIV_ID format incorrect ({indiv_id}, {type(indiv_id)})."
+        return indiv_id
+
+        
     def get_sample_sequence(
             self,
             interval: GenomicInterval,
@@ -155,115 +229,23 @@ class BaseSequenceDataset(Dataset):
             reference_variant: VariantInterval=None,
         ):
         """
-        
         Returns:
             tuple: (base_sequence str, variants List[Variant])
         """
         seq = self.fasta_extr[interval]
-        seq_iupac = seq_ref = seq_alt = str(seq) # modify all 3 regardless
 
-        if isinstance(indiv_id, (np.ndarray, list)):
-            indiv_id = np.asarray(indiv_id).item()
-    
-        if pd.isna(indiv_id) or indiv_id in ("None", ""):
-            return 0, seq_iupac, seq_ref, seq_alt
-    
-        assert isinstance(indiv_id, str), f"indiv_id must be str, got {type(indiv_id)}: {indiv_id}"
-        assert (
-            "INDIV" in indiv_id
-        ), f"INDIV_ID format incorrect ({indiv_id}, {type(indiv_id)})."
-    
-        # Extract variants
-        
-        try:
-            variants = self.genotype_extr[interval]
-        except ValueError:
-            return 0, seq_iupac, seq_ref, seq_alt
-        
-        # hotfix
-        if variants["indiv_id"].str.endswith(".bed.gz").any():
-            key = f"{indiv_id}.bed.gz"
-        else:
-            key = indiv_id
-        
-        variants = variants[variants["indiv_id"] == key]
+        indiv_id = self._normalize_indiv_id(indiv_id)
 
-        extra_columns = ('gt', )
-        #get phased info if exists make sure right format
-        if "phase_set" not in variants.columns:
-            variants["phase_set"] = None
-            
-        # If reference_variant is provided, attach gt and phase_set to it
-        if reference_variant is not None:
-            #if variant spcified not just genotype from dhs model
-            try:
-                #find reference variant in variant
-                row = variants.set_index(["chrom", "start", "ref", "alt"]).loc[
-                    (reference_variant.chrom, reference_variant.start, reference_variant.ref, reference_variant.alt)
-                ]
+        if indiv_id == "":
+            return str(seq)
     
-            except KeyError:
-                #if cannot find variant
-                raise ValueError(
-                    f"Reference variant not found in genotyping file: "
-                    f"{interval}/{indiv_id}/{reference_variant.start}/{reference_variant.alt}"
-                )
-            #get genotype and phase set
-            reference_variant.gt = row["gt"]
-            phase_val = row.get("phase_set", None)
-            reference_variant.phase_set = None if pd.isna(phase_val) or phase_val == "." else phase_val
-            extra_columns = ("gt", "phase_set")  # Include phase_set for VariantInterval conversion
-    
-        # Convert variants to VariantInterval objects
-        variants = df_to_variant_intervals(variants, extra_columns=extra_columns)
-
-        for v in variants:
-
-            rel = v.start - interval.start
-
-            if rel >= len(interval) or rel <= 0:
-                #fixes error of trying to replace at end of sequence causing adding extra to end increasing seq len by one
-                continue
-    
-            # IUPAC sequence
-            iupac_base = get_iupac_char_from_alleles(v.ref, v.alt)
-            seq_iupac = replace_at(seq_iupac, rel, iupac_base)
-    
-            # Phased heterozygous handling
-            phased_match = (
-                reference_variant is not None
-                and v.gt in ("0|1", "1|0")
-                and reference_variant.phase_set == getattr(v, "phase_set", None)
-            )
-            if phased_match:
-                if v.gt == "1|0":
-                    seq_ref = replace_at(seq_ref, rel, v.alt)
-                    seq_alt = replace_at(seq_alt, rel, v.ref)
-                else:
-                    seq_ref = replace_at(seq_ref, rel, v.ref)
-                    seq_alt = replace_at(seq_alt, rel, v.alt)
-                continue
-    
-            # Unphased / Homozygous / Heterozygous
-            is_het = v.gt[0] != v.gt[2]
-            base_ref = v.ref
-            base_alt = v.alt if is_het else (v.alt if v.gt[0] == "1" else v.ref)
-            seq_ref = replace_at(seq_ref, rel, base_ref)
-            seq_alt = replace_at(seq_alt, rel, base_alt)
-    
-        # Final check for reference variant
-        if reference_variant is not None:
-            rel_pos = reference_variant.start - interval.start
-            if reference_variant.gt == "1|0":
-                seq_ref, seq_alt = seq_alt, seq_ref
-                
-            if (seq_ref[rel_pos] != reference_variant.ref) or (seq_alt[rel_pos] != reference_variant.alt):
-                raise ValueError(
-                    f"Expected ref & alt alleles not found in correct position "
-                    f"(reference_variant={reference_variant}, indiv_id={indiv_id})"
-                )
-
-        return len(variants), seq_iupac, seq_ref, seq_alt
+        iupac_edits = self.source.get_edits(interval, indiv_id)
+        seq_iupac = self.source.apply_edits(
+            seq,
+            interval_start=interval.start,
+            edits=iupac_edits
+        )
+        return seq_iupac
 
 
 class SequenceOnlyDataset(BaseSequenceDataset):
@@ -373,13 +355,13 @@ class SequenceOnlyDataset(BaseSequenceDataset):
             if is_multitask:
                 raise ValueError("Multitask model does not support variant injection.")
             indiv_id = data_slice['indiv_id']
-            
-            _, dna_seq, _, _ = self.get_sample_sequence(
-                interval,
-                indiv_id
-            )
         else:
-            dna_seq = self.fasta_extr[interval]
+            indiv_id = ""
+
+        dna_seq = self.get_sample_sequence(
+            interval,
+            indiv_id
+        )
 
         # One-hot encode DNA sequence
         #added upper for mouse fasta

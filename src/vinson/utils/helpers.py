@@ -22,6 +22,7 @@ def replace_at(s, i, char):
     #makes sequence length too long if replaces char at start or end of seq
     return s[:i] + char + s[i + 1:]
 
+
 def detect_genotype_format(genotype_file):
     # helps with determining phased or unphased genotype file
     opener = gzip.open if genotype_file.endswith(".gz") else open

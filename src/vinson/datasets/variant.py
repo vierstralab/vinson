@@ -8,6 +8,10 @@ from vinson.utils.sequence_utils import one_hot_encode
 from .sequence import BaseSequenceDataset, logger
 
 from genome_tools.data.extractors import FastaExtractor
+from vinson.datasets.utils import PhasedSource, UnphasedSource, TabixConnector
+
+from vinson.utils.helpers import detect_genotype_format
+
 import warnings
 
 from vinson.utils.helpers import replace_at
@@ -57,7 +61,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
         self.flip_alleles = flip_alleles
         self.fasta_extr: FastaExtractor = None
         self.genotype_file = genotype_file
-        self.genotype_extr: TabixExtractor = None
+        self.source = self.get_source()
 
         assert set(
             [
@@ -73,12 +77,51 @@ class VariantEmbedDataset(BaseSequenceDataset):
             ]
         ).issubset(self.data.keys())
 
-        if self.genotype_file is not None:
+        if self.genotype_file is not None and self.genotype_file != "":
             assert 'indiv_id' in self.data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
-
             self.include_genotypes = True
         else:
             self.include_genotypes = False
+
+    def get_source(self):
+        connector = self.get_connector()
+        if isinstance(connector, TabixConnector):
+            is_phased, _ = detect_genotype_format(self.genotype_file)
+        else: # dataframe provided
+            is_phased = True
+
+        source_cls = PhasedSource if is_phased else UnphasedSource
+        return source_cls(connector)
+
+    def get_sample_sequence(
+            self,
+            interval: GenomicInterval,
+            indiv_id: str,
+            anchor_variant: VariantInterval=None,
+        ):
+        """
+        Returns:
+            tuple: (base_sequence str, variants List[Variant])
+        """
+        seq = self.fasta_extr[interval]
+
+        indiv_id = self._normalize_indiv_id(indiv_id)
+
+        if indiv_id == "":
+            return str(seq), str(seq)
+    
+        ref_edits, alt_edits = self.source.get_edits(interval, indiv_id, anchor_variant)
+        seq_ref = self.source.apply_edits(
+            seq,
+            interval_start=interval.start,
+            edits=ref_edits
+        )
+        seq_alt = self.source.apply_edits(
+            seq,
+            interval_start=interval.start,
+            edits=alt_edits
+        )
+        return seq_ref, seq_alt
   
 
     def __getitem__(self, i):
@@ -138,18 +181,23 @@ class VariantEmbedDataset(BaseSequenceDataset):
         
         # Inject genotypes if genotype files provided
         if self.include_genotypes:
-            indiv_id = data_slice['indiv_id']   
-            _, _, dna_seq_ref, dna_seq_alt = self.get_sample_sequence(
+            indiv_id = data_slice['indiv_id']
+            anchor_variant = VariantInterval(
+                chrom=chrom,
+                start=pos-1,
+                end=pos,
+                ref=ref,
+                alt=alt,
+            )
+
+            dna_seq_ref, dna_seq_alt = self.get_sample_sequence(
                 interval, 
                 indiv_id,
-                reference_variant=VariantInterval(
-                    chrom=chrom, start=pos-1, end=pos, ref=ref, alt=alt,
-                ),
+                anchor_variant
             )
-        else:
-            dna_seq_ref = dna_seq_alt = self.fasta_extr[interval]
-            start = pos-1 
-            end = pos
+        else: # only change the variant position
+            dna_seq_ref = dna_seq_alt = str(self.fasta_extr[interval])
+            start = pos - 1 
             rel = start - interval.start
             dna_seq_ref = replace_at(dna_seq_ref, rel, ref)
             dna_seq_alt = replace_at(dna_seq_alt, rel, alt)
