@@ -110,9 +110,11 @@ class PhasedSource(_GenotypeSource):
     def _get_anchor_variant_with_extras(self, variants_df, interval, reference_variant, indiv_id) -> VariantInterval:
         try:
             #find reference variant in variant
-            row: pd.Series = variants_df.set_index(["chrom", "start", "ref", "alt"]).loc[
-                (reference_variant.chrom, reference_variant.start, reference_variant.ref, reference_variant.alt)
-            ]
+            anchor_df: pd.DataFrame = variants_df.set_index(["chrom", "start", "ref", "alt"]).loc[
+                [
+                    (reference_variant.chrom, reference_variant.start, reference_variant.ref, reference_variant.alt)
+                ]
+            ].reset_index()
 
         except KeyError:
             #if cannot find variant
@@ -120,9 +122,9 @@ class PhasedSource(_GenotypeSource):
                 f"Reference variant not found in genotyping file: "
                 f"{interval}/{indiv_id}/{reference_variant.start}/{reference_variant.alt}"
             )
-        anchor_df = row.to_frame().T
         if len(anchor_df) != 1:
             raise ValueError(f"Genotypes contain more than one entry for the anchor variant ({len(anchor_df)}): {reference_variant.to_str()}, {indiv_id}. {anchor_df}")
+
         anchor_variant = df_to_variant_intervals(anchor_df, extra_columns=self.EXTRA_COLUMNS)[0]
 
         return anchor_variant
