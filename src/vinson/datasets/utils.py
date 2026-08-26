@@ -120,7 +120,7 @@ class PhasedSource(_GenotypeSource):
                 f"Reference variant not found in genotyping file: "
                 f"{interval}/{indiv_id}/{reference_variant.start}/{reference_variant.alt}"
             )
-        anchor_df = row.to_frame()
+        anchor_df = row.to_frame().T
         if len(anchor_df) != 1:
             raise ValueError(f"Genotypes contain more than one entry for the anchor variant ({len(anchor_df)}): {reference_variant.to_str()}, {indiv_id}. {anchor_df}")
         anchor_variant = df_to_variant_intervals(anchor_df, extra_columns=self.EXTRA_COLUMNS)[0]
