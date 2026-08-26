@@ -127,7 +127,7 @@ class PhasedSource(_GenotypeSource):
         return anchor_variant
 
     def get_edits(self, interval: GenomicInterval, indiv_id, anchor: VariantInterval):
-        df = self._variants_in(interval, indiv_id)
+        df = self._get_indiv_variants_for_interval(interval, indiv_id)
         if df is None:
             raise ValueError(f"No variants in the interval {interval.to_ucsc()} for indiv {indiv_id}.")
 
@@ -163,5 +163,5 @@ class PhasedSource(_GenotypeSource):
 
 class UnphasedSource(_GenotypeSource):
     def get_edits(self, interval: GenomicInterval, indiv_id, anchor=None):
-        df = self._variants_in(interval, indiv_id)
+        df = self._get_indiv_variants_for_interval(interval, indiv_id)
         return self._unphased_edits(df)
