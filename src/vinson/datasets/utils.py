@@ -121,7 +121,9 @@ class PhasedSource(_GenotypeSource):
                 f"{interval}/{indiv_id}/{reference_variant.start}/{reference_variant.alt}"
             )
         anchor_df = row.to_frame()
-        assert len(anchor_df) == 1, f"Genotypes contain not one entry of anchor variant ({len(anchor_df)}): {reference_variant.to_str()}"
+        if len(anchor_df) != 1:
+            print(anchor_df)
+            raise ValueError(f"Genotypes contain not one entry of anchor variant ({len(anchor_df)}): {reference_variant.to_str()}, {indiv_id}")
         anchor_variant = df_to_variant_intervals(anchor_df, extra_columns=self.EXTRA_COLUMNS)[0]
 
         return anchor_variant
