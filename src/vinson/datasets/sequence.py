@@ -88,9 +88,9 @@ class BaseSequenceDataset(Dataset):
 
     def get_connector(self):
         if isinstance(self.genotype_file, pd.DataFrame):
-            return DataFrameConnector
+            return DataFrameConnector(self.genotype_file)
         else:
-            return TabixConnector
+            return TabixConnector(self.genotype_file)
 
     def get_source(self):
         return IUPACSource(self.get_connector())
