@@ -180,3 +180,6 @@ class VariantEmbedModelWrapper(L.LightningModule):
         x = self.model.forward_final(x)
 
         return x
+
+    def predict_step(self, *args, **kwargs):
+        return self.model.predict_step(*args, **kwargs)
