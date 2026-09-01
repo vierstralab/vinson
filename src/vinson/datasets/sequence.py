@@ -74,8 +74,15 @@ class BaseSequenceDataset(Dataset):
         self.seqlen = seqlen
 
         self.fasta_extr: FastaExtractor = None
- 
-        self.include_genotypes = genotype_file is not None and genotype_file != ''
+
+        self.include_genotypes = False
+        if genotype_file is not None:
+            if isinstance(genotype_file, str):
+                if genotype_file != '':
+                    self.include_genotypes = True
+            else:
+                self.include_genotypes = True
+
         
         if self.include_genotypes:
             assert "indiv_id" in self.data.keys(), (
