@@ -120,7 +120,7 @@ class PhasedSource(_GenotypeSource):
             #if cannot find variant
             raise ValueError(
                 f"Reference variant not found in genotyping file: "
-                f"{interval}/{indiv_id}/{reference_variant.start}/{reference_variant.alt}"
+                f"{reference_variant.to_str()}; {indiv_id}"
             )
         if len(anchor_df) != 1:
             raise ValueError(f"Genotypes contain more than one entry for the anchor variant ({len(anchor_df)}): {reference_variant.to_str()}, {indiv_id}. {anchor_df}")
