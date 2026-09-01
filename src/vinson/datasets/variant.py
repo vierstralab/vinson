@@ -77,11 +77,6 @@ class VariantEmbedDataset(BaseSequenceDataset):
             ]
         ).issubset(self.data.keys())
 
-        if self.genotype_file is not None and self.genotype_file != "":
-            assert 'indiv_id' in self.data.keys(), "Sample to genotype mapping must include 'indiv_id' column."
-            self.include_genotypes = True
-        else:
-            self.include_genotypes = False
 
     def get_source(self):
         connector = self.get_connector()
