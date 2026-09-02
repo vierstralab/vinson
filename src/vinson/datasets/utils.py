@@ -53,7 +53,7 @@ class _ConnectorSource:
 
         df = df.query(f"indiv_id == '{indiv_id}'")
         if df.empty:
-            return []
+            return None
         return df
 
     def get_edits(self, interval, indiv_id, anchor=None):
