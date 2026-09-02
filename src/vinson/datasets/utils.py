@@ -5,7 +5,7 @@ from genome_tools import GenomicInterval, VariantInterval, df_to_variant_interva
 from vinson.utils.data_formatting.readers import parse_genotype_file
 from vinson.utils.sequence_utils import get_iupac_char_from_alleles
 from vinson.utils.helpers import replace_at
-
+import numpy as np
 
 class TabixConnector:
     """Lazy tabix handle. Opened once, reused across intervals."""
@@ -89,6 +89,11 @@ class IUPACSource(_ConnectorSource):
 class _GenotypeSource(_ConnectorSource):
     EXTRA_COLUMNS = ("gt",)
 
+    def __init__(self, connector, random_phase=True, seed=42):
+        super().__init__(connector)
+        self.random_phase = random_phase
+        # self.rng = np.random.default_rng(seed)
+
     def _unphased_edits(self, df):
         """ref haplotype: reference, except hom-alt sites (alt on both haplotypes).
         alt haplotype: every alt-bearing variant (het + hom-alt)."""
@@ -98,8 +103,17 @@ class _GenotypeSource(_ConnectorSource):
         allele_2 = df["gt"].str[2]
         carries_alt = (allele_1 == "1") | (allele_2 == "1")
         is_hom_alt = (allele_1 == "1") & (allele_2 == "1")
-        ref_edits = df_to_variant_intervals(df[is_hom_alt], extra_columns=self.EXTRA_COLUMNS)
-        alt_edits = df_to_variant_intervals(df[carries_alt], extra_columns=self.EXTRA_COLUMNS)
+        if self.random_phase:
+            is_het = carries_alt & ~is_hom_alt
+            trans = pd.Series(np.random.random(len(df)) < 0.5, index=df.index) & is_het
+            ref_mask = is_hom_alt | trans
+            alt_mask = is_hom_alt | (is_het & ~trans)
+        else:
+            ref_mask = is_hom_alt
+            alt_mask = carries_alt
+
+        ref_edits = df_to_variant_intervals(df[ref_mask], extra_columns=self.EXTRA_COLUMNS)
+        alt_edits = df_to_variant_intervals(df[alt_mask], extra_columns=self.EXTRA_COLUMNS)
         return ref_edits, alt_edits
 
 

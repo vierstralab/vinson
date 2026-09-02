@@ -46,6 +46,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
         genotype_file: str = None,
         flip_alleles=False,
         reverse_complement=False,
+        random_phase=False,
         jitter=0,
         noise=0,
     ):
@@ -62,6 +63,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
         self.fasta_extr: FastaExtractor = None
         self.genotype_file = genotype_file
         self.source = self.get_source()
+        self.random_phase = random_phase
 
         assert set(
             [
@@ -86,7 +88,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
             is_phased = True
 
         source_cls = PhasedSource if is_phased else UnphasedSource
-        return source_cls(connector)
+        return source_cls(connector, random_phase=self.random_phase)
 
     def get_sample_sequence(
             self,
