@@ -109,3 +109,8 @@ class VinsonData:
     def from_raw(cls, raw_data: dict, embeddings_df: pd.DataFrame=None, is_variant=False):
         data, encodings = sanitize_data(raw_data, is_variant=is_variant)
         return cls(data, encodings, embeddings_df, is_variant=is_variant)
+
+    @classmethod
+    def from_df(cls, df: pd.DataFrame, embeddings_df: pd.DataFrame = None, is_variant: bool = False):
+        raw_data = {key: df[key].to_numpy() for key in df.columns}
+        return cls.from_raw(raw_data, embeddings_df, is_variant=is_variant)
