@@ -63,7 +63,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
         self.fasta_extr: FastaExtractor = None
         self.genotype_file = genotype_file
         self.source = self.get_source()
-        self.random_phase = random_phase
+        self.source.random_phase = random_phase
 
         assert set(
             [
@@ -88,7 +88,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
             is_phased = True
 
         source_cls = PhasedSource if is_phased else UnphasedSource
-        return source_cls(connector, random_phase=self.random_phase)
+        return source_cls(connector)
 
     def get_sample_sequence(
             self,
