@@ -29,6 +29,7 @@ def make_loader(variants_df, motif_embeddings_df, fasta_file, offsets=(0,), num_
             offset=offset
         ) for offset in offsets
     ]
+    print('Datasets created.', flush=True)
     return DataLoader(
         ConcatDataset(datasets_qtl),
         batch_size=batch_size,
