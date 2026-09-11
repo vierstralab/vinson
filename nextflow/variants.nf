@@ -25,7 +25,7 @@ process predict_variants {
         ${meta.model_config} \
         ${sample_id} \
         --output ${name} \
-        --num_workers ${task.cpus}
+        --num_workers ${task.cpus} \
         --offsets ${params.offsets}
     """
 }
