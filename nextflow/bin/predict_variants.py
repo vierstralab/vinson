@@ -117,7 +117,7 @@ if __name__ == "__main__":
 
     model_predict = dhs_model_from_config(model_config, checkpoint).to(device).eval()
 
-    for offset, dl in d_loaders:
+    for offset, dl in zip(offsets, d_loaders):
         pred_ref, pred_alt = predict(model_predict, dl)
         variants[f"pred_ref_offset{offset}"] = pred_ref
         variants[f"pred_alt_offset{offset}"] = pred_alt
