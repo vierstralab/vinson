@@ -26,7 +26,7 @@ process predict_variants {
         ${sample_id} \
         --output ${name} \
         --num_workers ${task.cpus} \
-        --offsets ${params.offsets}
+        --offsets '${params.offsets}'
     """
 }
 
