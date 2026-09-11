@@ -1,5 +1,5 @@
 
-
+params.offsets = "-500:501:20"
 
 process predict_variants {
     conda "${params.conda}"
@@ -26,6 +26,7 @@ process predict_variants {
         ${sample_id} \
         --output ${name} \
         --num_workers ${task.cpus}
+        --offsets ${params.offsets}
     """
 }
 
@@ -35,6 +36,5 @@ workflow {
         | splitCsv(header:true, sep:'\t')
         | map(it -> tuple(it, file(it.variant_dataset), it.sample_id))
         | predict_variants
- 
 
 }

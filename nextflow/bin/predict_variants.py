@@ -58,6 +58,9 @@ def predict(model, dataloader):
     return pred_ref_all, pred_alt_all
 
 def int_list(s):
+    if ":" in s:
+        parts = [int(x) for x in s.split(":")]
+        return list(range(*parts))  # start:stop[:step]
     return [int(x) for x in s.split(",")]
 
 
