@@ -252,13 +252,14 @@ class VariantEmbedDataset(BaseSequenceDataset):
 
 class VariantInferenceDataset(BaseSequenceDataset):
 
-    def __init__(self, data: VinsonData, strict_ref_check=True, **kwargs):
+    def __init__(self, data: VinsonData, strict_ref_check=True, offset=0, **kwargs):
         super().__init__(
             data=data,
             **kwargs
         )
         self.strict_ref_check = strict_ref_check
         self.include_genotypes = False
+        self.offset = offset
 
     def __getitem__(self, i):
         self._init_fileread()
@@ -271,7 +272,7 @@ class VariantInferenceDataset(BaseSequenceDataset):
         sample_id = row["sample_id"]
 
         # base genomic context
-        interval = self._get_window(chrom, start)
+        interval = self._get_window(chrom, start).shift(self.offset)
         seq = self.fasta_extr[interval].upper()
 
         # enforce alleles

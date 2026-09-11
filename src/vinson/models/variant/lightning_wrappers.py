@@ -1,6 +1,5 @@
 from typing import Any, Dict, Optional
 import copy
-import csv
 
 import torch
 
@@ -141,8 +140,6 @@ class VariantEmbedModel(AbstractSequenceModel):
         )
         model.head_model.apply(initialize_weights)
         return model
-
-    
 
 
 class VariantEmbedModelWrapper(L.LightningModule):
