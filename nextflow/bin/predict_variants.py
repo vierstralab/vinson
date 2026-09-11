@@ -14,7 +14,7 @@ import pandas as pd
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def make_loader(variants_df, motif_embeddings_df, fasta_file, offsets=(0,), num_workers=10, batch_size=256):
+def make_loaders(variants_df, motif_embeddings_df, fasta_file, offsets=(0,), num_workers=10, batch_size=256):
     loaded_data = VinsonData(
         data=variants_df.to_dict(orient='list'),
         embeddings_df=motif_embeddings_df,
@@ -30,12 +30,15 @@ def make_loader(variants_df, motif_embeddings_df, fasta_file, offsets=(0,), num_
         ) for offset in offsets
     ]
     print('Datasets created.', flush=True)
-    return DataLoader(
-        ConcatDataset(datasets_qtl),
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=torch.cuda.is_available()
-    )
+    return [
+        DataLoader(
+            dataset,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=torch.cuda.is_available()
+        )
+        for dataset in datasets_qtl
+    ]
 
 
 def predict(model, dataloader):
@@ -102,7 +105,7 @@ if __name__ == "__main__":
     if len(sample_ids) > 1:
         motif_embeddings_df = motif_embeddings_df.mean(axis=0).rename(args.sample_id).to_frame().T
         
-    dl = make_loader(
+    d_loaders = make_loaders(
         variants_df=variants,
         motif_embeddings_df=motif_embeddings_df,
         fasta_file=fasta,
@@ -113,14 +116,11 @@ if __name__ == "__main__":
     model_config = read_configs(config_path)
 
     model_predict = dhs_model_from_config(model_config, checkpoint).to(device).eval()
-    pred_ref, pred_alt = predict(model_predict, dl)
 
-    pred_ref = pred_ref.reshape(len(offsets), len(variants))
-    pred_alt = pred_alt.reshape(len(offsets), len(variants))
-
-    for k, off in enumerate(offsets):
-        variants[f"pred_ref_offset{off}"] = pred_ref[k]
-        variants[f"pred_alt_offset{off}"] = pred_alt[k]
+    for offset, dl in d_loaders:
+        pred_ref, pred_alt = predict(model_predict, dl)
+        variants[f"pred_ref_offset{offset}"] = pred_ref
+        variants[f"pred_alt_offset{offset}"] = pred_alt
 
     variants.to_csv(name, sep='\t', index=False)
 
