@@ -93,6 +93,8 @@ if __name__ == "__main__":
     config_path = args.model_config_path
 
     name = args.output
+
+    offsets = args.offsets
     variants['sample_id'] = args.sample_id
 
     sample_ids = args.sample_id.split(',')
@@ -104,7 +106,7 @@ if __name__ == "__main__":
         variants_df=variants,
         motif_embeddings_df=motif_embeddings_df,
         fasta_file=fasta,
-        offsets=args.offsets,
+        offsets=offsets,
         num_workers=args.num_workers,
         batch_size=args.batch_size
     )
@@ -112,8 +114,13 @@ if __name__ == "__main__":
 
     model_predict = dhs_model_from_config(model_config, checkpoint).to(device).eval()
     pred_ref, pred_alt = predict(model_predict, dl)
-    variants["pred_ref"] = pred_ref
-    variants["pred_alt"] = pred_alt
+
+    pred_ref = pred_ref.reshape(len(offsets), len(variants))
+    pred_alt = pred_alt.reshape(len(offsets), len(variants))
+
+    for k, off in enumerate(offsets):
+        variants[f"pred_ref_offset{off}"] = pred_ref[k]
+        variants[f"pred_alt_offset{off}"] = pred_alt[k]
 
     variants.to_csv(name, sep='\t', index=False)
 
