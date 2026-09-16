@@ -96,6 +96,8 @@ class BaseSequenceDataset(Dataset):
     def get_connector(self):
         if isinstance(self.genotype_file, pd.DataFrame):
             return DataFrameConnector(self.genotype_file)
+        elif self.genotype_file is None:
+            return None
         else:
             return TabixConnector(self.genotype_file)
 

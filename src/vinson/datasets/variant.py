@@ -38,7 +38,6 @@ class VariantEmbedDataset(BaseSequenceDataset):
     noise : float, default 0
         Standard deviation of Gaussian noise added to embeddings.
     """
-
     def __init__(
         self,                                                           
         data: VinsonData,
@@ -60,10 +59,14 @@ class VariantEmbedDataset(BaseSequenceDataset):
         )
 
         self.flip_alleles = flip_alleles
-        self.fasta_extr: FastaExtractor = None
-        self.genotype_file = genotype_file
-        self.source = self.get_source()
-        self.source.random_phase = random_phase
+        # self.fasta_extr: FastaExtractor = None
+        # self.genotype_file = genotype_file
+        # self.source = self.get_source()
+
+        if self.source is None:
+            print('random_phase has no effect when genotype_file is None')
+        else:
+            self.source.random_phase = random_phase
 
         assert set(
             [
@@ -79,9 +82,10 @@ class VariantEmbedDataset(BaseSequenceDataset):
             ]
         ).issubset(self.data.keys())
 
-
     def get_source(self):
         connector = self.get_connector()
+        if connector is None:
+            return UnphasedSource(connector)
         if isinstance(connector, TabixConnector):
             is_phased, _ = detect_genotype_format(self.genotype_file)
         else: # dataframe provided
