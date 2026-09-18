@@ -147,8 +147,12 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
         is_variant=False
     )
 
-
-def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str, pre_jitter=False) -> VinsonData:
+#change for optional suffix input
+def extract_variant_data_from_anndata(
+    train_adata: ad.AnnData,
+    suffix: str | None = None,
+    pre_jitter=False
+) -> VinsonData:
     """
     Convert AnnData object to H5 format and extract embeddings.
     Args:

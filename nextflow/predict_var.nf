@@ -27,6 +27,29 @@ process predict {
         --output ${name} 
     """
 }
+process concat_by_cell_type {
+
+    conda "${params.conda}"
+
+    publishDir "${params.outdir}/cell_type_results"
+
+    tag "${cell_type}"
+
+    input:
+        tuple val(cell_type), path(pred_files)
+
+    output:
+        path "${cell_type}_all_variants.tsv"
+
+    script:
+
+    """
+    python3 $moduleDir/bin/concat_results.py \
+        ${cell_type} \
+        ${cell_type}_all_variants.tsv \
+        ${pred_files}
+    """
+}
 
 process combine_predictions {
 
@@ -130,3 +153,18 @@ workflow aggregate {
         | concat_results
 }
 
+workflow cell_type {
+
+    predictions = Channel.fromPath(params.samples_file)
+        | splitCsv(header:true, sep:'\t')
+        | map { tuple(it, file(it.dhs_dataset)) }
+        | predict
+        | combine_predictions
+
+    predictions
+        .map { meta, h5_file, pred_file ->
+            tuple(meta.celltype, pred_file)
+        }
+        .groupTuple()
+        | concat_by_cell_type
+}
