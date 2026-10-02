@@ -29,8 +29,6 @@ from vinson.models.shared import initialize_weights
 
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 MODEL_FACTORY_REGISTRY = {
     "basset": BassetTrunk,
@@ -76,7 +74,7 @@ def _parse_scheduler_and_optimizer(config: dict):
 
 
 
-def classifier_model_from_config(config: dict, checkpoint_path: str = None):
+def classifier_model_from_config(config: dict, checkpoint_path: str = None, device='cpu'):
     assert config['model_type'] == "classifier"
     embedding = MLPBlock(
         **config['model_arch']['cell_embed']
@@ -125,7 +123,7 @@ def _sequence_model_from_config(config):
 
     return trunk
 
-def dhs_model_from_config(config, checkpoint_path=None):
+def dhs_model_from_config(config, checkpoint_path=None, device='cpu'):
     model_type = config["model_type"]
 
     assert model_type in MODEL_FACTORY_REGISTRY, f"Model type {model_type} not supported for DHS models. Available types: {list(MODEL_FACTORY_REGISTRY.keys())}"
@@ -161,7 +159,8 @@ def dhs_model_from_config(config, checkpoint_path=None):
 
 #need to remove config key needing model_kwargs and data_params
 #MLP block expcets config param to be activations not activation
-def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint_path=None):
+def variant_model_from_config(config, sequence_model_checkpoint=None, 
+                              checkpoint_path=None, device='cpu'):
     model_type = config["model_type"]
     assert model_type in ("basset_variant_embed", "legnet_variant_embed"), f"Model type {model_type} not supported for variant models. Available types: 'basset_variant_embed', 'legnet_variant_embed'"
 
@@ -178,7 +177,7 @@ def variant_model_from_config(config, sequence_model_checkpoint=None, checkpoint
     #variant model doesnt currently have model_kwargs
     if sequence_model_checkpoint is not None and checkpoint_path is None:
          # Build DHS model WITHOUT loading checkpoint
-        sequence_model = dhs_model_from_config(config, checkpoint_path=None)
+        sequence_model = dhs_model_from_config(config, checkpoint_path=None, device=device)
 
         # Manually load only trunk + embed weights
         ckpt = torch.load(sequence_model_checkpoint, map_location=device)

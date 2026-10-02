@@ -220,11 +220,13 @@ class ModelWrapper(torch.nn.Module):
         return x
     
     def get_sequence_attributions(self, X, X_embed, print_convergence_deltas=True, random_state=42, **kwargs):
+        device = self.model.device
+        X, X_embed = X.to(device), X_embed.to(device)
         attributions = deep_lift_shap(
             self,
             X,
             args=(X_embed,),
-            device="cuda" if torch.cuda.is_available() else "cpu",
+            device=device,
             print_convergence_deltas=print_convergence_deltas,
             references=dinucleotide_shuffle,
             additional_nonlinear_ops={
