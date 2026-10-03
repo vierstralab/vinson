@@ -72,7 +72,8 @@ def one_hot_encode(sequence, dtype=np.float32):
     _fast_one_hot_encode(one_hot_encoding, seq_idxs, _dna_embed)
 
     one_hot_encoding = one_hot_encoding.astype(dtype)
-    one_hot_encoding /= one_hot_encoding.sum(axis=1)[:, np.newaxis]
+    non_N = ~(one_hot_encoding == 0).all(axis=1)
+    one_hot_encoding[non_N,: ] /= one_hot_encoding[non_N].sum(axis=1)[:, np.newaxis]
 
     return one_hot_encoding.T
 
