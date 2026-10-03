@@ -1,9 +1,8 @@
+from os.path import exists
 import numpy as np
 import pandas as pd
-import os 
 
 from torch.utils.data import Dataset
-import gzip
 
 from genome_tools import GenomicInterval, VariantInterval, df_to_variant_intervals
 from genome_tools.data.extractors import FastaExtractor, TabixExtractor
@@ -465,3 +464,219 @@ class SequenceEmbedDataset(SequenceOnlyDataset):
         # Get embeddings
         data['embed'] = self.get_embedding_vec(data['sample_id'])
         return data
+
+
+class CartesianInferenceDataset(BaseSequenceDataset):
+    """
+    A PyTorch Dataset that generates all combinations of genomic regions, 
+    cell-type embeddings, and shifts for model inference.
+
+    Parameters
+    ----------
+    bed_df : pandas.DataFrame
+        DataFrame containing genomic coordinates. 
+        Must include columns: ['chrom', 'start', 'end'].
+    embed_df : pandas.DataFrame
+        DataFrame of cell-type or state embeddings. The index should represent 
+        the sample/embedding ID, and the columns should contain the numeric embedding values.
+    embed_meta_df : pandas.DataFrame
+        DataFrame of meta for each embedding. The index should represent 
+        the sample/embedding ID, and the columns should contain at least ['indiv_id'].        
+    fasta_file : str
+        Path to the reference genome FASTA file.
+    genotype_file: str = None
+        Path to the file with genotypes of selected samples
+    shifts : ArrayLike, optional
+        List of spatial shifts (in base pairs) to offset the sequence window. 
+        Default is [0].
+    seqlen : int, optional
+        The fixed total length of the output DNA sequence. Default is 1344.
+    """
+
+    REQUIRED_COLUMNS = ['chrom', 'start', 'end']
+    
+    def __init__(self, 
+                 bed_df: pd.DataFrame, 
+                 embed_df: pd.DataFrame,
+                 fasta_file: str,
+                 embed_meta_df: pd.DataFrame = None,
+                 genotype_file: str = None,
+                 shifts: list = [0], 
+                 seqlen: int = 1344 
+                 ):
+
+        assert_flag = all([col in bed_df.columns for col in self.REQUIRED_COLUMNS])
+        assert assert_flag, 'Ensure all required columns are present'
+        
+        self.fasta_file = fasta_file
+        self.genotype_file = genotype_file
+
+        self.fasta_extr = None
+        self.genotype_extr = None 
+
+        is_genotype = genotype_file is not None and exists(genotype_file)
+        is_embed_meta = embed_meta_df is not None 
+        self.include_genotypes = is_embed_meta and is_genotype
+        self.embed_meta_df = embed_meta_df
+                
+        self.coords_chrom = bed_df['chrom'].values
+        self.coords_start = bed_df['start'].values
+        self.coords_end = bed_df['end'].values
+        self.coords_df = bed_df.copy()
+        
+        self.embeds_ids = embed_df.index.values
+        self.embeds_vals = embed_df.astype(np.float32).values
+
+        if self.include_genotypes:
+            assert "indiv_id" in self.embed_meta_df.columns, (
+                "Sample to genotype mapping must include 'indiv_id' column.")
+
+            self.embed_meta_df = self.embed_meta_df.loc[self.embeds_ids].copy()
+            self.indiv_ids = self.embed_meta_df['indiv_id'].values
+
+        else:
+            logger.info(
+                "No genotyping files provided -- continuing without sample genotypes.")
+
+        self.shifts = np.asarray(shifts)
+        self.seqlen = seqlen
+        
+        self.shape = (len(embed_df), len(self.shifts), len(bed_df))
+    
+    @classmethod
+    def from_anndata(cls, anndata, sample_ids = None, **kwargs):
+        embed_df = anndata.obsm['motif_embeddings']
+        embed_meta_df = anndata.obs
+
+        if sample_ids is not None:
+            embed_df = embed_df.loc[sample_ids]
+            embed_meta_df = embed_meta_df.loc[sample_ids]
+        else:
+            logger.info("No sample_ids is passed, " \
+            "all embeddings from anndata will be yielded.")
+            
+        return cls.__init__(embed_df=embed_df,
+                            embed_meta_df=embed_meta_df,
+                            **kwargs)
+    def __len__(self):
+        return self.shape[0] * self.shape[1] * self.shape[2]
+        
+    # def _init_fileread(self):
+    #     if self.fasta_extr is None:
+    #         self.fasta_extr = FastaExtractor(self.fasta_file)
+    #     if self.include_genotypes and self.genotype_extr is None:
+    #         self.genotype_extr = parse_genotype_file(self.genotype_file)
+
+    def _get_window(self, chrom, summit, shift):
+        """
+        Calculates the genomic interval centered on the provided position.
+
+        Parameters
+        ----------
+        chrom : str
+            Chromosome name.
+        summit : int
+            Center position of the region.
+        shift : int
+            Number of base pairs to shift the window from the center.
+
+        Returns
+        -------
+        GenomicInterval
+            The calculated interval object for sequence extraction.
+        """
+        interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
+        if shift != 0:
+            interval.shift(shift, inplace=True)
+        return interval
+
+    def _crop(self, dna_seq: str):
+        """
+        Trims the DNA sequence back to the target `seqlen`.
+
+        Parameters
+        ----------
+        dna_seq : str
+            The target DNA sequence.
+
+        Returns
+        -------
+        str
+            The center-cropped DNA sequence matching `seqlen`.
+        """
+        if len(dna_seq) > self.seqlen:
+            mid = len(dna_seq) // 2
+            dna_seq = dna_seq[mid - self.seqlen//2 : mid + self.seqlen//2]
+        return dna_seq
+    
+    def prepare_meta(self):
+        """
+        Generates a flat metadata DataFrame matching the exact iteration order of __getitem__.
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame containing genomic region details, shift values, and embedding IDs 
+            for every sample in the dataset.
+        """
+        # dtypes = {
+        #     'chrom': 'category',
+        #     'embed_id': 'category',      
+        #     'shift': 'category',     
+        # }
+        idxs = np.arange(len(self))
+        embeds_idxs, shift_idxs, coord_idxs = np.unravel_index(idxs, self.shape)
+        
+        df = self.coords_df.iloc[coord_idxs].copy()
+        df['shift'] = self.shifts[shift_idxs]
+        df['embed_id'] = self.embeds_ids[embeds_idxs]
+        
+        # df = df.astype(dtypes)
+        return df.reset_index(drop=True)
+
+    def __getitem__(self, idx):
+        """
+        Retrieves a single batch item containing the one-hot encoded sequence and its embedding.
+
+        Parameters
+        ----------
+        idx : int
+            The flattened integer index of the dataset.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the model inputs:
+            - 'seq': One-hot encoded DNA sequence of the specified genomic region.
+            - 'seq_revcomp': Reverse complement of the one-hot encoded sequence.
+            - 'embed': The cell-type or state embedding array.
+        """
+        self._init_fileread()
+        
+        x, y, z = np.unravel_index(idx, shape=self.shape)
+        
+        embed = self.embeds_vals[x]
+        shift = int(self.shifts[y])
+        
+        chrom = self.coords_chrom[z]
+        start = self.coords_start[z]
+        end = self.coords_end[z]
+        
+        summit = (start + end) // 2
+        interval = self._get_window(chrom, summit, shift)
+
+        
+        if self.include_genotypes:
+            indiv_id = self.indiv_ids[x]
+            _, dna_seq, _, _ = self.get_sample_sequence(interval, indiv_id)
+        else:
+            dna_seq = self.fasta_extr[interval].upper()
+
+        ohe_seq = one_hot_encode(dna_seq)
+
+        batch = dict(
+            seq = ohe_seq.copy(),
+            seq_revcomp = np.flip(ohe_seq, [0, 1]).copy(),
+            embed = embed.copy()
+        )
+        return batch
