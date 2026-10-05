@@ -47,7 +47,7 @@ def assemble_batch(sample_id, interval, embeddings, fasta):
 
 import pandas as pd
 @dataclass
-class InferenceDatasetKwargs:
+class InferenceDatasetConfig:
     embed_df: pd.DataFrame
     fasta_file: str
     bed_df: pd.DataFrame | None = None
@@ -71,7 +71,7 @@ class InferenceDatasetKwargs:
         return asdict(self, dict_factory=lambda x: {k:v for k,v in x if v is not None})
     
 
-def score_bed_with_dhs_model(inference_dataclass: InferenceDatasetKwargs,
+def score_bed_with_dhs_model(inference_dataclass: InferenceDatasetConfig,
                              model,
                              dataloader_kwargs =dict(num_workers=1, batch_size=128), 
                              device='cpu'):
@@ -97,7 +97,7 @@ def score_bed_with_dhs_model(inference_dataclass: InferenceDatasetKwargs,
     out_df = dataset.prepare_meta()
     return out_df, predicted_scores
 
-def score_variants_with_dhs_model(inference_dataclass: InferenceDatasetKwargs,
+def score_variants_with_dhs_model(inference_dataclass: InferenceDatasetConfig,
                                   model,
                                   dataloader_kwargs =dict(num_workers=1, batch_size=128), 
                                   device='cpu'):
