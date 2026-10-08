@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 from genome_tools import GenomicInterval, VariantInterval, df_to_variant_intervals
 from genome_tools.data.extractors import FastaExtractor, TabixExtractor
 
-from vinson.utils.data_formatting import VinsonData
+from vinson.utils.data_formatting import VinsonData, CartesianVinsonData
 from vinson.utils.sequence_utils import one_hot_encode, get_iupac_char_from_alleles
 from vinson.utils.helpers import replace_at
 
@@ -466,29 +466,16 @@ class SequenceEmbedDataset(SequenceOnlyDataset):
         return data
 
 
-class CartesianInferenceDataset(BaseSequenceDataset):
+
+class InferenceDataset(BaseSequenceDataset):
     """
-    A PyTorch Dataset that generates all combinations of genomic regions, 
+    A PyTorch Dataset that generates all combinations of genetic variants, 
     cell-type embeddings, and shifts for model inference.
 
     Parameters
     ----------
-    bed_df : pandas.DataFrame
-        DataFrame containing genomic coordinates. 
-        Must include columns: ['chrom', 'start', 'end'].
-    embed_df : pandas.DataFrame
-        DataFrame of cell-type or state embeddings. The index should represent 
-        the sample/embedding ID, and the columns should contain the numeric embedding values.
-    embed_meta_df : pandas.DataFrame
-        DataFrame of meta for each embedding. The index should represent 
-        the sample/embedding ID, and the columns should contain at least ['indiv_id'].        
-    fasta_file : str
-        Path to the reference genome FASTA file.
-    genotype_file: str = None
-        Path to the file with genotypes of selected samples
-    shifts : ArrayLike, optional
-        List of spatial shifts (in base pairs) to offset the sequence window. 
-        Default is [0].
+    loaded_data: CartesianVinsonData
+        Loaded data wrapped in VinsonData
     seqlen : int, optional
         The fixed total length of the output DNA sequence. Default is 1344.
     """
@@ -496,100 +483,52 @@ class CartesianInferenceDataset(BaseSequenceDataset):
     REQUIRED_COLUMNS = ['chrom', 'start', 'end']
     
     def __init__(self, 
-                 bed_df: pd.DataFrame, 
-                 embed_df: pd.DataFrame,
-                 fasta_file: str,
-                 embed_meta_df: pd.DataFrame = None,
-                 genotype_file: str = None,
-                 shifts: list = [0], 
-                 seqlen: int = 1344 
+                 loaded_data: CartesianVinsonData, # should be there embed_meta_df: pd.DataFrame = None, genotype_file: str = None,
+                 seqlen: int = 1344,
                  ):
-
-        assert_flag = all([col in bed_df.columns for col in self.REQUIRED_COLUMNS])
-        assert assert_flag, 'Ensure all required columns are present'
         
-        self.fasta_file = fasta_file
-        self.genotype_file = genotype_file
+        assert_flag = all([col in loaded_data.keys() for col in self.REQUIRED_COLUMNS])
+        assert assert_flag, 'Ensure all required columns are present'
 
+        self.loaded_data = loaded_data
+        self.fasta_file = self.loaded_data.fasta_file
         self.fasta_extr = None
         self.genotype_extr = None 
 
-        is_genotype = genotype_file is not None and exists(genotype_file)
-        is_embed_meta = embed_meta_df is not None 
-        self.include_genotypes = is_embed_meta and is_genotype
-        self.embed_meta_df = embed_meta_df
-                
-        self.coords_chrom = bed_df['chrom'].values
-        self.coords_start = bed_df['start'].values
-        self.coords_end = bed_df['end'].values
-        self.coords_df = bed_df.copy()
-        
-        self.embeds_ids = embed_df.index.values
-        self.embeds_vals = embed_df.astype(np.float32).values
-
+        self.include_genotypes = self.loaded_data.include_genotypes
         if self.include_genotypes:
-            assert "indiv_id" in self.embed_meta_df.columns, (
-                "Sample to genotype mapping must include 'indiv_id' column.")
+            self.embeddings_meta_df = self.loaded_data.embeddings_meta_df
+            self.indiv_ids = self.loaded_data.indiv_ids
+            self.genotype_file = self.loaded_data.genotype_file
 
-            self.embed_meta_df = self.embed_meta_df.loc[self.embeds_ids].copy()
-            self.indiv_ids = self.embed_meta_df['indiv_id'].values
-
-        else:
-            logger.info(
-                "No genotyping files provided -- continuing without sample genotypes.")
-
-        self.shifts = np.asarray(shifts)
         self.seqlen = seqlen
-        
-        self.shape = (len(embed_df), len(self.shifts), len(bed_df))
+        self.shape = self.loaded_data.shape #(len(self.embeds_ids), len(self.shifts), len(self.loaded_data))
     
-    @classmethod
-    def from_anndata(cls, anndata, sample_ids = None, **kwargs):
-        embed_df = anndata.obsm['motif_embeddings']
-        embed_meta_df = anndata.obs
-
-        if sample_ids is not None:
-            embed_df = embed_df.loc[sample_ids]
-            embed_meta_df = embed_meta_df.loc[sample_ids]
-        else:
-            logger.info("No sample_ids is passed, " \
-            "all embeddings from anndata will be yielded.")
-            
-        return cls.__init__(embed_df=embed_df,
-                            embed_meta_df=embed_meta_df,
-                            **kwargs)
     def __len__(self):
-        return self.shape[0] * self.shape[1] * self.shape[2]
-        
-    # def _init_fileread(self):
-    #     if self.fasta_extr is None:
-    #         self.fasta_extr = FastaExtractor(self.fasta_file)
-    #     if self.include_genotypes and self.genotype_extr is None:
-    #         self.genotype_extr = parse_genotype_file(self.genotype_file)
-
+        return len(self.loaded_data)
     def _get_window(self, chrom, summit, shift):
-        """
-        Calculates the genomic interval centered on the provided position.
-
-        Parameters
-        ----------
-        chrom : str
-            Chromosome name.
-        summit : int
-            Center position of the region.
-        shift : int
-            Number of base pairs to shift the window from the center.
-
-        Returns
-        -------
-        GenomicInterval
-            The calculated interval object for sequence extraction.
-        """
-        interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
-        if shift != 0:
-            interval.shift(shift, inplace=True)
-        return interval
-
+            """
+            Calculates the genomic interval centered on the provided position.
+    
+            Parameters
+            ----------
+            chrom : str
+                Chromosome name.
+            summit : int
+                Center position of the region.
+            shift : int
+                Number of base pairs to shift the window from the center.
+    
+            Returns
+            -------
+            GenomicInterval
+                The calculated interval object for sequence extraction.
+            """
+            interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
+            if shift != 0:
+                interval.shift(shift, inplace=True)
+            return interval
+    
     def _crop(self, dna_seq: str):
         """
         Trims the DNA sequence back to the target `seqlen`.
@@ -608,7 +547,6 @@ class CartesianInferenceDataset(BaseSequenceDataset):
             mid = len(dna_seq) // 2
             dna_seq = dna_seq[mid - self.seqlen//2 : mid + self.seqlen//2]
         return dna_seq
-    
     def prepare_meta(self):
         """
         Generates a flat metadata DataFrame matching the exact iteration order of __getitem__.
@@ -616,20 +554,23 @@ class CartesianInferenceDataset(BaseSequenceDataset):
         Returns
         -------
         pandas.DataFrame
-            DataFrame containing genomic region details, shift values, and embedding IDs 
-            for every sample in the dataset.
+            DataFrame containing variant details, shift values, embedding IDs, 
+            and a unique string identifier (`var_id`) for every sample in the dataset.
         """
-        # dtypes = {
-        #     'chrom': 'category',
-        #     'embed_id': 'category',      
-        #     'shift': 'category',     
-        # }
+        dtypes = {
+            'ref' : 'category',
+            'alt' : 'category',
+            'chrom': 'category',
+            'embed_id': 'category',      
+            'shift': 'category',     
+            'variant_id': 'str'  
+        }
         idxs = np.arange(len(self))
         embeds_idxs, shift_idxs, coord_idxs = np.unravel_index(idxs, self.shape)
-        
-        df = self.coords_df.iloc[coord_idxs].copy()
-        df['shift'] = self.shifts[shift_idxs]
-        df['embed_id'] = self.embeds_ids[embeds_idxs]
+
+        df = self.loaded_data.to_df().loc[coord_idxs]
+        df['shift'] = self.loaded_data.shifts[shift_idxs]
+        df['embed_id'] = self.loaded_data.embeds_ids[embeds_idxs]
         
         # df = df.astype(dtypes)
         return df.reset_index(drop=True)
@@ -652,22 +593,19 @@ class CartesianInferenceDataset(BaseSequenceDataset):
             - 'embed': The cell-type or state embedding array.
         """
         self._init_fileread()
-        
-        x, y, z = np.unravel_index(idx, shape=self.shape)
-        
-        embed = self.embeds_vals[x]
-        shift = int(self.shifts[y])
-        
-        chrom = self.coords_chrom[z]
-        start = self.coords_start[z]
-        end = self.coords_end[z]
+
+        row = self.loaded_data[idx]
+        chrom = row["chrom"]
+        start = row["start"]
+        end = row["end"]
+        embed = row['embed']
+        shift = int(row['shift'])
         
         summit = (start + end) // 2
         interval = self._get_window(chrom, summit, shift)
-
         
         if self.include_genotypes:
-            indiv_id = self.indiv_ids[x]
+            indiv_id = row['indiv_id']
             _, dna_seq, _, _ = self.get_sample_sequence(interval, indiv_id)
         else:
             dna_seq = self.fasta_extr[interval].upper()

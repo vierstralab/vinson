@@ -7,8 +7,9 @@ import torch
 from torch.utils.data import  DataLoader
 
 from genome_tools.data.extractors import FastaExtractor
-from vinson.datasets.sequence import CartesianInferenceDataset
-from vinson.datasets.variant import CartesianVariantInferenceDataset
+from vinson.utils.data_formatting import CartesianVinsonData
+from vinson.datasets.sequence import InferenceDataset
+from vinson.datasets.variant import VariantInferenceDatasetV2
 from vinson.utils.sequence_utils import one_hot_encode
 
 
@@ -45,38 +46,14 @@ def assemble_batch(sample_id, interval, embeddings, fasta):
 
     return next(iter(dl))
 
-import pandas as pd
-@dataclass
-class InferenceDatasetConfig:
-    embed_df: pd.DataFrame
-    fasta_file: str
-    bed_df: pd.DataFrame | None = None
-    variants_df: pd.DataFrame | None = None
-    shifts: ArrayLike = field(default_factory=lambda: np.array([]))
-    embed_meta_df: None | pd.DataFrame  = None
-    genotype_file: None | str = None
 
-    def __post_init__(self):
-        if not (
-            (self.bed_df is not None) ^ (self.variants_df is not None)
-                ):
-            raise ValueError('One of variants_df or bed_df should be used')
-        
-        if (
-            (self.embed_meta_df is not None) ^ (self.genotype_file is not None)
-            ):
-            raise ValueError('Both embed_meta_df and genotype_file should be passed to inject genotypes')
-
-    def to_dict(self):
-        return asdict(self, dict_factory=lambda x: {k:v for k,v in x if v is not None})
-    
-
-def score_bed_with_dhs_model(inference_dataclass: InferenceDatasetConfig,
+def score_bed_with_dhs_model(loaded_data: CartesianVinsonData,
                              model,
-                             dataloader_kwargs =dict(num_workers=1, batch_size=128), 
+                            #  shifts:ArrayLike = [0],
+                             dataloader_kwargs =dict(num_workers=1, batch_size=16), 
                              device='cpu'):
     
-    dataset = CartesianInferenceDataset(**inference_dataclass.to_dict()) 
+    dataset = InferenceDataset(loaded_data) 
     dataloader = DataLoader(dataset, 
                             **dataloader_kwargs)
     
@@ -97,12 +74,12 @@ def score_bed_with_dhs_model(inference_dataclass: InferenceDatasetConfig,
     out_df = dataset.prepare_meta()
     return out_df, predicted_scores
 
-def score_variants_with_dhs_model(inference_dataclass: InferenceDatasetConfig,
+def score_variants_with_dhs_model(loaded_data: CartesianVinsonData,
                                   model,
-                                  dataloader_kwargs =dict(num_workers=1, batch_size=128), 
+                                  dataloader_kwargs =dict(num_workers=1, batch_size=16), 
                                   device='cpu'):
 
-    dataset = CartesianVariantInferenceDataset(**inference_dataclass.to_dict()) 
+    dataset = VariantInferenceDatasetV2(loaded_data) 
     dataloader = DataLoader(dataset, 
                             **dataloader_kwargs)
     lst_ref, lst_alt = [], []
