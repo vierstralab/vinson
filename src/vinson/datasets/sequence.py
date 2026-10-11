@@ -1,14 +1,13 @@
+from os.path import exists
 import numpy as np
 import pandas as pd
-import os 
 
 from torch.utils.data import Dataset
-import gzip
 
 from genome_tools import GenomicInterval, VariantInterval, df_to_variant_intervals
 from genome_tools.data.extractors import FastaExtractor, TabixExtractor
 
-from vinson.utils.data_formatting import VinsonData
+from vinson.utils.data_formatting import VinsonData, CartesianVinsonData
 from vinson.utils.sequence_utils import one_hot_encode, get_iupac_char_from_alleles
 from vinson.utils.helpers import replace_at
 
@@ -399,3 +398,157 @@ class SequenceEmbedDataset(SequenceOnlyDataset):
         # Get embeddings
         data['embed'] = self.get_embedding_vec(data['sample_id'])
         return data
+
+
+
+class InferenceDataset(BaseSequenceDataset):
+    """
+    A PyTorch Dataset that generates all combinations of genetic variants, 
+    cell-type embeddings, and shifts for model inference.
+
+    Parameters
+    ----------
+    loaded_data: CartesianVinsonData
+        Loaded data wrapped in VinsonData
+    seqlen : int, optional
+        The fixed total length of the output DNA sequence. Default is 1344.
+    """
+
+    REQUIRED_COLUMNS = ['chrom', 'start', 'end']
+    
+    def __init__(self, 
+                 loaded_data: CartesianVinsonData, # should be there embed_meta_df: pd.DataFrame = None, genotype_file: str = None,
+                 seqlen: int = 1344,
+                 ):
+        
+        assert_flag = all([col in loaded_data.keys() for col in self.REQUIRED_COLUMNS])
+        assert assert_flag, 'Ensure all required columns are present'
+
+        self.loaded_data = loaded_data
+        self.fasta_file = self.loaded_data.fasta_file
+        self.fasta_extr = None
+        self.genotype_extr = None 
+
+        self.include_genotypes = self.loaded_data.include_genotypes
+        if self.include_genotypes:
+            self.embeddings_meta_df = self.loaded_data.embeddings_meta_df
+            self.indiv_ids = self.loaded_data.indiv_ids
+            self.genotype_file = self.loaded_data.genotype_file
+
+        self.seqlen = seqlen
+        self.shape = self.loaded_data.shape #(len(self.embeds_ids), len(self.shifts), len(self.loaded_data))
+    
+    def __len__(self):
+        return len(self.loaded_data)
+    def _get_window(self, chrom, summit, shift):
+            """
+            Calculates the genomic interval centered on the provided position.
+    
+            Parameters
+            ----------
+            chrom : str
+                Chromosome name.
+            summit : int
+                Center position of the region.
+            shift : int
+                Number of base pairs to shift the window from the center.
+    
+            Returns
+            -------
+            GenomicInterval
+                The calculated interval object for sequence extraction.
+            """
+            interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
+            if shift != 0:
+                interval.shift(shift, inplace=True)
+            return interval
+    
+    def _crop(self, dna_seq: str):
+        """
+        Trims the DNA sequence back to the target `seqlen`.
+
+        Parameters
+        ----------
+        dna_seq : str
+            The target DNA sequence.
+
+        Returns
+        -------
+        str
+            The center-cropped DNA sequence matching `seqlen`.
+        """
+        if len(dna_seq) > self.seqlen:
+            mid = len(dna_seq) // 2
+            dna_seq = dna_seq[mid - self.seqlen//2 : mid + self.seqlen//2]
+        return dna_seq
+    def prepare_meta(self):
+        """
+        Generates a flat metadata DataFrame matching the exact iteration order of __getitem__.
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame containing variant details, shift values, embedding IDs, 
+            and a unique string identifier (`var_id`) for every sample in the dataset.
+        """
+        dtypes = {
+            'ref' : 'category',
+            'alt' : 'category',
+            'chrom': 'category',
+            'embed_id': 'category',      
+            'shift': 'category',     
+            'variant_id': 'str'  
+        }
+        idxs = np.arange(len(self))
+        embeds_idxs, shift_idxs, coord_idxs = np.unravel_index(idxs, self.shape)
+
+        df = self.loaded_data.to_df().loc[coord_idxs]
+        df['shift'] = self.loaded_data.shifts[shift_idxs]
+        df['embed_id'] = self.loaded_data.embeds_ids[embeds_idxs]
+        
+        # df = df.astype(dtypes)
+        return df.reset_index(drop=True)
+
+    def __getitem__(self, idx):
+        """
+        Retrieves a single batch item containing the one-hot encoded sequence and its embedding.
+
+        Parameters
+        ----------
+        idx : int
+            The flattened integer index of the dataset.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the model inputs:
+            - 'seq': One-hot encoded DNA sequence of the specified genomic region.
+            - 'seq_revcomp': Reverse complement of the one-hot encoded sequence.
+            - 'embed': The cell-type or state embedding array.
+        """
+        self._init_fileread()
+
+        row = self.loaded_data[idx]
+        chrom = row["chrom"]
+        start = row["start"]
+        end = row["end"]
+        embed = row['embed']
+        shift = int(row['shift'])
+        
+        summit = (start + end) // 2
+        interval = self._get_window(chrom, summit, shift)
+        
+        if self.include_genotypes:
+            indiv_id = row['indiv_id']
+            _, dna_seq, _, _ = self.get_sample_sequence(interval, indiv_id)
+        else:
+            dna_seq = self.fasta_extr[interval].upper()
+
+        ohe_seq = one_hot_encode(dna_seq)
+
+        batch = dict(
+            seq = ohe_seq.copy(),
+            seq_revcomp = np.flip(ohe_seq, [0, 1]).copy(),
+            embed = embed.copy()
+        )
+        return batch

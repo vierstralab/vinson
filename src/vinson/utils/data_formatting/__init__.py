@@ -1,4 +1,4 @@
-from .container import VinsonData
+from .container import VinsonData, CartesianVinsonData
 from .readers import (
     extract_data_from_h5,
     extract_data_from_train_anndata,
@@ -11,6 +11,7 @@ from .adata_utils import get_number_of_train_examples
 
 
 __all__ = [
+    "CartesianVinsonData",
     "VinsonData",
     "extract_data_from_h5",
     "extract_data_from_train_anndata",
