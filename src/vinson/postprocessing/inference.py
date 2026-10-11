@@ -1,15 +1,13 @@
 from tqdm import tqdm_notebook, tqdm
-from dataclasses import dataclass, field, asdict 
 
 import numpy as np
-from numpy.typing import ArrayLike
 import torch
 from torch.utils.data import  DataLoader
 
 from genome_tools.data.extractors import FastaExtractor
-from vinson.utils.data_formatting import CartesianVinsonData
-from vinson.datasets.sequence import InferenceDataset
-from vinson.datasets.variant import VariantInferenceDatasetV2
+from vinson.utils.data_formatting import VinsonData, InferenceVinsonData
+from vinson.datasets.sequence import InferenceSequenceEmbedDataset
+
 from vinson.utils.sequence_utils import one_hot_encode
 
 
@@ -47,15 +45,18 @@ def assemble_batch(sample_id, interval, embeddings, fasta):
     return next(iter(dl))
 
 
-def score_bed_with_dhs_model(loaded_data: CartesianVinsonData,
-                             model,
-                            #  shifts:ArrayLike = [0],
-                             dataloader_kwargs =dict(num_workers=1, batch_size=16), 
-                             device='cpu'):
+def score_bed_with_dhs_model(
+        loaded_data: InferenceVinsonData, # or VinsonData
+        model,
+        dataloader_kwargs=dict(num_workers=1, batch_size=16), 
+        device='cpu'
+    ):
+    """
     
-    dataset = InferenceDataset(loaded_data) 
-    dataloader = DataLoader(dataset, 
-                            **dataloader_kwargs)
+    """
+    
+    dataset = InferenceSequenceEmbedDataset(loaded_data) 
+    dataloader = DataLoader(dataset, **dataloader_kwargs)
     
     lst_preds = []
     with torch.no_grad():    
@@ -71,9 +72,10 @@ def score_bed_with_dhs_model(loaded_data: CartesianVinsonData,
             lst_preds.append(preds.cpu().numpy())
 
     predicted_scores = np.concatenate(lst_preds)
-    out_df = dataset.prepare_meta()
+    out_df = loaded_data.to_df()
     return out_df, predicted_scores
 
+# FIXME
 def score_variants_with_dhs_model(loaded_data: CartesianVinsonData,
                                   model,
                                   dataloader_kwargs =dict(num_workers=1, batch_size=16), 

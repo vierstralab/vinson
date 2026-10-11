@@ -1,187 +1,63 @@
-from os.path import exists
 import numpy as np
-import pandas as pd
 
-from torch.utils.data import Dataset
+from genome_tools import GenomicInterval
 
-from genome_tools import GenomicInterval, VariantInterval, df_to_variant_intervals
-from genome_tools.data.extractors import FastaExtractor, TabixExtractor
 
-from vinson.utils.data_formatting import VinsonData, CartesianVinsonData
-from vinson.utils.sequence_utils import one_hot_encode, get_iupac_char_from_alleles
-from vinson.utils.helpers import replace_at
-
-from vinson.datasets.utils import TabixConnector, DataFrameConnector, IUPACSource
-from vinson.utils.data_formatting.readers import parse_genotype_file
+from vinson.utils.data_formatting import VinsonData
 import logging
 
+from .base import BaseSequenceDataset
+
+
 logger = logging.getLogger(__name__)
-import warnings
 
 
-class BaseSequenceDataset(Dataset):
-    """
-    Base PyTorch Dataset for genomic sequence and embedding data.
+class InferenceSequenceOnlyDataset(BaseSequenceDataset):
 
-    Provides common initialization and resource management for derived datasets,
-    including loading sample metadata, embeddings, and setting up random state.
+    def _slice_data(self, i: int):
+        return self.data[i]
 
-    Parameters
-    ----------
-    data : VinsonData containing dict of sample metadata, encodings, embeddings
-    fasta_file : str
-        Path to reference genome FASTA file.
-    genotype_file : str, optional
-        Path to genotype file in tabix format.
-    reverse_complement : bool, default False
-        Randomly reverse-complement sequences for augmentation.
-    jitter : int, default 0
-        Maximum number of bases to shift the region randomly.
-    noise : float, default 0
-        Standard deviation of Gaussian noise added to embeddings.
-    seqlen : int, default 1344
-        Sequence window length; must be even.
+    def _parse_position(self, data_dict: dict) -> GenomicInterval:
+        chrom = data_dict['chrom']
+        summit = data_dict['summit']
 
-    Attributes
-    ----------
-    fasta_extr : FastaExtractor
-        Reference genome sequence extractor.
-    genotype_extr : TabixExtractor
-        Genotype data extractor, if provided.
-    """
+        if 'shift' in data_dict:
+            shift = data_dict['shift']
+        else:
+            shift = None
 
-    def __init__(
-        self,
-        data: VinsonData,
-        fasta_file: str,
-        genotype_file: str = None,
-        reverse_complement=False,
-        jitter=0,
-        noise=0,
-        seqlen=1344,
-    ):
-        self.fasta_file = fasta_file
-        self.data = data
-        self.reverse_complement = reverse_complement
-        self.jitter = jitter
-        self.noise = noise
-        self.genotype_file = genotype_file
+        interval, shift = self._get_window(chrom, summit, shift=shift)
+        return interval, shift
 
-        self.source = self.get_source()
+    def _parse_sequence(self, data_dict: dict, interval: GenomicInterval):
+        self._init_fileread()
+        sample_id = data_dict['sample_id']
 
-        assert seqlen % 2 == 0, "Error 'seqlen' must be a even number!"
-        self.seqlen = seqlen
-
-        self.fasta_extr: FastaExtractor = None
-
-        self.include_genotypes = False
-        if genotype_file is not None:
-            if isinstance(genotype_file, str):
-                if genotype_file != '':
-                    self.include_genotypes = True
-            else:
-                self.include_genotypes = True
-
-        
         if self.include_genotypes:
-            assert "indiv_id" in self.data.keys(), (
-                "Sample to genotype mapping must include 'indiv_id' column."
-            )
+            if self._is_multitask(sample_id):
+                raise ValueError("Multitask model does not support variant injection.")
+            indiv_id = data_dict['indiv_id']
         else:
-            logger.info(
-                "No genotyping files provided -- continuing without sample genotypes."
-            )
-
-    def get_connector(self):
-        if isinstance(self.genotype_file, pd.DataFrame):
-            return DataFrameConnector(self.genotype_file)
-        elif self.genotype_file is None:
-            return None
-        else:
-            return TabixConnector(self.genotype_file)
-
-    def get_source(self):
-        return IUPACSource(self.get_connector())
-
-    def __del__(self):
-        """
-        Clean up open file handles for extractors.
-        """
-        if self.fasta_extr:
-            self.fasta_extr.close()
-    
-    def _get_window(self, chrom, summit):
-        interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
-        if self.jitter > 0:
-            shift = np.random.randint(-self.jitter, self.jitter + 1)
-            interval.shift(shift, inplace=True)
-        return interval
-
-    def __getitem__(self, i):
-        """
-        Retrieve a single data item by index.
-
-        Must be implemented by subclasses.
-        """
-        raise NotImplementedError
-
-    def __len__(self):
-        """
-        Return the number of samples in the dataset.
-        """
-        return len(self.data)
-
-    def get_embedding_vec(self, sample_id) -> np.ndarray:
-        """
-        Get the embedding vector a sample id
-
-        Parameters
-        ----------
-        sample_id : str
-            Sample id
-
-        Returns
-        -------
-        np.ndarray
-            The embedding vector that sample.
-        """
-        # Cell type/state embeddings
-        x = self.data.embeddings_df.loc[sample_id].to_numpy(dtype=np.float32)
-
-        # Add a little Gaussian noise to embeddings
-        if self.noise > 0:
-            x = x + np.random.normal(0, self.noise, len(x)).astype(np.float32)
-
-        return x
-
-
-    def _init_fileread(self):
-        if not self.fasta_extr:
-            self.fasta_extr = FastaExtractor(self.fasta_file)
-
-    @staticmethod
-    def _normalize_indiv_id(indiv_id):     
-        if isinstance(indiv_id, (np.ndarray, list)):
-            indiv_id = np.asarray(indiv_id).item()
-        if pd.isna(indiv_id) or indiv_id in ("None", ""):
             indiv_id = ""
-        else:
-            assert isinstance(indiv_id, str), f"indiv_id must be str, got {type(indiv_id)}: {indiv_id}"
-            assert (
-                "INDIV" in indiv_id
-            ), f"INDIV_ID format incorrect ({indiv_id}, {type(indiv_id)})."
-        return indiv_id
 
-        
+        dna_seq = self.get_sample_sequence(interval, indiv_id)
+
+        if 'revcomp' in data_dict:
+            revcomp = data_dict['revcomp']
+        else:
+            revcomp = None
+        ohe_seq, revcomp = self._get_ohe_sequence(dna_seq=dna_seq, revcomp=revcomp)
+
+        return ohe_seq.copy(), revcomp
+
     def get_sample_sequence(
             self,
             interval: GenomicInterval,
             indiv_id: str,
-            reference_variant: VariantInterval=None,
         ):
         """
         Returns:
-            tuple: (base_sequence str, variants List[Variant])
+            tuple: genomic sequence with variants encoded as IUPAC symbols
         """
         seq = self.fasta_extr[interval]
 
@@ -198,8 +74,55 @@ class BaseSequenceDataset(Dataset):
         )
         return seq_iupac
 
+    def __getitem__(self, i):
+        """
+        Retrieve a single training sample, including sequence, embedding, and metadata.
 
-class SequenceOnlyDataset(BaseSequenceDataset):
+        Handles negative sampling, region jittering, reverse complementation, genotype injection,
+        one-hot encoding, and embedding noise.
+
+        Parameters
+        ----------
+        i : int
+            Index of the sample to retrieve.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+            - 'ohe_seq': one-hot encoded DNA sequence (np.ndarray)
+            - 'chrom': str, chromosome
+            - 'summit': int, center coordinate
+            - 'sample_id': str, sample identifier
+        
+            Optional, for inference:
+            - 'revcomp': bool, whether take revcomp of the sequence
+        """
+        data_slice = self._slice_data(i)
+
+        interval, shift = self._parse_position(data_slice)
+        ohe_seq, revcomp = self._parse_sequence(data_slice, interval)
+
+        return {
+            "ohe_seq": ohe_seq.copy(),
+            "chrom": data_slice['chrom'],
+            "summit": data_slice['summit'],
+            "sample_id": data_slice['sample_id'],
+            "shift": shift,
+            "revcomp": revcomp
+        }
+
+
+class InferenceSequenceEmbedDataset(InferenceSequenceOnlyDataset):
+    def __getitem__(self, i):
+        data = super().__getitem__(i)
+        embed, noise = self.get_embedding_vec(data['sample_id'])
+        data['embed'] = embed
+        data['noise'] = noise
+        return data
+
+
+class SequenceOnlyDataset(InferenceSequenceOnlyDataset):
     """
     PyTorch Dataset for extracting sequence only (without cell-type embeddings), with optional
     genotype injection, negative sampling, and read depth normalization.
@@ -236,6 +159,7 @@ class SequenceOnlyDataset(BaseSequenceDataset):
         reverse_complement=False,
         jitter=0,
         noise=0,
+        seqlen=1344
     ):
         super().__init__(
             data=data,
@@ -244,21 +168,15 @@ class SequenceOnlyDataset(BaseSequenceDataset):
             reverse_complement=reverse_complement,
             jitter=jitter,
             noise=noise,
+            seqlen=seqlen
         )
 
         self.clip_density = clip_density
         self.min_bg = min_bg
         self.negatives_weight = negatives_weight
 
-        assert set(
-            [
-                "chrom", "summit", "class", 
-                "density", "sample_id", 
-                "background", "read_depth"
-            ]
-        ).issubset(
-            self.data.keys()
-        )
+        assert not data.is_inference, f'Sequency only dataset requires targets to be present in VinsonData data.is_inference={data.is_inference}. Use infererence dataset instead.'
+
 
     def __getitem__(self, i):
         """
@@ -286,48 +204,29 @@ class SequenceOnlyDataset(BaseSequenceDataset):
             - 'summit': int, center coordinate
             - 'sample_id': str, sample identifier
         """
-        self._init_fileread()
-        data_slice = self.data[i]
-        chrom = data_slice['chrom']
-        summit = data_slice['summit']
-        sample_id = data_slice['sample_id']
+        data_slice = self._slice_data(i)
+
+        interval, shift = self._parse_position(data_slice)
+
+        ohe_seq, revcomp = self._parse_sequence(data_slice, interval)
+
+        result = {
+            "ohe_seq": ohe_seq.copy(),
+            "chrom": data_slice['chrom'],
+            "summit": data_slice['summit'],
+            "sample_id": data_slice['sample_id'],
+            "shift": shift,
+            "revcomp": revcomp
+        }
+
+        # parse target data
+        is_multitask = self._is_multitask()
+
         density: np.ndarray = data_slice['density']
         bg = data_slice['background']
         read_depth = data_slice['read_depth']
         example_class = data_slice['class']
-
-        is_multitask = density.ndim > 0
-
-        # Define region
-        interval = self._get_window(chrom, summit)
-
-        # indiv_id is expected to be in self.data if genotypes are included
-        if self.include_genotypes:
-            if is_multitask:
-                raise ValueError("Multitask model does not support variant injection.")
-            indiv_id = data_slice['indiv_id']
-        else:
-            indiv_id = ""
-
-        dna_seq = self.get_sample_sequence(
-            interval,
-            indiv_id
-        )
-
-        # One-hot encode DNA sequence
-        #added upper for mouse fasta
-        try:
-            ohe_seq = one_hot_encode(dna_seq.upper(), dtype=np.float32)
-            # Reverse complete (augmentation)
-            if self.reverse_complement and np.random.choice(2) == 1:
-                ohe_seq = np.flip(ohe_seq, [0, 1])
-        except ValueError as e:
-            logger.error(
-                f"Error converting DNA to one-hot encoding ({chrom}:{summit} -- {sample_id})"
-            )
-            raise e
-
-        example_class = np.asarray(example_class != -1) # compatible with multitask
+        example_class = np.asarray(example_class == 1) # compatible with multitask
        
         # Adjust values as needed
         density = np.clip(density, None, self.clip_density)
@@ -339,27 +238,24 @@ class SequenceOnlyDataset(BaseSequenceDataset):
 
         weight_mult = np.where(example_class, 1.0, self.negatives_weight)
 
-        # weight_mult = 1.0 if is_pos else self.negatives_weight
-
         weight = weight * weight_mult
-
-        bg = np.clip(bg, self.min_bg, None)
 
         if not is_multitask:
             weight = weight.squeeze()
             example_class = example_class.squeeze()
 
-        return {
-            "ohe_seq": ohe_seq.copy(),
-            "class": example_class,
-            "density": density,
-            "bg": bg,
-            "read_depth": read_depth,
-            "weight": weight,
-            "chrom": chrom,
-            "summit": summit,
-            "sample_id": sample_id,
-        }
+        bg = np.clip(bg, self.min_bg, None)
+
+        result.update(
+            {
+                "class": example_class,
+                "density": density,
+                "bg": bg,
+                "read_depth": read_depth,
+                "weight": weight,
+            }
+        )
+        return result
 
 
 class SequenceEmbedDataset(SequenceOnlyDataset):
@@ -392,163 +288,5 @@ class SequenceEmbedDataset(SequenceOnlyDataset):
             - 'sample_id': str, sample identifier
         """
         data = super().__getitem__(i)
-        if data["density"].ndim > 0:
-            raise ValueError("Multitask model is not supported in SequenceEmbedDataset.")
-        
-        # Get embeddings
         data['embed'] = self.get_embedding_vec(data['sample_id'])
         return data
-
-
-
-class InferenceDataset(BaseSequenceDataset):
-    """
-    A PyTorch Dataset that generates all combinations of genetic variants, 
-    cell-type embeddings, and shifts for model inference.
-
-    Parameters
-    ----------
-    loaded_data: CartesianVinsonData
-        Loaded data wrapped in VinsonData
-    seqlen : int, optional
-        The fixed total length of the output DNA sequence. Default is 1344.
-    """
-
-    REQUIRED_COLUMNS = ['chrom', 'start', 'end']
-    
-    def __init__(self, 
-                 loaded_data: CartesianVinsonData, # should be there embed_meta_df: pd.DataFrame = None, genotype_file: str = None,
-                 seqlen: int = 1344,
-                 ):
-        
-        assert_flag = all([col in loaded_data.keys() for col in self.REQUIRED_COLUMNS])
-        assert assert_flag, 'Ensure all required columns are present'
-
-        self.loaded_data = loaded_data
-        self.fasta_file = self.loaded_data.fasta_file
-        self.fasta_extr = None
-        self.genotype_extr = None 
-
-        self.include_genotypes = self.loaded_data.include_genotypes
-        if self.include_genotypes:
-            self.embeddings_meta_df = self.loaded_data.embeddings_meta_df
-            self.indiv_ids = self.loaded_data.indiv_ids
-            self.genotype_file = self.loaded_data.genotype_file
-
-        self.seqlen = seqlen
-        self.shape = self.loaded_data.shape #(len(self.embeds_ids), len(self.shifts), len(self.loaded_data))
-    
-    def __len__(self):
-        return len(self.loaded_data)
-    def _get_window(self, chrom, summit, shift):
-            """
-            Calculates the genomic interval centered on the provided position.
-    
-            Parameters
-            ----------
-            chrom : str
-                Chromosome name.
-            summit : int
-                Center position of the region.
-            shift : int
-                Number of base pairs to shift the window from the center.
-    
-            Returns
-            -------
-            GenomicInterval
-                The calculated interval object for sequence extraction.
-            """
-            interval = GenomicInterval(chrom, summit, summit).widen(self.seqlen // 2)
-            if shift != 0:
-                interval.shift(shift, inplace=True)
-            return interval
-    
-    def _crop(self, dna_seq: str):
-        """
-        Trims the DNA sequence back to the target `seqlen`.
-
-        Parameters
-        ----------
-        dna_seq : str
-            The target DNA sequence.
-
-        Returns
-        -------
-        str
-            The center-cropped DNA sequence matching `seqlen`.
-        """
-        if len(dna_seq) > self.seqlen:
-            mid = len(dna_seq) // 2
-            dna_seq = dna_seq[mid - self.seqlen//2 : mid + self.seqlen//2]
-        return dna_seq
-    def prepare_meta(self):
-        """
-        Generates a flat metadata DataFrame matching the exact iteration order of __getitem__.
-
-        Returns
-        -------
-        pandas.DataFrame
-            DataFrame containing variant details, shift values, embedding IDs, 
-            and a unique string identifier (`var_id`) for every sample in the dataset.
-        """
-        dtypes = {
-            'ref' : 'category',
-            'alt' : 'category',
-            'chrom': 'category',
-            'embed_id': 'category',      
-            'shift': 'category',     
-            'variant_id': 'str'  
-        }
-        idxs = np.arange(len(self))
-        embeds_idxs, shift_idxs, coord_idxs = np.unravel_index(idxs, self.shape)
-
-        df = self.loaded_data.to_df().loc[coord_idxs]
-        df['shift'] = self.loaded_data.shifts[shift_idxs]
-        df['embed_id'] = self.loaded_data.embeds_ids[embeds_idxs]
-        
-        # df = df.astype(dtypes)
-        return df.reset_index(drop=True)
-
-    def __getitem__(self, idx):
-        """
-        Retrieves a single batch item containing the one-hot encoded sequence and its embedding.
-
-        Parameters
-        ----------
-        idx : int
-            The flattened integer index of the dataset.
-
-        Returns
-        -------
-        dict
-            A dictionary containing the model inputs:
-            - 'seq': One-hot encoded DNA sequence of the specified genomic region.
-            - 'seq_revcomp': Reverse complement of the one-hot encoded sequence.
-            - 'embed': The cell-type or state embedding array.
-        """
-        self._init_fileread()
-
-        row = self.loaded_data[idx]
-        chrom = row["chrom"]
-        start = row["start"]
-        end = row["end"]
-        embed = row['embed']
-        shift = int(row['shift'])
-        
-        summit = (start + end) // 2
-        interval = self._get_window(chrom, summit, shift)
-        
-        if self.include_genotypes:
-            indiv_id = row['indiv_id']
-            _, dna_seq, _, _ = self.get_sample_sequence(interval, indiv_id)
-        else:
-            dna_seq = self.fasta_extr[interval].upper()
-
-        ohe_seq = one_hot_encode(dna_seq)
-
-        batch = dict(
-            seq = ohe_seq.copy(),
-            seq_revcomp = np.flip(ohe_seq, [0, 1]).copy(),
-            embed = embed.copy()
-        )
-        return batch

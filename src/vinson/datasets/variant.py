@@ -1,13 +1,11 @@
-from os.path import exists
 import numpy as np
-import pandas as pd
 
 from genome_tools import GenomicInterval, VariantInterval
 from vinson.utils.helpers import replace_at
-from vinson.utils.data_formatting import VinsonData, CartesianVinsonData
+from vinson.utils.data_formatting import VariantVinsonData
 from vinson.utils.sequence_utils import one_hot_encode
 
-from .sequence import BaseSequenceDataset,InferenceDataset, logger
+from .base import BaseSequenceDataset
 
 from vinson.datasets.utils import PhasedSource, UnphasedSource, TabixConnector
 
@@ -16,7 +14,14 @@ from vinson.utils.helpers import detect_genotype_format
 import warnings
 
 from vinson.utils.helpers import replace_at
+import logging 
 
+
+# TODO: centralized logging
+logger = logging.getLogger(__name__)
+
+
+# TODO: fix inference similar to sequence.py
 
 class VariantEmbedDataset(BaseSequenceDataset):
     """
@@ -41,7 +46,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
     """
     def __init__(
         self,                                                           
-        data: VinsonData,
+        data: VariantVinsonData,
         fasta_file: str,
         genotype_file: str = None,
         flip_alleles=False,
@@ -60,28 +65,13 @@ class VariantEmbedDataset(BaseSequenceDataset):
         )
 
         self.flip_alleles = flip_alleles
-        # self.fasta_extr: FastaExtractor = None
-        # self.genotype_file = genotype_file
-        # self.source = self.get_source()
 
         if self.source is None:
             print('random_phase has no effect when genotype_file is None')
         else:
             self.source.random_phase = random_phase
 
-        assert set(
-            [
-                "chrom",
-                "pos",
-                "ref",
-                "alt",
-                "ref_counts",
-                "total_counts",
-                "BAD",
-                "sample_id",
-                "logit_es",
-            ]
-        ).issubset(self.data.keys())
+        assert not data.is_inference, f'Sequency only dataset requires targets to be present in VariantVinsonData data.is_inference={data.is_inference}. Use infererence dataset instead.'
 
     def get_source(self):
         connector = self.get_connector()
@@ -257,7 +247,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
 
 class VariantInferenceDataset(BaseSequenceDataset):
 
-    def __init__(self, data: VinsonData, strict_ref_check=True, offset=0, **kwargs):
+    def __init__(self, data: VariantVinsonData, strict_ref_check=True, offset=0, **kwargs):
         super().__init__(
             data=data,
             **kwargs
@@ -271,7 +261,7 @@ class VariantInferenceDataset(BaseSequenceDataset):
         row = self.data[i]
         
         chrom = row["chrom"]
-        start = row["pos"] - 1# 0-based
+        start = row["pos"] - 1 # 0-based
         ref = row["ref"]
         alt = row["alt"]
         sample_id = row["sample_id"]
@@ -311,113 +301,3 @@ class VariantInferenceDataset(BaseSequenceDataset):
             "start": start,
         }
 
-
-## should be merged with upper
-class VariantInferenceDatasetV2(InferenceDataset):
-    """
-    A PyTorch Dataset that generates all combinations of genetic variants, 
-    cell-type embeddings, and shifts for model inference.
-
-    Parameters
-    ----------
-    loaded_data: CartesianVinsonData
-        Loaded data wrapped in VinsonData
-    seqlen : int, optional
-        The fixed total length of the output DNA sequence. Default is 1344.
-    """
-
-    REQUIRED_COLUMNS = ['chrom', 'pos', 'ref', 'alt', 'variant_id']
-    
-    def __init__(self, 
-                 loaded_data: CartesianVinsonData, # should be there embed_meta_df: pd.DataFrame = None, genotype_file: str = None,
-                 seqlen: int = 1344,
-                 ):
-        assert_flag = all([col in loaded_data.keys() for col in self.REQUIRED_COLUMNS])
-        assert assert_flag, 'Ensure all required columns are present'
-        super().__init__(loaded_data, seqlen)
-    
-    def _prepare_alleles(self, dna_seq, rel_pos, ref, alt):
-        """
-        Extracts the reference sequence and constructs the alternative sequence.
-
-        Parameters
-        ----------
-        interval : GenomicInterval
-            The target genomic window.
-        pos : int
-            The absolute genomic coordinate of the variant.
-        ref : str
-            The reference allele.
-        alt : str
-            The alternative allele.
-
-        Returns
-        -------
-        tuple of str
-            The reference and alternative DNA sequences (uppercase).
-        """
-
-        dna_seq_ref = dna_seq_alt = dna_seq #self.fasta_extr[interval]
-        dna_seq_ref = replace_at(dna_seq_ref, rel_pos, ref)
-
-        if alt in ('', '.', '-', '_'): # in case there is deletion
-            alt = ''
-            interval = interval.widen(left=0, right=1)
-            dna_seq_alt = self.fasta_extr[interval]
-
-        dna_seq_alt = self._crop(replace_at(dna_seq_alt, rel_pos, alt))
-        return dna_seq_ref.upper(), dna_seq_alt.upper()
-    
-    def __getitem__(self, idx):
-        """
-        Retrieves a single batch item containing one-hot encoded alleles and metadata.
-
-        Parameters
-        ----------
-        idx : int
-            The flattened integer index of the dataset.
-
-        Returns
-        -------
-        dict
-            A dictionary containing:
-            - 'ref': One-hot encoded reference sequence.
-            - 'ref_revcomp': Reverse complement of the reference sequence.
-            - 'alt': One-hot encoded alternative sequence.
-            - 'alt_revcomp': Reverse complement of the alternative sequence.
-            - 'embed': The cell-type embedding array.
-        """
-        self._init_fileread()
-
-        row = self.loaded_data[idx]
-        chrom = row["chrom"]
-        pos = row["pos"]
-        ref = row["ref"]
-        alt = row["alt"]
-        embed = row['embed']
-        shift = int(row['shift'])
-        
-        interval = self._get_window(chrom, pos, shift)
-
-        if self.include_genotypes:
-            indiv_id = row['indiv_id']
-            _, dna_seq, _, _ = self.get_sample_sequence(interval, indiv_id)
-        else:
-            dna_seq = self.fasta_extr[interval].upper()
-
-        start = pos - 1
-        rel_pos = start - interval.start
-
-        dna_seq_ref, dna_seq_alt = self._prepare_alleles(dna_seq, rel_pos, ref, alt)
-        
-        ohe_seq_ref = one_hot_encode(dna_seq_ref)
-        ohe_seq_alt = one_hot_encode(dna_seq_alt)
-
-        batch = dict(
-            ref = ohe_seq_ref.copy(),
-            ref_revcomp = np.flip(ohe_seq_ref, [0, 1]).copy(),
-            alt = ohe_seq_alt.copy(),
-            alt_revcomp = np.flip(ohe_seq_alt, [0, 1]).copy(),
-            embed = embed.copy()
-        )
-        return batch

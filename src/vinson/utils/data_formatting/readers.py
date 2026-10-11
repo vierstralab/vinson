@@ -5,7 +5,7 @@ import pandas as pd
 
 from vinson.utils.helpers import detect_genotype_format
 from .adata_utils import slice_adata, compute_if_dask, get_examples_indices_from_layer, update_layers_dict
-from .encoding import sanitize_data, encode_inplace
+from .sanitize import sanitize_data, encode_inplace
 
 from .container import VinsonData
 
@@ -69,13 +69,8 @@ def _parse_indiv_info(adata_slice, data):
         
 
 def extract_data_from_h5(h5_file, ref_adata: ad.AnnData, is_variant=False) -> VinsonData:
-    with h5py.File(h5_file, 'r') as f:
-        data = {}
-        for key in f.keys():
-            data[key] = f[key][()]
-
-    return VinsonData.from_raw(
-        data,
+    return VinsonData.from_h5(
+        h5_file,
         ref_adata.obsm['motif_embeddings'],
         is_variant=is_variant
     )
@@ -87,7 +82,7 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
     Args:
         adata (ad.AnnData): AnnData object containing DHS data.
         suffix (str): Suffix of the epoch/layer to extract. Gets added to layer names as `{layer}.{suffix}`. E.g. epoch_1, epoch_2, etc.
-        pre_jitter (bool): Whether to apply pre-jitter to the data. 
+        pre_jitter (bool): Whether epochs are pre-jittered. If true .layers['offsets.{suffix}'] should exist
     
     Returns:
         data (dict): Dictionary containing extracted data arrays.
