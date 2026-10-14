@@ -101,7 +101,7 @@ def sanitize_data(schema: ModelDataSchema, data: dict, encodings: dict = None, i
     """
     if encodings is None:
         encodings = {}
-    keys = schema.columns(data=data, is_inference=is_inference)
+    keys = schema.columns(present=data, is_inference=is_inference)
     for key, dtype in keys.items():
         if dtype == np.str_:
             if key in encodings:

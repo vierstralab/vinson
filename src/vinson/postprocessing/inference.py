@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import  DataLoader
 
 from genome_tools.data.extractors import FastaExtractor
-from vinson.utils.data_formatting import VinsonData, InferenceVinsonData
+from vinson.utils.data_formatting import VinsonData
 from vinson.datasets.sequence import InferenceSequenceEmbedDataset
 
 from vinson.utils.sequence_utils import one_hot_encode
@@ -46,65 +46,44 @@ def assemble_batch(sample_id, interval, embeddings, fasta):
 
 
 def score_bed_with_dhs_model(
-        loaded_data: InferenceVinsonData, # or VinsonData
+        dataloader,
         model,
-        dataloader_kwargs=dict(num_workers=1, batch_size=16), 
         device='cpu'
     ):
     """
     
     """
-    
-    dataset = InferenceSequenceEmbedDataset(loaded_data) 
-    dataloader = DataLoader(dataset, **dataloader_kwargs)
-    
+    model = model.to(device).eval()
+
     lst_preds = []
     with torch.no_grad():    
-        for batch in tqdm_notebook(dataloader):
-            seq, seq_revcomp = batch['seq'].to(device), batch['seq_revcomp'].to(device)
+        for batch in tqdm(dataloader):
+            seq = batch['ohe_seq'].to(device)
             embeds = batch['embed'].to(device)
 
-            pred = model(seq, embeds)
-            pred_revcomp = model(seq_revcomp, embeds)
-            preds = (torch.log(pred) + torch.log(pred_revcomp))/2
-            preds = torch.exp(preds)
-
+            preds = model(seq, embeds)
             lst_preds.append(preds.cpu().numpy())
 
     predicted_scores = np.concatenate(lst_preds)
-    out_df = loaded_data.to_df()
-    return out_df, predicted_scores
+    return predicted_scores
 
-# FIXME
-def score_variants_with_dhs_model(loaded_data: CartesianVinsonData,
+def score_variants_with_dhs_model(dataloader,
                                   model,
-                                  dataloader_kwargs =dict(num_workers=1, batch_size=16), 
                                   device='cpu'):
 
-    dataset = VariantInferenceDatasetV2(loaded_data) 
-    dataloader = DataLoader(dataset, 
-                            **dataloader_kwargs)
     lst_ref, lst_alt = [], []
-    model = model.to(device)
+    model = model.to(device).eval()
 
     with torch.no_grad():    
-        for batch in tqdm_notebook(dataloader):
-            ref, ref_revcomp = batch['ref'].to(device), batch['ref_revcomp'].to(device)
-            alt, alt_revcomp = batch['alt'].to(device), batch['alt_revcomp'].to(device)
+        for batch in tqdm(dataloader):
+            ref = batch['ohe_seq_ref'].to(device)
+            alt = batch['ohe_seq_alt'].to(device)
             embeds = batch['embed'].to(device)
 
-            pred_ref, pred_ref_revcomp = model(ref, embeds), model(ref_revcomp, embeds)
-            pred_alt, pred_alt_revcomp = model(alt, embeds), model(alt_revcomp, embeds)
+            pred_ref = model(ref, embeds)
+            pred_alt = model(alt, embeds)
 
-            ## geom mean
-            pred_ref = (torch.log(pred_ref) + torch.log(pred_ref_revcomp))/2
-            pred_alt = (torch.log(pred_alt) + torch.log(pred_alt_revcomp))/2
-            pred_ref, pred_alt = torch.exp(pred_ref), torch.exp(pred_alt)
-            
             lst_ref.append(pred_ref.cpu().numpy()), lst_alt.append(pred_alt.cpu().numpy())
 
     ref_scores, alt_scores = np.concatenate(lst_ref), np.concatenate(lst_alt)
-    out_df = dataset.prepare_meta()
-    # out_df['vinson.ref_score'] = ref_scores
-    # out_df['vinson.alt_score'] = alt_scores
-    return out_df, (alt_scores, ref_scores)
+    return alt_scores, ref_scores

@@ -4,6 +4,8 @@ from genome_tools import GenomicInterval
 
 
 from vinson.utils.data_formatting import VinsonData
+from vinson.utils.sequence_utils import one_hot_encode
+
 import logging
 
 from .base import BaseSequenceDataset
@@ -20,11 +22,7 @@ class InferenceSequenceOnlyDataset(BaseSequenceDataset):
     def _parse_position(self, data_dict: dict) -> GenomicInterval:
         chrom = data_dict['chrom']
         summit = data_dict['summit']
-
-        if 'shift' in data_dict:
-            shift = data_dict['shift']
-        else:
-            shift = None
+        shift = int(data_dict.get('shift', 0))
 
         interval, shift = self._get_window(chrom, summit, shift=shift)
         return interval, shift
@@ -42,11 +40,11 @@ class InferenceSequenceOnlyDataset(BaseSequenceDataset):
 
         dna_seq = self.get_sample_sequence(interval, indiv_id)
 
-        if 'revcomp' in data_dict:
+        if 'revcomp' in data_dict:                       
             revcomp = data_dict['revcomp']
         else:
             revcomp = None
-        ohe_seq, revcomp = self._get_ohe_sequence(dna_seq=dna_seq, revcomp=revcomp)
+        ohe_seq, revcomp = self._get_ohe_sequence(dna_seq=dna_seq, revcomp=True)
 
         return ohe_seq.copy(), revcomp
 
@@ -109,18 +107,98 @@ class InferenceSequenceOnlyDataset(BaseSequenceDataset):
             "summit": data_slice['summit'],
             "sample_id": data_slice['sample_id'],
             "shift": shift,
-            "revcomp": revcomp
+            "ohe_revcomp": revcomp
         }
 
 
 class InferenceSequenceEmbedDataset(InferenceSequenceOnlyDataset):
-    def __getitem__(self, i):
-        data = super().__getitem__(i)
-        embed, noise = self.get_embedding_vec(data['sample_id'])
-        data['embed'] = embed
-        data['noise'] = noise
-        return data
+    def __init__(self, data, fasta_file, genotype_file = None, seqlen=1344): # added because we don't need random noise and revcomp as augmentation
+            super().__init__(data, fasta_file, genotype_file, seqlen=seqlen)
 
+    def __getitem__(self, i):
+        self._init_fileread()
+        data = self.data[i]
+        interval, shift = self._parse_position(data)
+        ohe_seq, revcomp = self._parse_sequence(data, interval)
+        embed = self.get_embedding_vec(data['sample_id'])
+        
+        return {
+                "ohe_seq": ohe_seq.copy(),
+                "chrom": data['chrom'],
+                "summit": data['summit'],
+                "sample_id": data['sample_id'],
+                "shift": shift,
+                "revcomp": revcomp,
+                "embed": embed,
+
+            }
+
+# class InferenceSequenceEmbedDataset(BaseSequenceDataset):
+    
+
+#     def _parse_position(self, data_dict: dict) -> GenomicInterval:
+#             chrom = data_dict['chrom']
+#             summit = data_dict['summit']
+#             shift = int(data_dict.get('shift', 0))
+
+#             interval, shift = self._get_window(chrom, summit, shift=shift)
+#             return interval, shift
+    
+#     def get_sample_sequence(
+#             self,
+#             interval: GenomicInterval,
+#             indiv_id: str,
+#         ):
+#         """
+#         Returns:
+#             tuple: genomic sequence with variants encoded as IUPAC symbols
+#         """
+#         seq = self.fasta_extr[interval]
+
+#         indiv_id = self._normalize_indiv_id(indiv_id)
+
+#         if indiv_id == "":
+#             return str(seq)
+    
+#         iupac_edits = self.source.get_edits(interval, indiv_id)
+#         seq_iupac = self.source.apply_edits(
+#             seq,
+#             interval_start=interval.start,
+#             edits=iupac_edits
+#         )
+#         return seq_iupac
+
+#     def _parse_sequence(self, data_dict: dict, interval: GenomicInterval): # it should give revcomp always, it's inference dataset
+#         self._init_fileread()            
+#         if self.include_genotypes:
+#             indiv_id = data_dict['indiv_id']
+#         else:
+#             indiv_id = ""
+
+#         dna_seq = self.get_sample_sequence(interval, indiv_id)
+
+#         ohe_seq = one_hot_encode(dna_seq)
+#         revcomp = np.flip(ohe_seq, [0,1])
+#         return ohe_seq.copy(), revcomp.copy()
+    
+#     def __getitem__(self, i):
+#         self._init_fileread()
+#         data = self.data[i]
+#         interval, shift = self._parse_position(data)
+#         ohe_seq, revcomp = self._parse_sequence(data, interval)
+#         embed, noise = self.get_embedding_vec(data['sample_id'])
+        
+#         return {
+#                 "ohe_seq": ohe_seq.copy(),
+#                 "chrom": data['chrom'],
+#                 "summit": data['summit'],
+#                 "sample_id": data['sample_id'],
+#                 "shift": shift,
+#                 "revcomp": revcomp,
+#                 "embed": embed,
+#                 "noise":noise
+
+#             }
 
 class SequenceOnlyDataset(InferenceSequenceOnlyDataset):
     """
@@ -220,7 +298,8 @@ class SequenceOnlyDataset(InferenceSequenceOnlyDataset):
         }
 
         # parse target data
-        is_multitask = self._is_multitask()
+        sample_id = data_slice.get('sample_id', None) 
+        is_multitask = self._is_multitask(sample_id) # method requires sample_id
 
         density: np.ndarray = data_slice['density']
         bg = data_slice['background']

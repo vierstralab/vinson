@@ -169,14 +169,18 @@ class BaseSequenceDataset(Dataset):
         # Cell type/state embeddings
         if self.data.embeddings_df is None:
             raise ValueError("data.embeddings_df is None but an embedding was requested")
-        if self._is_multitask:
+        if self._is_multitask(sample_id):
             raise ValueError("Multitask model can't use embeddings.")
 
         x = self.data.embeddings_df.loc[sample_id].to_numpy(dtype=np.float32)
 
         # Add a little Gaussian noise to embeddings
-        if (noise is None) and (self.noise > 0):
+        if (self.noise > 0) and (noise is None):
             noise = np.random.normal(0, self.noise, len(x)).astype(np.float32)
+        elif noise is None:
+            noise = 0
+            return x  #genome_tools/plotting/modular_plot/loaders/prediction.py: 212 expects to have embed
+
         x = x + noise
         return x, noise
 

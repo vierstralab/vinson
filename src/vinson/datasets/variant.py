@@ -2,13 +2,14 @@ import numpy as np
 
 from genome_tools import GenomicInterval, VariantInterval
 from vinson.utils.helpers import replace_at
-from vinson.utils.data_formatting import VariantVinsonData
+from vinson.utils.data_formatting import VinsonData
 from vinson.utils.sequence_utils import one_hot_encode
 
 from .base import BaseSequenceDataset
+from .sequence import InferenceSequenceEmbedDataset
 
 from vinson.datasets.utils import PhasedSource, UnphasedSource, TabixConnector
-
+from vinson.utils.sequence_utils import one_hot_encode
 from vinson.utils.helpers import detect_genotype_format
 
 import warnings
@@ -46,7 +47,7 @@ class VariantEmbedDataset(BaseSequenceDataset):
     """
     def __init__(
         self,                                                           
-        data: VariantVinsonData,
+        data: VinsonData,
         fasta_file: str,
         genotype_file: str = None,
         flip_alleles=False,
@@ -245,59 +246,114 @@ class VariantEmbedDataset(BaseSequenceDataset):
         }
 
 
-class VariantInferenceDataset(BaseSequenceDataset):
+class InferenceVariantEmbedDataset(BaseSequenceDataset): # can't set VariantEmbedDataset as super because it doesn't support VinsonData in inference mode
 
-    def __init__(self, data: VariantVinsonData, strict_ref_check=True, offset=0, **kwargs):
+    def __init__(self, data: VinsonData, strict_ref_check=True, **kwargs):
         super().__init__(
             data=data,
             **kwargs
         )
         self.strict_ref_check = strict_ref_check
-        self.include_genotypes = False
-        self.offset = offset
+
+    def get_sample_sequence( # so I had to copy this method here
+        self,
+        interval: GenomicInterval,
+        indiv_id: str,
+        anchor_variant: VariantInterval = None,
+    ):
+        """
+        Returns:
+            tuple: (seq_ref str, seq_alt str)
+        """
+        seq = self.fasta_extr[interval]
+        indiv_id = self._normalize_indiv_id(indiv_id)
+
+        if indiv_id == "":
+            return str(seq), str(seq)
+
+        ref_edits, alt_edits = self.source.get_edits(interval, indiv_id, anchor_variant)
+        seq_ref = self.source.apply_edits(
+            seq,
+            interval_start=interval.start,
+            edits=ref_edits
+        )
+        seq_alt = self.source.apply_edits(
+            seq,
+            interval_start=interval.start,
+            edits=alt_edits
+        )
+        return seq_ref, seq_alt
 
     def __getitem__(self, i):
         self._init_fileread()
         row = self.data[i]
-        
+
         chrom = row["chrom"]
-        start = row["pos"] - 1 # 0-based
+        pos = int(row["pos"])  # 1-based
         ref = row["ref"]
         alt = row["alt"]
         sample_id = row["sample_id"]
+        shift = int(row.get("shift", 0))
+        revcomp = bool(row.get("revcomp", False))
 
-        # base genomic context
-        interval = self._get_window(chrom, start).shift(self.offset)
-        seq = self.fasta_extr[interval].upper()
+        variant = GenomicInterval(chrom, pos, pos)
+        interval = variant.widen(self.seqlen // 2)
+        if shift != 0:
+            interval.shift(shift, inplace=True)
 
-        # enforce alleles
-        center = start - interval.start
+        start = pos - 1
+        rel = start - interval.start
 
-        center_base = seq[center]
-        # optional sanity check
-        msg = f"Alleles mismatch at {chrom}:{start} for sample {sample_id}: expected {ref}/{alt}, got {seq[center]}"
+        if self.include_genotypes:
+            indiv_id = row["indiv_id"]
+            anchor_variant = VariantInterval(
+                chrom=chrom,
+                start=start,
+                end=pos,
+                ref=ref,
+                alt=alt,
+            )
+            dna_seq_ref, dna_seq_alt = self.get_sample_sequence(
+                interval,
+                indiv_id,
+                anchor_variant
+            )
+        else:
+            base_seq = str(self.fasta_extr[interval])
+            dna_seq_ref = replace_at(base_seq, rel, ref)
+            dna_seq_alt = replace_at(base_seq, rel, alt)
+
+        base_seq = str(self.fasta_extr[interval]).upper()
+       
+        fasta_base = base_seq[rel]
+        check_var = fasta_base in (ref.upper(), alt.upper())
+        if not check_var:
+            msg = f"FASTA mismatch at {chrom}:{pos} (rel={rel}): expected {ref}/{alt}, got {fasta_base} in hg38"
+            if self.strict_ref_check:
+                raise AssertionError(msg)
+            else:
+                logger.warning(msg)
+
+        dna_seq_ref = replace_at(base_seq, rel, ref)
+        dna_seq_alt = replace_at(base_seq, rel, alt)
         if self.strict_ref_check:
-            assert center_base in (ref, alt), msg
-        elif center_base not in (ref, alt):
+            assert check_var, msg
+        elif not check_var:
             logger.warning(msg + ". Proceeding anyway (strict_ref_check=False).")
 
-        seq_ref = replace_at(seq, center, ref)
-        seq_alt = replace_at(seq, center, alt)
-
-        ohe_ref = one_hot_encode(seq_ref)
-        ohe_alt = one_hot_encode(seq_alt)
+        ohe_ref, _ = self._get_ohe_sequence(dna_seq_ref, revcomp=revcomp)
+        ohe_alt, _ = self._get_ohe_sequence(dna_seq_alt, revcomp=revcomp)
 
         embed = self.get_embedding_vec(sample_id)
 
         return {
-            "ohe_seq_ref": ohe_ref,
-            "ohe_seq_alt": ohe_alt,
-            "center_seq": center_base,
-            'seq': seq,
+            "ohe_seq_ref": ohe_ref.copy(),
+            "ohe_seq_alt": ohe_alt.copy(),
+            "pos": pos,
             "ref": ref,
             "alt": alt,
             "embed": embed,
             "chrom": chrom,
-            "start": start,
+            "shift": shift,
+            "revcomp": revcomp,
         }
-

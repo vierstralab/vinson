@@ -64,6 +64,7 @@ def one_hot_encode(sequence, dtype=np.float32):
     ohe: numpy.ndarray
         A matrix of shape (4, sequence_length)
     """
+    sequence = sequence.upper()
     seq_idxs = np.frombuffer(bytearray(sequence, "utf8"), dtype=np.int8)
     n, m = len(sequence), _dna_embed.shape[1]
     
