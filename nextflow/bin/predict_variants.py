@@ -6,14 +6,14 @@ from vinson.utils.data_formatting import VinsonData
 from torch.utils.data import DataLoader, ConcatDataset
 
 from tqdm import tqdm
-from vinson.datasets.variant import VariantInferenceDataset
+from vinson.datasets.variant import InferenceVariantEmbedDataset
 from genome_tools.data.anndata import read_zarr_backed
 import argparse
 import pandas as pd
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-
+# FIXME
 def make_loaders(variants_df, motif_embeddings_df, fasta_file, offsets=(0,), num_workers=10, batch_size=256):
     loaded_data = VinsonData(
         data=variants_df.to_dict(orient='list'),
@@ -22,7 +22,7 @@ def make_loaders(variants_df, motif_embeddings_df, fasta_file, offsets=(0,), num
     )
 
     datasets_qtl = [
-        VariantInferenceDataset(
+        InferenceVariantEmbedDataset(
             loaded_data,
             fasta_file=fasta_file,
             strict_ref_check=False,

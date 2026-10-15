@@ -66,14 +66,6 @@ def _parse_indiv_info(adata_slice, data):
     else:
         return False
     return True
-        
-
-def extract_data_from_h5(h5_file, ref_adata: ad.AnnData, is_variant=False) -> VinsonData:
-    return VinsonData.from_h5(
-        h5_file,
-        ref_adata.obsm['motif_embeddings'],
-        is_variant=is_variant
-    )
 
 
 def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_jitter=False) -> VinsonData:
