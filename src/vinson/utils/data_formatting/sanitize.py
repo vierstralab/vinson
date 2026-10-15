@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class ModelDataSchema:
+    name: str
     required: dict                          # {col: dtype}, always present
     targets: dict = field(default_factory=dict)
     optional: dict = field(default_factory=dict)
@@ -33,6 +34,7 @@ class ModelDataSchema:
 
 
 DHS = ModelDataSchema(
+    name='DHS',
     required={
         "chrom": np.str_,
         "summit": np.int32,
@@ -52,6 +54,7 @@ DHS = ModelDataSchema(
 
 
 VARIANT = ModelDataSchema(
+    name='Variant',
     required={
         "chrom": np.str_,
         "pos": np.int32,
