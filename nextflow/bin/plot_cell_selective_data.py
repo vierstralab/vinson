@@ -7,7 +7,7 @@ import argparse
 
 from genome_tools.data.anndata import read_zarr_backed
 
-from vinson.utils.data_formatting import extract_data_from_h5
+from vinson.utils.data_formatting import VinsonData
 from vinson.from_config import read_configs
 from vinson.postprocessing.plotting.per_dhs import obs_pred_barplot_by_ann, scatter_by_ann_train_val, aggregate_eval_dataset_by_sample
 from vinson.postprocessing.utils import annotate_eval_dataset_with_layers, annotate_eval_dataset_with_obs_columns, calculate_per_dhs_fold_changes, get_samples_used_in_training_for_dhs
@@ -112,7 +112,10 @@ if __name__ == '__main__':
     else:
         raise ValueError('Annotation data file must be provided for plotting')
 
-    eval_dataset = extract_data_from_h5(args.h5_data, adata) # Maybe embeds are not needed here
+    eval_dataset = VinsonData.from_h5(
+        args.h5_data,
+        embeddings_df=adata.obsm['motif_embeddings']
+    ) # Maybe embeds are not needed here
     eval_dataset = eval_dataset.to_df()
     log_output = read_configs(args.model_config)['model_kwargs'].get('log_output', False)
 
