@@ -44,7 +44,8 @@ class InferenceSequenceOnlyDataset(BaseSequenceDataset):
             revcomp = data_dict['revcomp']
         else:
             revcomp = None
-        ohe_seq, revcomp = self._get_ohe_sequence(dna_seq=dna_seq, revcomp=True)
+
+        ohe_seq, revcomp = self._get_ohe_sequence(dna_seq=dna_seq, revcomp=revcomp)
 
         return ohe_seq.copy(), revcomp
 
