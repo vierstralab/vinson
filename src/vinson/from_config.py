@@ -25,7 +25,7 @@ from vinson.datamodules.variant import SeqEmbedVariantDataModule
 from vinson.datasets.sequence import SequenceEmbedDataset
 from vinson.datasets.variant import VariantEmbedDataset
 
-from vinson.utils.data_formatting import extract_data_from_h5
+from vinson.utils.data_formatting import VinsonData
 from vinson.models.shared import initialize_weights
 
 
@@ -226,7 +226,7 @@ def dataset_from_h5(
     config,
     ref_adata: ad.AnnData = None,
     genotype_file: str = None,
-    **dataset_kwargs
+    **dataset_kwargs,
 ):
     """
     Initialize dataset.
@@ -237,7 +237,11 @@ def dataset_from_h5(
         **dataset_kwargs: Additional arguments for dataset.
     """
     if config["model_type"] in ('vinson_variant_embed', 'legnet_variant_embed'):
-        data = extract_data_from_h5(h5_file, ref_adata=ref_adata, is_variant=True)
+        data = VinsonData.from_h5(
+            h5_file,
+            embeddings_df=ref_adata.obsm['motif_embeddings'],
+            is_inference=False
+        )
         dataset = VariantEmbedDataset(
             data=data,
             fasta_file=fasta_file,
@@ -245,7 +249,11 @@ def dataset_from_h5(
             **dataset_kwargs,
         )
     else:
-        data = extract_data_from_h5(h5_file, ref_adata=ref_adata, is_variant=False)
+        data = VinsonData.from_h5(
+            h5_file,
+            embeddings_df=ref_adata.obsm['motif_embeddings'],
+            is_inference=False
+        )
         dataset = SequenceEmbedDataset(
             data=data,
             fasta_file=fasta_file,
