@@ -1,9 +1,9 @@
 from vinson.from_config import read_configs, dhs_model_from_config
-from vinson.postprocessing.interpretation import ModelWrapper
 import torch
 
-from vinson.utils.data_formatting import VinsonData
-from torch.utils.data import DataLoader, ConcatDataset
+from vinson.utils.data_formatting import VariantVinsonData
+from vinson.postprocessing.inference import score_variants_with_dhs_model
+from torch.utils.data import DataLoader
 
 from tqdm import tqdm
 from vinson.datasets.variant import InferenceVariantEmbedDataset
@@ -13,32 +13,22 @@ import pandas as pd
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# FIXME
-def make_loaders(variants_df, motif_embeddings_df, fasta_file, offsets=(0,), num_workers=10, batch_size=256):
-    loaded_data = VinsonData(
-        data=variants_df.to_dict(orient='list'),
-        embeddings_df=motif_embeddings_df,
-        encodings={}
-    )
 
-    datasets_qtl = [
-        InferenceVariantEmbedDataset(
-            loaded_data,
-            fasta_file=fasta_file,
-            strict_ref_check=False,
-            offset=offset
-        ) for offset in offsets
-    ]
+# FIXME
+def make_loaders(loaded_data, fasta_file, num_workers=10, batch_size=256):
+
+    dataset = InferenceVariantEmbedDataset(
+        loaded_data,
+        fasta_file=fasta_file,
+        strict_ref_check=False,
+    )
     print('Datasets created.', flush=True)
-    return [
-        DataLoader(
-            dataset,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            pin_memory=torch.cuda.is_available()
-        )
-        for dataset in datasets_qtl
-    ]
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=torch.cuda.is_available()
+    )
 
 
 def predict(model, dataloader):
@@ -104,12 +94,17 @@ if __name__ == "__main__":
     motif_embeddings_df = anndata.obsm['motif_embeddings'].loc[sample_ids]
     if len(sample_ids) > 1:
         motif_embeddings_df = motif_embeddings_df.mean(axis=0).rename(args.sample_id).to_frame().T
-        
-    d_loaders = make_loaders(
-        variants_df=variants,
-        motif_embeddings_df=motif_embeddings_df,
+
+    loaded_data = VariantVinsonData.inference_from_variant(
+        data=variants,
+        embeddings_df=motif_embeddings_df,
+        sample_ids=sample_ids,
+        shifts=offsets,
+        is_inference=True
+    )
+    dl = make_loaders(
+        data=loaded_data,
         fasta_file=fasta,
-        offsets=offsets,
         num_workers=args.num_workers,
         batch_size=args.batch_size
     )
@@ -117,12 +112,12 @@ if __name__ == "__main__":
 
     model_predict = dhs_model_from_config(model_config, checkpoint).to(device).eval()
 
-    for offset, dl in zip(offsets, d_loaders):
-        pred_ref, pred_alt = predict(model_predict, dl)
-        variants[f"pred_ref_offset{offset}"] = pred_ref
-        variants[f"pred_alt_offset{offset}"] = pred_alt
+    expanded_preds = loaded_data.to_df()
+    pred_ref, pred_alt = score_variants_with_dhs_model(dl, model_predict)
+    expanded_preds['pred_ref'] = pred_ref
+    expanded_preds['pred_alt'] = pred_alt
 
-    variants.to_csv(name, sep='\t', index=False)
+    expanded_preds.to_csv(name, sep='\t', index=False)
 
 
 

@@ -13,22 +13,31 @@ logger = logging.getLogger(__name__)
 
 class VinsonData:
     """
-    Abstract class for handling Vinson data formatting and conversion. Handles encoding of categorical/string variables to heavily reduce cpu usage.
+    Container holding one row per training/prediction example (DHS/accessibility data), validated
+    against `schema` (see `sanitize.py`). Handles encoding of categorical/string variables to heavily
+    reduce memory/cpu usage.
 
     Parameters
     ----------
     data : dict
-        Dictionary containing sample metadata. {
-            'chrom': np.array, 'summit': np.array, etc.
-        }
+        One array per field (e.g. 'chrom', 'summit', 'sample_id', 'class', 'density', ...), all the
+        same length. Categorical fields are stored as integer codes; see `encodings`.
     encodings : dict
-        Dictionary containing encodings for categorical variables. {
-            'chrom': np.array, ...
-        }
-    embeddings_df : pd.DataFrame
-        DataFrame of cell-type/state embeddings indexed by sample ID.
+        Maps each encoded field name to the array of original string values, e.g. {'chrom': np.array([...])}.
+        `data[key][i]` indexes into `encodings[key]` to recover the original value at row `i` (see `decode`).
+    embeddings_df : pd.DataFrame, optional
+        Per-sample cell-type/state embeddings, indexed by `sample_id`.
+    is_inference : bool, keyword-only
+        If False (training/validation), `schema`'s target fields (e.g. `class`/`density` here,
+        `ref_counts`/`total_counts`/... for `VariantVinsonData`) must be present, and only
+        training datasets (e.g. `SequenceEmbedDataset`) will accept the container. If True
+        (prediction-only), target fields are optional, and only inference datasets (e.g.
+        `InferenceSequenceEmbedDataset`) will accept it.
 
-    Abstract class, use VinsonData or VinsonVariantData instead. Children should have a schema attribute
+    Use `VinsonData` for DHS/accessibility data and the sibling `VariantVinsonData` for variant-effect
+    data; each declares its own `schema`. Prefer building a container via `from_h5`, `from_raw`, `from_df`,
+    `inference_from_bed` (`inference_from_variant` for `VariantVinsonData`), or one of the module-level
+    `extract_data_from_*` helpers in `readers.py`, rather than calling `__init__` directly.
     """
     
     schema: ModelDataSchema = DHS
@@ -47,6 +56,7 @@ class VinsonData:
         return f"{self.__class__.__name__}(n={self.length}, inference={self.is_inference}) with keys: {list(self.data.keys())}. Encoded columns: {list(self.encodings.keys())}."
     
     def decode(self, key: str) -> np.ndarray:
+        """Decode an encoded field back to its original (string) values for every row."""
         return self._decode(key, self.data[key])
     
     def _decode(self, key: str, indices: np.ndarray) -> np.ndarray:
@@ -108,8 +118,9 @@ class VinsonData:
         return data_df
 
     def to_dict(self) -> dict:
+        """Return a dict of decoded (human-readable) field arrays, one entry per field."""
         return {
-            key: self._extract_normalized_value(key, value) 
+            key: self._extract_normalized_value(key, value)
                 for key, value in self.data.items()
         }
 
@@ -125,6 +136,10 @@ class VinsonData:
     # readers
     @classmethod
     def from_h5(cls, h5_file, embeddings_df: pd.DataFrame=None, *, is_inference=False):
+        """
+        Load a container from an `.h5` file previously written by `write_h5`, pairing it with
+        `embeddings_df` (typically `ref_adata.obsm['motif_embeddings']`).
+        """
         with h5py.File(h5_file, 'r') as f:
             data = {}
             for key in f.keys():
@@ -134,28 +149,50 @@ class VinsonData:
 
     @classmethod
     def from_raw(cls, raw_data: dict, embeddings_df: pd.DataFrame=None, *, is_inference=False):
+        """Build a container from raw (un-encoded) field arrays, validating and encoding them against `cls.schema`."""
         data, encodings = sanitize_data(cls.schema, raw_data, is_inference=is_inference)
         return cls(data, encodings, embeddings_df, is_inference=is_inference)
 
     @classmethod
     def from_df(cls, df: pd.DataFrame, embeddings_df: pd.DataFrame = None, *, is_inference=False):
+        """Build a container from a DataFrame with one column per field (e.g. `some_container.to_df()`)."""
         raw_data = {key: df[key].to_numpy() for key in df.columns}
         return cls.from_raw(raw_data, embeddings_df, is_inference=is_inference)
-    
+
     # logic with product [shifts x coords] is here, these two methods resemble each other a lot, not sure they need to be merged
     @staticmethod
-    def explode(df, embeddings_meta_df = None, sample_ids = None, shifts=(0, ), revcomp = False):
+    def explode(df, sample_indiv_mapping=None, sample_ids=None, shifts=(0, ), revcomp=False):
+        """
+        Cartesian-expand `df` (one row per region/variant) into one row per
+        `(region/variant, sample_id, shift[, revcomp])` combination, for building an inference
+        container that scores every combination explicitly instead of relying on random augmentation.
 
+        Parameters
+        ----------
+        df : pd.DataFrame
+            One row per region/variant to score.
+        sample_indiv_mapping : pd.DataFrame, optional
+            `indiv_id` column indexed by `sample_id`; if given, each exploded row is also merged with
+            the `indiv_id` of its sample (for genotype injection).
+        sample_ids : list[str]
+            Samples to score every row against.
+        shifts : Iterable[int], default (0,)
+            Genomic-window shifts (bp) to score every row at, for test-time augmentation.
+        revcomp : bool, default False
+            If True, also explode into the forward and reverse-complement strand for every row.
+
+        Used internally by `inference_from_bed` / `inference_from_variant`.
+        """
         sample_ids = list(sample_ids)
         df['sample_id'] = [sample_ids for _ in range(len(df))]
         df['shift'] = [shifts for _ in range(len(df))]
-        
+
         df = df.explode(['sample_id'])
-    
-        if embeddings_meta_df is not None:
-            indiv_id_meta = embeddings_meta_df.loc[sample_ids, 'indiv_id']
-            df = df.merge(indiv_id_meta, left_on='sample_id', right_index=True)            
-            
+
+        if sample_indiv_mapping is not None:
+            indiv_id_meta = sample_indiv_mapping.loc[sample_ids, 'indiv_id']
+            df = df.merge(indiv_id_meta, left_on='sample_id', right_index=True)
+
         df = df.explode(['shift'])
 
         if revcomp:
@@ -163,45 +200,94 @@ class VinsonData:
             df = df.explode(['revcomp'])
 
         return df
-    
+
     @classmethod
     def inference_from_bed(
         cls,
-        bed_df: pd.DataFrame, 
-        embeddings_df: pd.DataFrame|None = None,
-        embeddings_meta_df: pd.DataFrame|None = None,
+        bed_df: pd.DataFrame,
+        embeddings_df: pd.DataFrame = None,
+        sample_indiv_mapping: pd.DataFrame = None,
         sample_ids: List[str]= None,
         shifts: Iterable[int] = (0,),
         revcomp: bool=False
     ):
+        """
+        Build an inference-only (`is_inference=True`) container from a BED-like dataframe
+        (`chrom`/`start`/`end`, optionally `summit`), expanding every region into one row per
+        `(region, sample_id, shift[, revcomp])` combination (see `explode`) for scoring with
+        `InferenceSequenceOnlyDataset` / `InferenceSequenceEmbedDataset`.
 
+        Parameters
+        ----------
+        bed_df : pd.DataFrame
+            Regions to score; must have `chrom`, `start`, `end` (and optionally `summit`, computed as
+            the midpoint of `start`/`end` if absent).
+        embeddings_df : pd.DataFrame, optional
+            Per-sample cell-type/state embeddings, indexed by `sample_id`.
+        sample_indiv_mapping : pd.DataFrame, optional
+            `indiv_id` column indexed by `sample_id`, for genotype injection (requires a `genotype_file`
+            at dataset construction).
+        sample_ids : list[str]
+            Samples to score every region against.
+        shifts : Iterable[int], default (0,)
+            Genomic-window shifts (bp) to score every region at, for test-time augmentation.
+        revcomp : bool, default False
+            If True, score both strands for every region.
+        """
         df = bed_df.copy()
         if 'summit' not in df.columns:
             df['summit'] = (df['start'] + df['end'] ) // 2
 
-        cartesian_df = cls.explode(df, embeddings_meta_df, sample_ids, shifts, revcomp)
-        
+        cartesian_df = cls.explode(df, sample_indiv_mapping, sample_ids, shifts, revcomp)
+
         return cls.from_df(cartesian_df, embeddings_df=embeddings_df, is_inference=True)
 
 
 class VariantVinsonData(VinsonData):
+    """
+    Variant-effect counterpart of `VinsonData` — same container interface, but validated against the
+    `VARIANT` schema (`chrom`, `pos`, `ref`, `alt`, `sample_id`, targets `ref_counts`/`total_counts`/
+    `BAD`/`logit_es`). Paired with `VariantEmbedDataset` (training) / `InferenceVariantEmbedDataset`
+    (inference) in `vinson/datasets/variant.py`.
+    """
 
     schema: ModelDataSchema = VARIANT
 
     @classmethod
     def inference_from_variant(
         cls,
-        variant_df: pd.DataFrame, 
+        variant_df: pd.DataFrame,
+        sample_ids: List[str],
         embeddings_df: pd.DataFrame = None,
-        embeddings_meta_df: pd.DataFrame = None,
-        sample_ids: List[str] = None,
+        sample_indiv_mapping: pd.DataFrame = None,
         shifts: Iterable[int] = (0,),
         revcomp: bool = True
-    ): 
+    ):
+        """
+        Build an inference-only (`is_inference=True`) container from a variant dataframe
+        (`chrom`/`pos`/`ref`/`alt`), expanding every variant into one row per
+        `(variant, sample_id, shift[, revcomp])` combination (see `explode`) for scoring with
+        `InferenceVariantEmbedDataset`.
 
+        Parameters
+        ----------
+        variant_df : pd.DataFrame
+            Variants to score; must have `chrom`, `pos`, `ref`, `alt`.
+        embeddings_df : pd.DataFrame, optional
+            Per-sample cell-type/state embeddings, indexed by `sample_id`.
+        sample_indiv_mapping : pd.DataFrame, optional
+            `indiv_id` column indexed by `sample_id`, for genotype injection (requires a `genotype_file`
+            at dataset construction).
+        sample_ids : list[str]
+            Samples to score every variant against.
+        shifts : Iterable[int], default (0,)
+            Genomic-window shifts (bp) to score every variant at, for test-time augmentation.
+        revcomp : bool, default True
+            If True (the default here, unlike `inference_from_bed`), score both strands for every variant.
+        """
         df = variant_df.copy()
 
-        cartesian_df = cls.explode(df, embeddings_meta_df, sample_ids, shifts, revcomp)
-                
+        cartesian_df = cls.explode(df, sample_indiv_mapping, sample_ids, shifts, revcomp)
+
         return cls.from_df(cartesian_df, embeddings_df=embeddings_df, is_inference=True)
 

@@ -246,7 +246,24 @@ class VariantEmbedDataset(BaseSequenceDataset):
         }
 
 
-class InferenceVariantEmbedDataset(BaseSequenceDataset): # can't set VariantEmbedDataset as super because it doesn't support VinsonData in inference mode
+class InferenceVariantEmbedDataset(BaseSequenceDataset):
+    """
+    Prediction-only counterpart of `VariantEmbedDataset`: doesn't parse/require target fields
+    (`ref_counts`/`total_counts`/...), and `shift`/`revcomp` are read per-example from `data` (e.g. as
+    built by `VariantVinsonData.inference_from_variant`) instead of applied randomly. Requires
+    `data.is_inference=True`.
+
+    Doesn't subclass `VariantEmbedDataset` because that class doesn't support inference-mode `data`
+    (it asserts `not data.is_inference`).
+
+    Parameters
+    ----------
+    data : VinsonData
+        Must have `is_inference=True`.
+    strict_ref_check : bool, default True
+        If True, raise if the FASTA reference base at a variant's position doesn't match either the
+        variant's `ref` or `alt` allele; if False, log a warning and proceed anyway.
+    """
 
     def __init__(self, data: VinsonData, strict_ref_check=True, **kwargs):
         super().__init__(
@@ -255,7 +272,7 @@ class InferenceVariantEmbedDataset(BaseSequenceDataset): # can't set VariantEmbe
         )
         self.strict_ref_check = strict_ref_check
 
-    def get_sample_sequence( # so I had to copy this method here
+    def get_sample_sequence( # duplicated from VariantEmbedDataset since this class can't inherit from it
         self,
         interval: GenomicInterval,
         indiv_id: str,
@@ -285,6 +302,13 @@ class InferenceVariantEmbedDataset(BaseSequenceDataset): # can't set VariantEmbe
         return seq_ref, seq_alt
 
     def __getitem__(self, i):
+        """
+        Returns
+        -------
+        dict
+            'ohe_seq_ref', 'ohe_seq_alt' (one-hot ref/alt sequences), 'pos', 'ref', 'alt', 'embed'
+            (cell-type embedding), 'chrom', 'shift', 'revcomp'.
+        """
         self._init_fileread()
         row = self.data[i]
 

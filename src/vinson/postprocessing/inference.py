@@ -51,7 +51,24 @@ def score_bed_with_dhs_model(
         device='cpu'
     ):
     """
-    
+    Run a DHS model (or its trunk, to extract embeddings) over every batch of a dataloader built from
+    `InferenceSequenceEmbedDataset`, returning the concatenated predictions in dataloader order.
+
+    Parameters
+    ----------
+    dataloader : torch.utils.data.DataLoader
+        Yields batches with 'ohe_seq' (one-hot sequence) and 'embed' (cell-type embedding).
+    model : torch.nn.Module
+        Model (or `model.trunk_model` to get pre-aggregated features instead of a single prediction)
+        called as `model(ohe_seq, embed)`.
+    device : str, default 'cpu'
+        Device to move the model and batches to for inference.
+
+    Returns
+    -------
+    np.ndarray
+        Predictions (or features, if `model.trunk_model` was passed) for every example, concatenated
+        across batches.
     """
     model = model.to(device).eval()
 
@@ -70,7 +87,25 @@ def score_bed_with_dhs_model(
 def score_variants_with_dhs_model(dataloader,
                                   model,
                                   device='cpu'):
+    """
+    Run a DHS model over every batch of a dataloader built from `InferenceVariantEmbedDataset`,
+    scoring both the reference and alternate allele sequence for every variant.
 
+    Parameters
+    ----------
+    dataloader : torch.utils.data.DataLoader
+        Yields batches with 'ohe_seq_ref', 'ohe_seq_alt' (one-hot ref/alt sequences) and 'embed'
+        (cell-type embedding).
+    model : torch.nn.Module
+        Model called as `model(ohe_seq, embed)` for each allele.
+    device : str, default 'cpu'
+        Device to move the model and batches to for inference.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        `(alt_scores, ref_scores)`, each concatenated across batches in dataloader order.
+    """
     lst_ref, lst_alt = [], []
     model = model.to(device).eval()
 

@@ -19,7 +19,13 @@ def save_config(config, path):
         yaml.safe_dump(config, f)
 
 def replace_at(s, i, char):
-    #makes sequence length too long if replaces char at start or end of seq
+    """
+    Replace the character at position `i` of `s` with `char` (e.g. injecting a SNP allele into a
+    sequence at its relative position).
+
+    Note: if `i` is at the very start/end of `s`, this appends `char` rather than overwriting,
+    making the result one character longer than `s`.
+    """
     return s[:i] + char + s[i + 1:]
 
 

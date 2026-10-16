@@ -46,6 +46,21 @@ LIGHTNING_MODEL_REGISTRY = {
 }
 
 def read_configs(config_path, overwrite_config_path=None):
+    """
+    Load a training/model YAML config, optionally merging in overrides from a second config.
+
+    Parameters
+    ----------
+    config_path : str
+        Path to the base config YAML (see `train/dhs/default_train_dhs.config.yaml` for the schema).
+    overwrite_config_path : str, optional
+        Path to a second config YAML whose keys recursively replace matching keys in the base config.
+
+    Returns
+    -------
+    dict
+        The merged config, with a 'timestamp' key set to the current time.
+    """
     config = read_yaml_config(config_path)
     if overwrite_config_path is not None:
         update_config = read_yaml_config(overwrite_config_path)
@@ -118,6 +133,24 @@ def _sequence_model_from_config(config):
 
 
 def dhs_model_from_config(config, checkpoint_path=None, device='cpu'):
+    """
+    Build (or load) the DHS sequence-to-function Lightning model described by `config`.
+
+    Parameters
+    ----------
+    config : dict
+        A config as returned by `read_configs`; `config['model_type']` selects the trunk/Lightning-module
+        pair from `MODEL_FACTORY_REGISTRY`/`LIGHTNING_MODEL_REGISTRY` (see docs/accessibility_model.md).
+    checkpoint_path : str, optional
+        If given, load trunk/head weights from this `.ckpt` instead of initializing them from scratch.
+    device : str, default 'cpu'
+        Device to map the checkpoint to when loading.
+
+    Returns
+    -------
+    SequenceModel (one of LIGHTNING_MODEL_REGISTRY)
+        The instantiated (or checkpoint-loaded) Lightning module, ready for `.eval()`/training.
+    """
     model_type = config["model_type"]
 
     assert model_type in MODEL_FACTORY_REGISTRY, f"Model type {model_type} not supported for DHS models. Available types: {list(MODEL_FACTORY_REGISTRY.keys())}"

@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 
 
 class InferenceSequenceOnlyDataset(BaseSequenceDataset):
+    """
+    Prediction-only counterpart of `SequenceOnlyDataset`: doesn't parse/require target fields
+    (`class`/`density`/...), and `shift`/`revcomp` are read per-example from `data` (e.g. as built by
+    `VinsonData.inference_from_bed`) instead of applied randomly. Requires `data.is_inference=True`.
+    """
 
     def _slice_data(self, i: int):
         return self.data[i]
@@ -113,16 +118,28 @@ class InferenceSequenceOnlyDataset(BaseSequenceDataset):
 
 
 class InferenceSequenceEmbedDataset(InferenceSequenceOnlyDataset):
-    def __init__(self, data, fasta_file, genotype_file = None, seqlen=1344): # added because we don't need random noise and revcomp as augmentation
+    """
+    `InferenceSequenceOnlyDataset` plus the per-sample cell-type embedding ('embed'). No `noise`/
+    `reverse_complement`/`jitter` constructor args — inference examples are deterministic, with
+    `shift`/`revcomp` already fixed per-row in `data`.
+    """
+
+    def __init__(self, data, fasta_file, genotype_file = None, seqlen=1344):
             super().__init__(data, fasta_file, genotype_file, seqlen=seqlen)
 
     def __getitem__(self, i):
+        """
+        Returns
+        -------
+        dict
+            'ohe_seq', 'chrom', 'summit', 'sample_id', 'shift', 'revcomp', 'embed' (cell-type embedding).
+        """
         self._init_fileread()
         data = self.data[i]
         interval, shift = self._parse_position(data)
         ohe_seq, revcomp = self._parse_sequence(data, interval)
         embed = self.get_embedding_vec(data['sample_id'])
-        
+
         return {
                 "ohe_seq": ohe_seq.copy(),
                 "chrom": data['chrom'],

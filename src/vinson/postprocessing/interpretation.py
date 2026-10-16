@@ -207,6 +207,12 @@ class _Exp(torch.nn.Module):
 
 
 class ModelWrapper(torch.nn.Module):
+    """
+    Wraps a DHS model so its forward pass always returns accessibility (undoing the model's internal
+    log-transform if it has one, via `model.log_output`), for use with `deep_lift_shap`-based
+    attribution (`get_sequence_attributions`).
+    """
+
     def __init__(self, model):
         super().__init__()
         self.model = model.eval()
@@ -218,8 +224,30 @@ class ModelWrapper(torch.nn.Module):
             if getattr(self.model, "log_output"):
                 x = self.exp(x)
         return x
-    
+
     def get_sequence_attributions(self, X, X_embed, print_convergence_deltas=True, random_state=42, **kwargs):
+        """
+        DeepLIFT/SHAP base-level attributions for a batch of one-hot sequences, using dinucleotide-
+        shuffled sequences as the reference distribution.
+
+        Parameters
+        ----------
+        X : torch.Tensor
+            Batch of one-hot encoded sequences, shape (batch, 4, seqlen).
+        X_embed : torch.Tensor
+            Batch of cell-type embeddings matching `X`.
+        print_convergence_deltas : bool, default True
+            Whether `deep_lift_shap` should print its convergence-check deltas.
+        random_state : int, default 42
+            Seed for the reference shuffles.
+        **kwargs
+            Forwarded to `tangermeme.deep_lift_shap.deep_lift_shap`.
+
+        Returns
+        -------
+        torch.Tensor
+            Per-base attribution scores, same shape as `X`.
+        """
         device = self.model.device
         X, X_embed = X.to(device), X_embed.to(device)
         attributions = deep_lift_shap(

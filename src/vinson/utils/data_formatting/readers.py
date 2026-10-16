@@ -5,9 +5,9 @@ import pandas as pd
 
 from vinson.utils.helpers import detect_genotype_format
 from .adata_utils import slice_adata, compute_if_dask, get_examples_indices_from_layer, update_layers_dict
-from .sanitize import sanitize_data, encode_inplace
+from .sanitize import sanitize_data, encode_inplace, DHS, VARIANT
 
-from .container import VinsonData
+from .container import VinsonData, VariantVinsonData
 
 from genome_tools.data.extractors import TabixExtractor
 
@@ -124,18 +124,18 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
     if 'dhs_weight' in train_adata.varm:
         data['dhs_weight'] = train_adata.varm['dhs_weight'][col_idx]
     
-    data, encodings = sanitize_data(data, encodings, is_variant=False)
+    data, encodings = sanitize_data(DHS, data, encodings, is_inference=False)
 
     embeddings_df = train_adata.obsm['motif_embeddings']
     return VinsonData(
         data,
         encodings=encodings,
         embeddings_df=embeddings_df,
-        is_variant=False
+        is_inference=False
     )
 
 
-def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str, pre_jitter=False) -> VinsonData:
+def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str, pre_jitter=False) -> VariantVinsonData:
     """
     Convert AnnData object to H5 format and extract embeddings.
     Args:
@@ -180,15 +180,15 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str, pre_
     }
     if 'indiv_id' in encoding_sources:
         data['indiv_id'] = encoding_sources["indiv_id"][row_idx]
-
-    data, encodings = sanitize_data(data, encodings, is_variant=True)
+    
+    data, encodings = sanitize_data(VARIANT, data, encodings, is_inference=False)
     embeddings_df = train_adata.obsm['motif_embeddings']
 
-    return VinsonData(
+    return VariantVinsonData(
         data,
         encodings=encodings,
         embeddings_df=embeddings_df,
-        is_variant=True
+        is_inference=False
     )
 
 
@@ -280,13 +280,13 @@ def extract_data_from_backed_anndata(
         for key in data:
             data[key] = data[key][sample_peaks_mask]
     
-    data, encodings = sanitize_data(data, encodings, is_variant=False)
+    data, encodings = sanitize_data(DHS, data, encodings, is_inference=False)
 
     return VinsonData(
         data,
         encodings=encodings,
         embeddings_df=embeddings_df,
-        is_variant=False
+        is_inference=False
     )
 
 def extract_data_from_backed_anndata_wide(
@@ -312,10 +312,10 @@ def extract_data_from_backed_anndata_wide(
         [len(data["dhs_id"]), 1]
     )
 
-    data, encodings = sanitize_data(data, encodings, is_variant=False)
+    data, encodings = sanitize_data(DHS, data, encodings, is_inference=False)
 
     return VinsonData(
         data,
         encodings=encodings,
-        is_variant=False,
+        is_inference=False,
     )

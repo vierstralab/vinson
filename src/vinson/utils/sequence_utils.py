@@ -50,19 +50,22 @@ def _fast_one_hot_encode(X_ohe, seq, mapping):
 
 
 def one_hot_encode(sequence, dtype=np.float32):
-    """_Converts a string or list of characters into a one-hot encoding.
+    """Converts a DNA sequence string into a one-hot encoding.
+
+    Ambiguous/IUPAC bases (e.g. 'N', 'W') are split proportionally across the bases they represent
+    rather than encoded as all-zero.
 
     Parameters
     ----------
-    sequence : str or list
-        The sequence to convert to a one-hot encoding.
-    dtype : str or torch.dtype, optional
-        _description_, by default np.float32
+    sequence : str
+        The DNA sequence to one-hot encode.
+    dtype : numpy dtype, optional
+        Output dtype, by default np.float32.
 
     Returns
     -------
     ohe: numpy.ndarray
-        A matrix of shape (4, sequence_length)
+        A matrix of shape (4, sequence_length), rows ordered A/C/G/T.
     """
     sequence = sequence.upper()
     seq_idxs = np.frombuffer(bytearray(sequence, "utf8"), dtype=np.int8)
