@@ -208,23 +208,20 @@ class VariantDataPreprocessor(LoggerMixin):
         ).widen(width)
     
         return interval
-        
     def get_density(self, variant_id, tested_df, group_ids=None):
-        
+
         interval = self.get_interval(variant_id, width=2000)
     
-        metadata = self.metadata
-
-        # Add this variant's sample-level values
+        # Start with sample metadata
+        metadata = self.metadata.copy()
+    
+        # Keep only samples with valid tested variant data
         metadata = metadata.join(
-            tested_df[["logit_es", "inverse_mse"]]
+            tested_df[["logit_es", "inverse_mse"]],
+            how="inner",
         )
-        
-        # Keep only samples where this variant is present/tested
-        metadata = metadata[
-            metadata["logit_es"] != 0
-        ]
-        
+    
+        # Optional group filtering
         if group_ids is not None:
             metadata = metadata[
                 metadata["group_name"].isin(group_ids)
@@ -234,26 +231,87 @@ class VariantDataPreprocessor(LoggerMixin):
     
         for group_id, df in metadata.groupby("group_name"):
     
-            bw_files = df["normalized_density_bw"].dropna()
+            # Only samples with density BigWig files
+            df = df.dropna(subset=["normalized_density_bw"])
     
-            if len(bw_files) == 0:
+            if df.empty:
                 continue
     
             signals = []
+            weights = []
     
-            for bw in bw_files:
+            for sample_id, row in df.iterrows():
+    
+                bw = row["normalized_density_bw"]
+                weight = row["inverse_mse"]
+    
+                if not np.isfinite(weight) or weight <= 0:
+                    continue
+    
                 bw_extractor = bigwig_extractor(bw)
-                signals.append(bw_extractor[interval])
-
-            weights = tested_df.loc[df.index, "inverse_mse"].to_numpy()
-            
+    
+                signals.append(
+                    bw_extractor[interval]
+                )
+    
+                weights.append(weight)
+    
+            if not signals:
+                continue
+    
             dens[group_id] = np.average(
-                np.array(signals),
+                np.asarray(signals),
                 axis=0,
-                weights=weights
+                weights=np.asarray(weights),
             )
     
         return dens, interval
+        
+    # def get_density(self, variant_id, tested_df, group_ids=None):
+        
+    #     interval = self.get_interval(variant_id, width=2000)
+    
+    #     metadata = self.metadata
+
+    #     # Add this variant's sample-level values
+    #     metadata = metadata.join(
+    #         tested_df[["logit_es", "inverse_mse"]]
+    #     )
+        
+    #     # Keep only samples where this variant is present/tested
+    #     metadata = metadata[
+    #         metadata["logit_es"] != 0
+    #     ]
+        
+    #     if group_ids is not None:
+    #         metadata = metadata[
+    #             metadata["group_name"].isin(group_ids)
+    #         ]
+    
+    #     dens = {}
+    
+    #     for group_id, df in metadata.groupby("group_name"):
+    
+    #         bw_files = df["normalized_density_bw"].dropna()
+    
+    #         if len(bw_files) == 0:
+    #             continue
+    
+    #         signals = []
+    
+    #         for bw in bw_files:
+    #             bw_extractor = bigwig_extractor(bw)
+    #             signals.append(bw_extractor[interval])
+
+    #         weights = tested_df.loc[df.index, "inverse_mse"].to_numpy()
+            
+    #         dens[group_id] = np.average(
+    #             np.array(signals),
+    #             axis=0,
+    #             weights=weights
+    #         )
+    
+    #     return dens, interval
     def get_variant_sequences(
         self,
         variant_id,
@@ -476,6 +534,37 @@ class VariantDataPreprocessor(LoggerMixin):
     
         return components, component_data, len(anova_df)
         
+    # def get_tested_df(self, variant_id):
+
+    #     chrom, pos, ref, alt = variant_id.split(":")
+    #     pos = int(pos)
+    
+    #     var = self.adata.var
+    
+    #     idx = (
+    #         (var["#chr"] == chrom) &
+    #         (var["end"] == pos) &
+    #         (var["ref"] == ref) &
+    #         (var["alt"] == alt)
+    #     )
+    
+    #     var_idx = np.where(idx)[0][0]
+    
+    #     logit_es = np.array(
+    #         self.adata.layers["logit_es"][:, var_idx].todense()
+    #     ).flatten()
+
+    #     inverse_mse = np.array(
+    #         self.adata.layers["inverse_mse"][:, var_idx].todense()
+    #     ).flatten()
+    
+    #     tested_df = self.metadata[["group_name"]].copy()
+
+    #     tested_df["sample_id"] = tested_df.index
+    #     tested_df["logit_es"] = logit_es
+    #     tested_df["inverse_mse"] = inverse_mse
+        
+    #     return tested_df
     def get_tested_df(self, variant_id):
 
         chrom, pos, ref, alt = variant_id.split(":")
@@ -484,30 +573,49 @@ class VariantDataPreprocessor(LoggerMixin):
         var = self.adata.var
     
         idx = (
-            (var["#chr"] == chrom) &
-            (var["end"] == pos) &
-            (var["ref"] == ref) &
-            (var["alt"] == alt)
+            (var["#chr"] == chrom)
+            & (var["end"] == pos)
+            & (var["ref"] == ref)
+            & (var["alt"] == alt)
         )
     
-        var_idx = np.where(idx)[0][0]
+        matches = np.flatnonzero(idx.to_numpy())
     
-        logit_es = np.array(
-            self.adata.layers["logit_es"][:, var_idx].todense()
-        ).flatten()
-
-        inverse_mse = np.array(
-            self.adata.layers["inverse_mse"][:, var_idx].todense()
-        ).flatten()
+        if len(matches) != 1:
+            raise ValueError(
+                f"Expected one matching variant, found {len(matches)}"
+            )
+    
+        var_idx = matches[0]
+    
+        def get_column(layer_name):
+            col = self.adata.layers[layer_name][:, var_idx]
+    
+            if hasattr(col, "toarray"):
+                return col.toarray().ravel()
+    
+            return np.asarray(col).ravel()
+    
+        # Extract measurements
+        ref_counts = get_column("ref_counts")
+        alt_counts = get_column("alt_counts")
+        logit_es = get_column("logit_es")
+        inverse_mse = get_column("inverse_mse")
     
         tested_df = self.metadata[["group_name"]].copy()
-
+    
         tested_df["sample_id"] = tested_df.index
+        tested_df["ref_counts"] = ref_counts
+        tested_df["alt_counts"] = alt_counts
         tested_df["logit_es"] = logit_es
         tested_df["inverse_mse"] = inverse_mse
-        
-        return tested_df
     
+        # Identify tested observations using read coverage
+        tested_df = tested_df[
+            (tested_df["ref_counts"] + tested_df["alt_counts"]) > 0
+        ].copy()
+    
+        return tested_df
 
 
     

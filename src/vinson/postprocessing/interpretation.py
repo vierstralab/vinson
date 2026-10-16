@@ -9,7 +9,7 @@ from tangermeme.ersatz import dinucleotide_shuffle as dinuc_shuffle
 #from tangermeme.predict import predict as tangermeme_predict
 from tangermeme.product import _apply
 from tangermeme.deep_lift_shap import deep_lift_shap, _nonlinear
-
+import copy
 
 def dinucleotide_shuffle(X, **kwargs):
     """
@@ -236,11 +236,231 @@ class ModelWrapper(torch.nn.Module):
         return attributions
 
 
+class _DeepLiftMultiplyFunction(torch.autograd.Function):
+    """
+    Multiplication with a DeepLIFT-compatible backward rule.
+
+    Forward is exactly:
+        x * gate
+
+    During Tangermeme DeepLIFT-SHAP, the batch contains paired
+    actual/reference examples. The backward pass uses a symmetric
+    finite-difference decomposition that preserves summation-to-delta.
+    """
+
+    @staticmethod
+    def forward(ctx, x, gate):
+        ctx.save_for_backward(x, gate)
+        return x * gate
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        x, gate = ctx.saved_tensors
+
+        # Normal forward/backward outside Tangermeme's paired
+        # actual/reference calculation.
+        if x.shape[0] % 2 != 0:
+            grad_x = grad_output * gate
+            grad_gate = (grad_output * x).sum(
+                dim=-1,
+                keepdim=True,
+            )
+            return grad_x, grad_gate
+
+        # Tangermeme DeepLIFT-SHAP constructs:
+        # [actual examples, reference examples]
+        n = x.shape[0] // 2
+
+        x_actual = x[:n]
+        x_reference = x[n:]
+
+        gate_actual = gate[:n]
+        gate_reference = gate[n:]
+
+        # Symmetric DeepLIFT multipliers for z = x * gate.
+        #
+        # These satisfy:
+        #
+        #   Δz =
+        #       ((gate + gate0) / 2) * Δx
+        #       +
+        #       ((x + x0) / 2) * Δgate
+        #
+        x_multiplier = 0.5 * (
+            gate_actual + gate_reference
+        )
+
+        gate_multiplier = 0.5 * (
+            x_actual + x_reference
+        )
+
+        # Apply the same multiplier to the actual/reference
+        # member of each pair.
+        x_multiplier = torch.cat(
+            [x_multiplier, x_multiplier],
+            dim=0,
+        )
+
+        gate_multiplier = torch.cat(
+            [gate_multiplier, gate_multiplier],
+            dim=0,
+        )
+
+        grad_x = grad_output * x_multiplier
+
+        # gate has shape [B, C, 1] and is broadcast across
+        # sequence length, so reduce the sequence dimension.
+        grad_gate = (
+            grad_output * gate_multiplier
+        ).sum(
+            dim=-1,
+            keepdim=True,
+        )
+
+        return grad_x, grad_gate
+
+
+class _DeepLiftMultiply(torch.nn.Module):
+    """Explicit multiplication used by the attribution-only SE layer."""
+
+    def forward(self, x, gate):
+        return _DeepLiftMultiplyFunction.apply(
+            x,
+            gate,
+        )
+
+
+class _DeepLiftSELayer(torch.nn.Module):
+    """
+    Functionally identical copy of an SE layer with an explicit
+    DeepLIFT-compatible multiplication operation.
+
+    This changes attribution propagation only; the forward
+    computation is unchanged.
+    """
+
+    def __init__(self, original_se):
+        super().__init__()
+
+        self.fc = copy.deepcopy(
+            original_se.fc
+        )
+
+        self.multiply = _DeepLiftMultiply()
+
+    def forward(self, x):
+        batch_size, channels, _ = x.size()
+
+        gate = x.view(
+            batch_size,
+            channels,
+            -1,
+        ).mean(dim=2)
+
+        gate = self.fc(gate).view(
+            batch_size,
+            channels,
+            1,
+        )
+
+        return self.multiply(x, gate)
+
+
+def _prepare_trunk_for_deeplift(trunk):
+    """
+    Replace the SE layers in a copied LegNet trunk with
+    functionally identical DeepLIFT-compatible versions.
+    """
+
+    for block in trunk.blocks_dict.values():
+        eff_block = block[2].fn.block
+
+        original_se = eff_block[6]
+
+        eff_block[6] = _DeepLiftSELayer(
+            original_se
+        )
+
+    return trunk
+class _DeepLiftVariantModel(torch.nn.Module):
+    """
+    Attribution-only equivalent of VariantEmbedModel.
+
+    Uses separate copies of the REF and ALT trunks so Tangermeme's
+    DeepLIFT hooks cannot overwrite state between the two passes.
+
+    The SE layers in each trunk use the DeepLIFT-compatible
+    multiplication rule defined above.
+    """
+
+    def __init__(self, model):
+        super().__init__()
+
+        # Separate trunk copies prevent Tangermeme hook-state
+        # collisions between REF and ALT.
+        self.trunk_ref = copy.deepcopy(
+            model.trunk_model
+        )
+
+        self.trunk_alt = copy.deepcopy(
+            model.trunk_model
+        )
+
+        # Replace SE multiplication only in the attribution copies.
+        self.trunk_ref = _prepare_trunk_for_deeplift(
+            self.trunk_ref
+        )
+
+        self.trunk_alt = _prepare_trunk_for_deeplift(
+            self.trunk_alt
+        )
+
+        # Head/final are each called once, so normal copies are fine.
+        self.head_model = copy.deepcopy(
+            model.head_model
+        )
+
+        self.final = copy.deepcopy(
+            model.final
+        )
+
+    def forward(
+        self,
+        seq_ref,
+        seq_alt,
+        embed,
+    ):
+        ref_features = self.trunk_ref(
+            seq_ref,
+            embed.clone(),
+        )
+
+        alt_features = self.trunk_alt(
+            seq_alt,
+            embed.clone(),
+        )
+
+        x = torch.cat(
+            [ref_features, alt_features],
+            dim=-1,
+        )
+
+        x = self.head_model(x)
+        x = self.final(x)
+
+        return x
+
+
+
+
 class VariantModelWrapper(torch.nn.Module):
 
     def __init__(self, model):
         super().__init__()
         self.model = model.eval()
+        self.attribution_model = (
+            _DeepLiftVariantModel(model).eval()
+        )
 
     def forward(
         self,
@@ -253,6 +473,47 @@ class VariantModelWrapper(torch.nn.Module):
             seq_alt,
             embed,
         )
+    def _check_attribution_model(
+        self,
+        ref_seq,
+        alt_seq,
+        embed,
+        atol=1e-5,
+    ):
+        """
+        Verify that the attribution-only model has the same
+        forward output as the original trained model.
+        """
+
+        with torch.no_grad():
+            original_output = self.model(
+                ref_seq,
+                alt_seq,
+                embed,
+            )
+
+            attribution_output = (
+                self.attribution_model(
+                    ref_seq,
+                    alt_seq,
+                    embed,
+                )
+            )
+
+        max_diff = (
+            original_output
+            - attribution_output
+        ).abs().max().item()
+
+        if max_diff > atol:
+            raise RuntimeError(
+                "DeepLIFT attribution model does not match "
+                "the original model. "
+                f"Maximum difference: {max_diff:.3e}"
+            )
+
+        return max_diff
+
 
     def get_variant_sequence_attributions(
         self,
@@ -261,6 +522,8 @@ class VariantModelWrapper(torch.nn.Module):
         embed,
         device=None,
         random_state=42,
+    	print_convergence_deltas=False,
+    	check_model=False,
         **kwargs,
     ):
 
@@ -277,10 +540,15 @@ class VariantModelWrapper(torch.nn.Module):
         ref_seq = ref_seq.to(device)
         alt_seq = alt_seq.to(device)
         embed = embed.to(device)
-
+        if check_model:
+            self._check_attribution_model(
+                ref_seq,
+                alt_seq,
+                embed,
+            )
 
         ref_attr = deep_lift_shap(
-            self,
+            self.attribution_model,
             ref_seq,
             args=(
                 alt_seq,
@@ -288,13 +556,16 @@ class VariantModelWrapper(torch.nn.Module):
             ),
             device=device,
             references=dinucleotide_shuffle,
-            random_state=random_state,
+            random_state=random_state, 
+            print_convergence_deltas=(
+                print_convergence_deltas
+            ),
             **kwargs,
         )
 
 
         alt_attr = deep_lift_shap(
-            self,
+            self.attribution_model,
             alt_seq,
             args=(
                 ref_seq,
@@ -302,7 +573,10 @@ class VariantModelWrapper(torch.nn.Module):
             ),
             device=device,
             references=dinucleotide_shuffle,
-            random_state=random_state,
+            random_state=random_state, 
+            print_convergence_deltas=(
+                print_convergence_deltas
+            ),
             **kwargs,
         )
 

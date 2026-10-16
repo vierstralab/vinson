@@ -46,6 +46,7 @@ def extract_variant_data_from_h5(h5_file: str, ref_adata=None, is_variant=True) 
         'ref_counts': data_raw['ref_counts'],
         'total_counts': data_raw['total_counts'],
         'BAD': data_raw['BAD'],
+	'indiv_id':data_raw['indiv_id'],
         'logit_es': data_raw['logit_es'],
         'sample_id':data_raw['sample_id'],
     }

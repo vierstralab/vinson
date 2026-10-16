@@ -12,296 +12,470 @@ from genome_tools.plotting.sequence import seq_plot
 
 
 class ImbalancePlotComponent(PlotComponent):
-    def __init__(self, use_stripplot=False, **kwargs):
+
+    def __init__(self, use_stripplot=True, **kwargs):
         super().__init__(**kwargs)
-        self.use_stripplot = use_stripplot  # optional toggle
+        self.use_stripplot = use_stripplot
 
     def plot(self, data, gs, fig):
         tested_df, anova_df = data
 
-        ref_allele = anova_df['ref'].values[0]
-        alt_allele = anova_df['alt'].values[0]
-        rsid = anova_df['variant_id'].values[0]
+        ref_allele = anova_df["ref"].iloc[0]
+        alt_allele = anova_df["alt"].iloc[0]
+        rsid = anova_df["variant_id"].iloc[0]
 
         ax = fig.add_subplot(gs)
 
+        groups = anova_df["group_name"].tolist()
+        y = np.arange(len(groups))
+
         # ---------------------------------------
-        # OPTIONAL: raw points (actual data)
+        # 1. Individual sample observations
         # ---------------------------------------
         if self.use_stripplot:
             sns.stripplot(
                 data=tested_df,
-                y='group_name',
-                x='logit_es',
-                order=anova_df['group_name'],
+                y="group_name",
+                x="logit_es",
+                order=groups,
                 ax=ax,
-                s=5,
-                zorder=-1,
-                orient='h',
+                size=5,
+                jitter=0.1,
+                orient="h",
+                hue="group_name",
+                hue_order=groups,
                 palette=self.names_to_colors,
-                alpha=0.3
+                alpha=0.3,
+                linewidth=0,
+                legend=False,
+                zorder=1,
             )
 
         # ---------------------------------------
-        # Predicted values
+        # 2. Group mean and error bars
         # ---------------------------------------
-        # Observed group effect from individual samples
-        # x = anova_df['logit_es']
-        # xerr = anova_df.get('logit_es_std', None)
-        x = anova_df["logit_group_es"]
-        xerr = anova_df["logit_es_std"]
-        
-        # Error bars
-        if xerr is not None:
-            ax.errorbar(
-                x=x,
-                y=anova_df['group_name'],
-                xerr=xerr,
-                fmt='.',
-                capsize=4,
-                capthick=1.0,
-                c='k',
-                lw=1.0
-            )
+        x = anova_df["logit_group_es"].to_numpy()
+        xerr = anova_df["logit_es_std"].fillna(0).to_numpy()
 
-        # Points
-        ax.scatter(
-            y=anova_df['group_name'],
+        ax.errorbar(
             x=x,
-            lw=3,
-            ec=anova_df['group_name'].map(self.names_to_colors).values,
-            color='k',
-            s=12
+            y=y,
+            xerr=xerr,
+            fmt="none",
+            ecolor="black",
+            elinewidth=2,
+            capsize=5,
+            capthick=2,
+            zorder=4,
+        )
+
+        ax.scatter(
+            x=x,
+            y=y,
+            s=85,
+            color="black",
+            edgecolors=[
+                self.names_to_colors[g] for g in groups
+            ],
+            linewidths=2,
+            zorder=5,
         )
 
         # ---------------------------------------
-        # Formatting
+        # 3. Zero line and shaded region
         # ---------------------------------------
-        ax.set_yticklabels([
-            x.get_text().replace(' (', '\n(').replace('/', '/\n')
-            for x in ax.get_yticklabels()
-        ])
+        ax.axvline(
+            0,
+            color="black",
+            linestyle="--",
+            linewidth=1,
+        )
 
-        trans = transforms.blended_transform_factory(ax.transAxes, ax.transAxes)
+        ax.axvspan(
+            -0.5,
+            0.5,
+            color="grey",
+            alpha=0.10,
+            lw=0,
+        )
+
+        # ---------------------------------------
+        # 4. Horizontal separators
+        # ---------------------------------------
+        for i in range(len(groups) - 1):
+            ax.axhline(
+                i + 0.5,
+                color="black",
+                linestyle="--",
+                linewidth=0.7,
+            )
+
+        # ---------------------------------------
+        # 5. Axis formatting
+        # ---------------------------------------
+        ax.set_ylim(len(groups) - 0.5, -0.5)
+
+        # Hide cell names here (display once elsewhere)
+        # ax.set_yticks(y)
+        # ax.set_yticklabels([])
+        ax.tick_params(axis="y", length=0)
+
+        ax.set_xlim(-4, 4)
+        ax.set_xticks([-4, -2, 0, 2, 4])
+
+        ax.set_xlabel(
+            "Variant effect size (log2 ref/alt)",
+            fontsize=11,
+        )
+        ax.set_ylabel("")
+
+        ax.tick_params(axis="x", labelsize=10)
+
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        # ---------------------------------------
+        # 6. Allele labels
+        # ---------------------------------------
+        trans = transforms.blended_transform_factory(
+            ax.transAxes,
+            ax.transAxes
+        )
 
         ax.annotate(
             alt_allele,
-            xy=(0.1, 1.05),
+            xy=(0.1, 1.08),
             xycoords=trans,
             fontname="IBM Plex Mono",
             fontweight="bold",
-            fontsize=7,
-            bbox=dict(boxstyle="Circle", ec='none',
-                      fc=cm.map_vocab_color(alt_allele, 'dna')[0])
+            fontsize=11,
+            ha="center",
+            bbox=dict(
+                boxstyle="circle",
+                ec="none",
+                fc=cm.map_vocab_color(alt_allele, "dna")[0],
+            ),
+            annotation_clip=False,
         )
 
         ax.annotate(
             ref_allele,
-            xy=(0.9, 1.05),
+            xy=(0.9, 1.08),
             xycoords=trans,
             fontname="IBM Plex Mono",
             fontweight="bold",
-            fontsize=7,
-            bbox=dict(boxstyle="Circle", ec='none',
-                      fc=cm.map_vocab_color(ref_allele, 'dna')[0])
+            fontsize=11,
+            ha="center",
+            bbox=dict(
+                boxstyle="circle",
+                ec="none",
+                fc=cm.map_vocab_color(ref_allele, "dna")[0],
+            ),
+            annotation_clip=False,
         )
 
-        # Horizontal separators
-        for i in range(len(anova_df['group_name']) - 1):
-            ax.axhline(i + 0.5, ls='--', color='k', lw=0.5)
-
-        # ---------------------------------------
-        # Axis limits (robust to missing std)
-        # ---------------------------------------
-        x1 = anova_df["logit_group_es"]
-        e1 = anova_df["logit_es_std"].fillna(0)
-        
-        x2 = anova_df["pred_logit_es"]
-        e2 = anova_df["pred_logit_es_std"].fillna(0)
-        
-        xmin = min(
-            (x1-e1).min(),
-            (x2-e2).min()
+        ax.set_title(
+            rsid,
+            fontsize=13,
+            pad=16,
         )
-        
-        xmax = max(
-            (x1+e1).max(),
-            (x2+e2).max()
-        )
-        
-        xlim = (-max(abs(xmin), abs(xmax))*1.3,
-                max(abs(xmin), abs(xmax))*1.3)
-        if xerr is not None:
-            xmin = (x - xerr).min()
-            xmax = (x + xerr).max()
-        else:
-            xmin = x.min()
-            xmax = x.max()
-        print(anova_df[[
-            "group_name",
-            "logit_group_es",
-            "logit_es_std"
-        ]])
-
-        val = max(abs(xmin), abs(xmax)) * 1.1
-
-        ax.set_ylim(len(anova_df['group_name']) - 1 + 0.5, -0.5)
-
-        ax.tick_params('x', length=3, width=0.75)
-        ax.tick_params('y', length=0)
-
-        ax.spines['left'].set_linewidth(0.75)
-        ax.spines['bottom'].set_linewidth(0.75)
-
-        ax.axvline(0, ls='--', color='k', lw=0.5)
-        ax.axvspan(-0.5, 0.5, color='grey', alpha=0.1, lw=0)
-
-        ax.set_xlabel("Observed variant effect size (log2 ref/alt)")
-        ax.set_ylabel("")
-        ax.set_xlim(-val * 1.3, val * 1.3)
-        ax.set_title(rsid)
+        ax.set_yticks(np.arange(len(groups)))
+        ax.set_yticklabels([])
+        ax.tick_params(axis="y", left=False, labelleft=False)
 
         return ax
 
 class PredictionImbalancePlotComponent(PlotComponent):
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
     def plot(self, data, gs, fig):
+
         anova_df = data
 
         ax = fig.add_subplot(gs)
 
-        x = anova_df["pred_logit_es"]
-        xerr = anova_df["pred_logit_es_std"].fillna(0)
-        
-        # Error bars
+        groups = anova_df["group_name"].tolist()
+        y = np.arange(len(groups))
+
+        # ---------------------------------------
+        # 1. Predicted group effects and std
+        # ---------------------------------------
+        x = anova_df["pred_logit_es"].to_numpy()
+        xerr = anova_df["pred_logit_es_std"].fillna(0).to_numpy()
+
         ax.errorbar(
             x=x,
-            y=anova_df["group_name"],
+            y=y,
             xerr=xerr,
-            fmt='.',
-            capsize=4,
-            capthick=1.0,
-            c='k',
-            lw=1.0
+            fmt="none",
+            ecolor="black",
+            elinewidth=2,
+            capsize=5,
+            capthick=2,
+            zorder=4,
         )
 
-        # Points
         ax.scatter(
-            y=anova_df["group_name"],
             x=x,
-            lw=3,
-            ec=anova_df["group_name"].map(self.names_to_colors).values,
-            color='k',
-            s=12
+            y=y,
+            s=85,
+            color="black",
+            edgecolors=[
+                self.names_to_colors[g]
+                for g in groups
+            ],
+            linewidths=2,
+            zorder=5,
         )
 
-        # formatting
-        ax.set_yticklabels([
-            label.get_text().replace(' (', '\n(').replace('/', '/\n')
-            for label in ax.get_yticklabels()
-        ])
-
-        # horizontal separators
-        for i in range(len(anova_df["group_name"]) - 1):
-            ax.axhline(
-                i + 0.5,
-                ls='--',
-                color='k',
-                lw=0.5
-            )
-
-        xmin = (x - xerr).min()
-        xmax = (x + xerr).max()
-
-        val = max(abs(xmin), abs(xmax)) * 1.1
-
-        ax.set_ylim(
-            len(anova_df["group_name"]) - 1 + 0.5,
-            -0.5
+        # ---------------------------------------
+        # 2. Zero line and shaded region
+        # ---------------------------------------
+        ax.axvline(
+            0,
+            color="black",
+            linestyle="--",
+            linewidth=1,
         )
 
-        ax.tick_params('x', length=3, width=0.75)
-        ax.tick_params('y', length=0)
-
-        ax.spines['left'].set_linewidth(0.75)
-        ax.spines['bottom'].set_linewidth(0.75)
-
-        ax.axvline(0, ls='--', color='k', lw=0.5)
         ax.axvspan(
             -0.5,
             0.5,
-            color='grey',
-            alpha=0.1,
-            lw=0
+            color="grey",
+            alpha=0.10,
+            lw=0,
         )
+
+        # ---------------------------------------
+        # 3. Horizontal separators
+        # ---------------------------------------
+        for i in range(len(groups) - 1):
+            ax.axhline(
+                i + 0.5,
+                color="black",
+                linestyle="--",
+                linewidth=0.7,
+            )
+
+        # ---------------------------------------
+        # 4. Axis formatting
+        # ---------------------------------------
+        ax.set_ylim(len(groups) - 0.5, -0.5)
+
+        # No cell-type labels here
+        # ax.set_yticks(y)
+        # ax.set_yticklabels([])
+        # ax.tick_params(axis="y", length=0)
+
+        # Same limits as observed imbalance
+        ax.set_xlim(-4, 4)
+        ax.set_xticks([-4, -2, 0, 2, 4])
 
         ax.set_xlabel(
-            "Predicted variant effect size (log2 ref/alt)"
+            "Predicted variant effect size (log2 ref/alt)",
+            fontsize=11,
         )
+
         ax.set_ylabel("")
 
-        ax.set_xlim(
-            -val * 1.3,
-            val * 1.3
-        )
+        ax.tick_params(axis="x", labelsize=10)
 
-        ax.set_title("Model prediction")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+        ax.set_title(
+            "Model prediction",
+            fontsize=13,
+            pad=16,
+        )
 
         return ax
 
 
 class DensityPlotComponent(PlotComponent):
-    def __init__(self, common_norm=True, clip_max=None, clip_min=0, common_norm_quantile=1.0, **kwargs):
+
+    def __init__(
+        self,
+        common_norm=True,
+        clip_max=None,
+        clip_min=0,
+        common_norm_quantile=1.0,
+        **kwargs
+    ):
         super().__init__(**kwargs)
-        self.common_norm = common_norm # wether to set a common y scale for all density plots
-        self.common_norm_quantile = common_norm_quantile # quantile of max y values across rows to use as ylim
-        self.clip_max = clip_max # hard threshold that ylim can not exceed
-        self.clip_min = clip_min # hard threshold that ylim can not be lower than
-        
+
+        self.common_norm = common_norm
+        self.common_norm_quantile = common_norm_quantile
+        self.clip_max = clip_max
+        self.clip_min = clip_min
 
     def plot(self, data, gs, fig):
+
         anova_df, dens, interval = data
-        ref_allele = anova_df['ref'].values[0]
-        alt_allele = anova_df['alt'].values[0]
-        gs_subplot = gridspec.GridSpecFromSubplotSpec(len(anova_df), 1, gs, hspace=0)
+
+        ref_allele = anova_df["ref"].iloc[0]
+        alt_allele = anova_df["alt"].iloc[0]
+
+        groups = anova_df["group_name"].tolist()
+
+        # One density plot per group
+        gs_subplot = gridspec.GridSpecFromSubplotSpec(
+            len(groups),
+            1,
+            subplot_spec=gs,
+            hspace=0.15,
+        )
+
         axes = []
 
-        for i, group_name in enumerate(anova_df['group_name']):
+        # ---------------------------------------
+        # 1. Plot density for each group
+        # ---------------------------------------
+        for i, group_name in enumerate(groups):
+
             ax = fig.add_subplot(gs_subplot[i, :])
-            signal_plot(interval, dens[group_name], color=self.names_to_colors[group_name], ax=ax)
-            
-            if i == len(anova_df)-1:
+
+            signal_plot(
+                interval,
+                dens[group_name],
+                color=self.names_to_colors[group_name],
+                ax=ax,
+            )
+
+            # Variant position
+            variant_pos = (
+                interval.start + interval.end
+            ) / 2
+
+            ax.axvline(
+                variant_pos,
+                color="black",
+                linestyle="--",
+                linewidth=0.8,
+            )
+
+            # Show x-axis only on bottom group
+            if i == len(groups) - 1:
                 ax.xaxis.set_visible(True)
-                ax.set_xlabel(f"{anova_df['#chr'].values[0]}")
-                ax.tick_params('x', length=3, width=0.7, which='major')
+                ax.set_xlabel(
+                    anova_df["#chr"].iloc[0],
+                    fontsize=11,
+                )
+                ax.tick_params(
+                    axis="x",
+                    length=3,
+                    width=0.7,
+                    labelsize=9,
+                )
             else:
                 ax.xaxis.set_visible(False)
 
-            max_dens_value = np.nanmax(dens[group_name])
-        
-            if i == 0:
-                ax.annotate(xy=((interval.end+interval.start)//2, max_dens_value), ha='center', text=f"{ref_allele}/{alt_allele}", xytext=(0, 25), textcoords="offset points", arrowprops=dict(arrowstyle="->"))
+            max_dens_value = np.nanmax(
+                dens[group_name]
+            )
 
             ax.set_yticks([])
-            ax.spines['left'].set_linewidth(0.75)
-            ax.spines['bottom'].set_linewidth(0.75)
-            pos = ax.get_position()
-            ax.set_ylim(0, np.clip(max_dens_value, self.clip_min, self.clip_max))
-            ax.set_position([pos.x0, pos.y0, pos.width, pos.height * 0.8])
+
+            ax.spines["top"].set_visible(False)
+            ax.spines["right"].set_visible(False)
+
+            ax.spines["left"].set_linewidth(0.75)
+            ax.spines["bottom"].set_linewidth(0.75)
+
+            ax.set_ylim(
+                0,
+                np.clip(
+                    max_dens_value,
+                    self.clip_min,
+                    self.clip_max,
+                )
+            )
+
             axes.append(ax)
 
+        # ---------------------------------------
+        # 2. Common normalization
+        # ---------------------------------------
         if self.common_norm:
-            top = np.nanquantile([np.nanmax(d) for d in dens.values()], self.common_norm_quantile)
-            top = np.clip(top, self.clip_min, self.clip_max)
+
+            top = np.nanquantile(
+                [
+                    np.nanmax(dens[g])
+                    for g in groups
+                ],
+                self.common_norm_quantile,
+            )
+
+            top = np.clip(
+                top,
+                self.clip_min,
+                self.clip_max,
+            )
+
             for ax in axes:
                 ax.set_ylim(0, top)
+
+        # ---------------------------------------
+        # 3. Cell-type labels
+        #    Display once, to right of density
+        # ---------------------------------------
+        for i, group_name in enumerate(groups):
+            label = group_name.replace("_", " ")
         
+            axes[i].text(
+                1.12,
+                0.5,
+                label,
+                transform=axes[i].transAxes,
+                ha="left",
+                va="center",
+                fontsize=11,
+                clip_on=False,
+            )
+
+            
+
+        # ---------------------------------------
+        # 4. Allele annotation above density
+        # ---------------------------------------
+        axes[0].annotate(
+            f"{ref_allele}/{alt_allele}",
+            xy=(0.5, 1.0),
+            xycoords="axes fraction",
+            xytext=(0, 22),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize=11,
+            arrowprops=dict(
+                arrowstyle="->",
+                color="black",
+                lw=1,
+            ),
+            annotation_clip=False,
+        )
+
+        # ---------------------------------------
+        # 5. Shared DNase density label
+        # ---------------------------------------
         common_ax = fig.add_subplot(gs)
-        common_ax.axvline(0.5, ls='--', color='k', lw=0.5)
-        common_ax.axis('off')
-        common_ax.annotate(xy=(-0.1, 0.5), ha='center', va='center', rotation=90, text='DNase I density', annotation_clip=False)
+
+        common_ax.axis("off")
+
+        common_ax.text(
+            -0.12,
+            0.5,
+            "DNase I density",
+            transform=common_ax.transAxes,
+            ha="center",
+            va="center",
+            rotation=90,
+            fontsize=11,
+            clip_on=False,
+        )
+
         return axes, common_ax
         
 class PredictionPlotComponent(PlotComponent):
@@ -397,7 +571,12 @@ class ContributionPlotComponent(PlotComponent):
         
         global_abs = np.max(np.abs(all_windows))
         
-        gs_subplot = gridspec.GridSpecFromSubplotSpec(len(anova_df), 1, subplot_spec=gs)
+        gs_subplot = gridspec.GridSpecFromSubplotSpec(
+            len(anova_df),
+            1,
+            subplot_spec=gs,
+            hspace=0.15,
+        )
         hs_pos = [0]
         hs_neg = [0]
         axes = []
@@ -427,7 +606,7 @@ class ContributionPlotComponent(PlotComponent):
                 window,
                 ax=ax
             )
-            ax.set_ylim(-global_abs, global_abs)
+            ax.set_ylim(-global_abs * 1.1, global_abs * 1.1)
             
             #add y axis label and ticks
             ax.axhline(0, linewidth=0.5)
@@ -438,7 +617,8 @@ class ContributionPlotComponent(PlotComponent):
                 bottom=False,
                 labelbottom=False
             )
-            ax.set_ylabel("SHAP")
+            ax.set_ylabel("")
+            ax.set_yticks([])
             if i == 0:
                 ax.set_title("Contributions (SHAP)")
             axes.append(ax)
