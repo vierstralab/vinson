@@ -3,7 +3,6 @@ import torch
 
 from datetime import datetime
 import mergedeep
-from typing import Union
 
 import torch
 from vinson.utils.helpers import read_yaml_config
@@ -22,13 +21,6 @@ from vinson.models.shared import MLPBlock
 
 from vinson.datamodules.sequence import SeqEmbedDataModule
 from vinson.datamodules.variant import SeqEmbedVariantDataModule
-from vinson.datasets.sequence import SequenceEmbedDataset
-from vinson.datasets.variant import VariantEmbedDataset
-
-from vinson.utils.data_formatting import VinsonData
-from vinson.models.shared import initialize_weights
-
-
 
 
 MODEL_FACTORY_REGISTRY = {
@@ -124,6 +116,7 @@ def _sequence_model_from_config(config):
 
     return trunk
 
+
 def dhs_model_from_config(config, checkpoint_path=None, device='cpu'):
     model_type = config["model_type"]
 
@@ -218,50 +211,6 @@ def variant_model_from_config(config, checkpoint_path=None, *, sequence_model_ch
             )
 
     return variant_model
-
-
-def dataset_from_h5(
-    h5_file: str,
-    fasta_file: str,
-    config,
-    ref_adata: ad.AnnData = None,
-    genotype_file: str = None,
-    **dataset_kwargs,
-):
-    """
-    Initialize dataset.
-    Args:
-        h5_file (str): Path to the H5 file.
-        fasta_file (str): Path to the FASTA file.
-        genotype_file (str, optional): Path to the genotype file.
-        **dataset_kwargs: Additional arguments for dataset.
-    """
-    if config["model_type"] in ('vinson_variant_embed', 'legnet_variant_embed'):
-        data = VinsonData.from_h5(
-            h5_file,
-            embeddings_df=ref_adata.obsm['motif_embeddings'],
-            is_inference=False
-        )
-        dataset = VariantEmbedDataset(
-            data=data,
-            fasta_file=fasta_file,
-            genotype_file=genotype_file,
-            **dataset_kwargs,
-        )
-    else:
-        data = VinsonData.from_h5(
-            h5_file,
-            embeddings_df=ref_adata.obsm['motif_embeddings'],
-            is_inference=False
-        )
-        dataset = SequenceEmbedDataset(
-            data=data,
-            fasta_file=fasta_file,
-            genotype_file=genotype_file,
-            **dataset_kwargs,
-        )
-
-    return dataset
 
 
 def datamodule_from_config(

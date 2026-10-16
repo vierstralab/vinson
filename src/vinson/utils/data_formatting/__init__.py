@@ -1,5 +1,5 @@
 from .container import (
-    VinsonData,
+    VinsonData, VariantVinsonData
 )
 from .readers import (
     extract_data_from_train_anndata,
@@ -13,6 +13,8 @@ from .adata_utils import get_number_of_train_examples
 
 __all__ = [
     "VinsonData",
+    "VariantVinsonData",
+
     "extract_data_from_train_anndata",
     "extract_variant_data_from_anndata",
     "extract_data_from_backed_anndata",

@@ -133,17 +133,7 @@ class VinsonData:
         return cls.from_raw(data, embeddings_df, is_inference=is_inference)
 
     @classmethod
-    def from_raw(cls, raw_data: dict, embeddings_df: pd.DataFrame=None, *, is_inference=False, is_variant:bool = False):
-        ###conflict with genome-tools/plotting/modular_plot/api.py
-        # if cls.schema is None or is_variant is None:                                         
-        #     raise TypeError("No validation schema. Set is_variant argument as bool.")
-        if cls.schema is None:
-            if is_variant:
-                cls.schema = VARIANT 
-            elif not is_variant:
-                cls.schema = DHS
-        ###conflict with genome-tools/plotting/modular_plot/api.py
-
+    def from_raw(cls, raw_data: dict, embeddings_df: pd.DataFrame=None, *, is_inference=False):
         data, encodings = sanitize_data(cls.schema, raw_data, is_inference=is_inference)
         return cls(data, encodings, embeddings_df, is_inference=is_inference)
 
