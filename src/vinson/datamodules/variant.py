@@ -50,4 +50,4 @@ class SeqEmbedVariantDataModule(SeqEmbedDataModule):
             full_adata.obsm["split_data"] == sample_split,
             full_adata.varm["split_data"] == dhs_split,
         ]
-        return extract_variant_data_from_anndata(adata, suffix)
+        return extract_variant_data_from_anndata(adata, suffix, pre_jitter=pre_jitter)

@@ -23,10 +23,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
         anndata_file: str,
         fasta_file: str,
         genotype_file = None,
-        # genotype_file_atac=None,
-        # genotype_file_dnase=None,
         train_dataset_kwargs={},
-        valid_dataset_kwargs={},
+        valid_daaset_kwargs={},
         pre_jitter=False,
         **dataloader_kwargs,
     ):
