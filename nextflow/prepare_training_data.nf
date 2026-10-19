@@ -35,13 +35,7 @@ process save_epochs_data {
         path name
 
     script:
-    name = "${epoch}.annotated_with_predictions.tsv"
-    """
-    python3 $moduleDir/bin/annotate_meta.py \
-        ${samples_file} \
-        ${base_path}/ \
-        ${name}
-    """
+
 }
 
 process assemble_train_anndata {

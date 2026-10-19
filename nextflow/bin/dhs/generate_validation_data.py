@@ -94,10 +94,12 @@ def generate_data_from_sample_peaks(anndata: ad.AnnData, sample_ids) -> VinsonDa
 
     return VinsonData.from_raw(data, is_inference=False)
 
+
 def check_none(val):
     if val is None or val == 'None' or pd.isna(val):
         return False
     return True
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Generate validation data")

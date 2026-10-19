@@ -118,8 +118,3 @@ if __name__ == "__main__":
     expanded_preds['pred_alt'] = pred_alt
 
     expanded_preds.to_csv(name, sep='\t', index=False)
-
-
-
-
-

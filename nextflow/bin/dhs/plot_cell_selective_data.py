@@ -112,11 +112,8 @@ if __name__ == '__main__':
     else:
         raise ValueError('Annotation data file must be provided for plotting')
 
-    eval_dataset = VinsonData.from_h5(
-        args.h5_data,
-        embeddings_df=adata.obsm['motif_embeddings']
-    ) # Maybe embeds are not needed here
-    eval_dataset = eval_dataset.to_df()
+    eval_dataset = VinsonData.from_h5(args.h5_data,).to_df()
+
     log_output = read_configs(args.model_config)['model_kwargs'].get('log_output', False)
 
     if not log_output:

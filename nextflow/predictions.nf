@@ -17,7 +17,7 @@ process predict {
     name = "${prefix}.npy"
     genotype_args = meta?.genotype_file ? "--genotype_file ${meta.genotype_file}" : ""
     """
-    python3 $moduleDir/bin/predict_DHS_model.py \
+    python3 $moduleDir/bin/dhs/predict_DHS_model.py \
         ${dhs_dataset} \
         ${meta.zarr_anndata} \
         ${meta.fasta_file} \
@@ -46,7 +46,7 @@ process visualize_cell_selective_predictions {
     script:
     prefix = meta.prefix
     """
-    python3 $moduleDir/bin/plot_cell_selective_data.py \
+    python3 $moduleDir/bin/dhs/plot_cell_selective_data.py \
         --prefix ${prefix} \
         --h5_data ${dhs_dataset} \
         --npy_prediction ${predict_np} \
@@ -73,7 +73,7 @@ process annotate_with_predictions {
     script:
     name = "${samples_file.baseName}.annotated_with_predictions.tsv"
     """
-    python3 $moduleDir/bin/annotate_meta.py \
+    python3 $moduleDir/bin/dhs/annotate_meta.py \
         ${samples_file} \
         ${base_path}/ \
         ${name}
@@ -118,7 +118,7 @@ process predict_fasta {
     name = "${prefix}.npy"
     """
     echo "${meta.seq}" > fasta.tmp
-    python3 $moduleDir/bin/predict_fasta.py \
+    python3 $moduleDir/bin/dhs/predict_fasta.py \
         ${meta.prefix} \
         fasta.tmp \
         ${meta.zarr_anndata} \

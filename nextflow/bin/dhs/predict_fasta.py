@@ -9,7 +9,7 @@ import pandas as pd
 import sys
 
 
-from predict_DHS_model import predict_with_model
+from vinson.nextflow.bin.dhs.predict_DHS_model import predict_with_model
 
 
 class PredictDataset(Dataset):
