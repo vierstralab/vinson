@@ -54,7 +54,7 @@ workflow {
         | splitCsv(header:true, sep:'\t')
         | map(it -> tuple(it, it.epoch))
         | sample_epoch 
-        | map(it -> tuple(it[1], it[3], it.zarr_anndata)) //epoch offsets, anndata
+        | map(it -> tuple(it[1], it[3], it[0].zarr_anndata)) //epoch offsets, anndata
         | extractDataWithOffsets
 
 }
