@@ -1,4 +1,4 @@
-include { predict; annotate_with_predictions } from "./predictions"
+include { predict; annotate_with_predictions } from "./predictions" addParams(conda: "/home/sabramov/miniconda3/envs/super-index")
 
 
 process generate_sample_validation_data {

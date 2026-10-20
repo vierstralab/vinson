@@ -1,4 +1,6 @@
-include { extractDataWithOffsets } from "./pipelines/nf-index/extract_data_with_offsets"
+
+
+include { extractDataWithOffsets } from "./pipelines/nf-index/extract_data_with_offsets" addParams(conda: params.conda_index)
 
 
 params.sampling_dist = 0.38
@@ -8,6 +10,7 @@ params.jitter = 40
 process sample_epoch {
     conda "${params.conda}"
     tag "${epoch}"
+    cpus 10
 
     input:
         tuple val(meta), val(epoch)
