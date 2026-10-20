@@ -54,8 +54,7 @@ workflow {
         | splitCsv(header:true, sep:'\t')
         | map(it -> tuple(it, it.epoch))
         | sample_epoch 
-        | map(it -> tuple(it[3])) // meta epoch sampled_examples offsets
-
-        //| extractDataWithOffsets
+        | map(it -> tuple(it[1], it[3], it.zarr_anndata)) //epoch offsets, anndata
+        | extractDataWithOffsets
 
 }

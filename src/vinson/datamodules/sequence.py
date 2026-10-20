@@ -1,5 +1,5 @@
 import lightning.pytorch as L
-import numpy as np
+
 from torch.utils.data import DataLoader
 from vinson.utils.data_formatting import extract_data_from_train_anndata
 from vinson.datasets.sequence import SequenceEmbedDataset
@@ -84,8 +84,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
                         self.validation_epoch,
                         dhs_split="val",
                         sample_split="train",
-                        # don't apply pre-jitter to validation data
-                        pre_jitter=False,
+                        pre_jitter=self.pre_jitter,
                     )
                 }
             for layer in layer_names:
