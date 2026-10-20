@@ -28,6 +28,7 @@ def main(anndata, optimal_delta_radius, negatives_mult=2, seed=0, jitter=0):
     # sample positives
     sampled_positives = delta_ball_exclusion_sampling(
         distance_matrix,
+        size=anndata.shape[1],
         delta_radius=optimal_delta_radius,
         mask=binary,
         seed=seed,
@@ -39,6 +40,7 @@ def main(anndata, optimal_delta_radius, negatives_mult=2, seed=0, jitter=0):
     # sample negatives
     sampled_negatives = delta_ball_exclusion_sampling(
         distance_matrix,
+        size=anndata.shape[1],
         delta_radius=optimal_delta_radius,
         mask=~binary,
         seed=seed,
