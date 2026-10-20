@@ -1,0 +1,4 @@
+[submodule "nextflow/pipelines/nf-index"]
+	path = nextflow/pipelines/nf-index
+	url = https://github.com/vierstralab/nf-index
+	branch = extract_training_data

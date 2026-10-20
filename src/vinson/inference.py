@@ -1,15 +1,11 @@
-from tqdm import tqdm_notebook, tqdm
+from tqdm import tqdm
 
 import numpy as np
 import torch
 from torch.utils.data import  DataLoader
 
 from genome_tools.data.extractors import FastaExtractor
-from vinson.utils.data_formatting import VinsonData
-from vinson.datasets.sequence import InferenceSequenceEmbedDataset
-
 from vinson.utils.sequence_utils import one_hot_encode
-
 
 
 def assemble_batch(sample_id, interval, embeddings, fasta):
@@ -84,9 +80,12 @@ def score_bed_with_dhs_model(
     predicted_scores = np.concatenate(lst_preds)
     return predicted_scores
 
-def score_variants_with_dhs_model(dataloader,
-                                  model,
-                                  device='cpu'):
+
+def score_variants_with_dhs_model(
+        dataloader,
+        model,
+        device='cpu'
+    ):
     """
     Run a DHS model over every batch of a dataloader built from `InferenceVariantEmbedDataset`,
     scoring both the reference and alternate allele sequence for every variant.
@@ -121,4 +120,4 @@ def score_variants_with_dhs_model(dataloader,
             lst_ref.append(pred_ref.cpu().numpy()), lst_alt.append(pred_alt.cpu().numpy())
 
     ref_scores, alt_scores = np.concatenate(lst_ref), np.concatenate(lst_alt)
-    return alt_scores, ref_scores
+    return ref_scores, alt_scores

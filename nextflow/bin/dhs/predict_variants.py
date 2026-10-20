@@ -2,14 +2,14 @@ from vinson.from_config import read_configs, dhs_model_from_config
 import torch
 
 from vinson.utils.data_formatting import VariantVinsonData
-from vinson.postprocessing.inference import score_variants_with_dhs_model
+from vinson.inference import score_variants_with_dhs_model
 from torch.utils.data import DataLoader
 
-from tqdm import tqdm
 from vinson.datasets.variant import InferenceVariantEmbedDataset
 from genome_tools.data.anndata import read_zarr_backed
 import argparse
 import pandas as pd
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -30,26 +30,6 @@ def make_loaders(loaded_data, fasta_file, num_workers=10, batch_size=256):
         pin_memory=torch.cuda.is_available()
     )
 
-
-def predict(model, dataloader):
-    pred_ref_all = []
-    pred_alt_all = []
-
-    for batch in tqdm(dataloader):
-        ohe_ref = batch["ohe_seq_ref"].to(device, non_blocking=True)
-        ohe_alt = batch["ohe_seq_alt"].to(device, non_blocking=True)
-        embed = batch["embed"].to(device, non_blocking=True)
-
-        pred_ref = model(ohe_ref, embed)   # (B,)
-        pred_alt = model(ohe_alt, embed)
-
-        pred_ref_all.append(pred_ref.detach().cpu())
-        pred_alt_all.append(pred_alt.detach().cpu())
-
-    pred_ref_all = torch.cat(pred_ref_all).numpy()
-    pred_alt_all = torch.cat(pred_alt_all).numpy()
-
-    return pred_ref_all, pred_alt_all
 
 def int_list(s):
     if ":" in s:
@@ -112,8 +92,13 @@ if __name__ == "__main__":
 
     model_predict = dhs_model_from_config(model_config, checkpoint).to(device).eval()
 
-    expanded_preds = loaded_data.to_df()
-    pred_ref, pred_alt = score_variants_with_dhs_model(dl, model_predict)
+    expanded_preds: pd.DataFrame = loaded_data.to_df()
+    pred_ref, pred_alt = score_variants_with_dhs_model(
+        dl,
+        model_predict,
+        device=device
+    )
+
     expanded_preds['pred_ref'] = pred_ref
     expanded_preds['pred_alt'] = pred_alt
 

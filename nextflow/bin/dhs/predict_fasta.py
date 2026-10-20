@@ -1,15 +1,13 @@
 from vinson.from_config import read_configs, dhs_model_from_config
 from vinson.utils.sequence_utils import one_hot_encode
 
-
 from genome_tools.data.anndata import read_zarr_backed
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import pandas as pd
 import sys
 
-
-from vinson.nextflow.bin.dhs.predict_DHS_model import predict_with_model
+from vinson.inference import score_bed_with_dhs_model
 
 
 class PredictDataset(Dataset):
@@ -24,11 +22,6 @@ class PredictDataset(Dataset):
         return {
             x: inp[x] for x in ['ohe_seq', 'embed']
         }
-    # def __getitems__(self, idcs):
-    #     return [
-    #         x for x in self.pred_inputs[idcs]
-    #     ]
-
 
 
 def make_predict_dict(species, seq, anndata, sample_ids):
@@ -85,8 +78,8 @@ if __name__ == "__main__":
         checkpoint_path=model_checkpoint,
     ).eval()
 
-    predictions = predict_with_model(
+    predictions = score_bed_with_dhs_model(
+        dl,
         model_predict,
-        dataloader=dl
     )
     np.save(sys.argv[6], predictions)

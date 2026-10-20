@@ -1,5 +1,4 @@
 import anndata as ad
-import seaborn as sns
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -12,6 +11,7 @@ from vinson.from_config import read_configs
 from vinson.postprocessing.plotting.per_dhs import obs_pred_barplot_by_ann, scatter_by_ann_train_val, aggregate_eval_dataset_by_sample
 from vinson.postprocessing.utils import annotate_eval_dataset_with_layers, annotate_eval_dataset_with_obs_columns, calculate_per_dhs_fold_changes, get_samples_used_in_training_for_dhs
 from vinson.postprocessing.metrics import calc_metrics
+
 
 def cm2inch(value):
     """Function to convert cm to inches"""
