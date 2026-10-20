@@ -51,7 +51,7 @@ process sample_epoch {
 
 
 workflow {
-    Channel.fromPath(params.samples_file)
+    Channel.fromPath(params.epochs_meta)
         | splitCsv(header:true, sep:'\t')
         | map(it -> tuple(it, it.epoch))
         | sample_epoch 
