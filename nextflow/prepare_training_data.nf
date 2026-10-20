@@ -11,7 +11,7 @@ process sample_epoch {
     tag "${prefix}"
 
     input:
-        tuple val(meta), val(epoch), val(seed)
+        tuple val(meta), val(epoch)
     
     output:
         tuple val(meta), val(epoch), path(name), path(jitter_offsets)
@@ -25,7 +25,7 @@ process sample_epoch {
         ${params.sampling_dist} \
         ${name} \
         ${jitter_offsets} \
-        --seed ${seed} \
+        --seed ${meta.seed} \
         --jitter ${params.jitter}
     """
 }
@@ -53,7 +53,7 @@ process sample_epoch {
 workflow {
     Channel.fromPath(params.samples_file)
         | splitCsv(header:true, sep:'\t')
-        | map(it -> tuple(it, it.epoch_n))
+        | map(it -> tuple(it, it.epoch))
         | sample_epoch 
         | map(it -> tuple(it[3])) // meta epoch sampled_examples offsets
 
