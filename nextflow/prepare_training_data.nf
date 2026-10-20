@@ -7,8 +7,7 @@ params.jitter = 40
 
 process sample_epoch {
     conda "${params.conda}"
-    label "gpu"
-    tag "${prefix}"
+    tag "${epoch}"
 
     input:
         tuple val(meta), val(epoch)
