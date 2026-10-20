@@ -179,7 +179,6 @@ class BaseSequenceDataset(Dataset):
             noise = np.random.normal(0, self.noise, len(x)).astype(np.float32)
         elif noise is None:
             noise = 0
-            return x  #genome_tools/plotting/modular_plot/loaders/prediction.py: 212 expects to have only embed as out 
 
         x = x + noise
         return x, noise
