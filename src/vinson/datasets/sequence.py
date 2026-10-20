@@ -124,8 +124,8 @@ class InferenceSequenceEmbedDataset(InferenceSequenceOnlyDataset):
     `shift`/`revcomp` already fixed per-row in `data`.
     """
 
-    def __init__(self, data, fasta_file, genotype_file = None, seqlen=1344):
-            super().__init__(data, fasta_file, genotype_file, seqlen=seqlen)
+    def __init__(self, data, fasta_file, genotype_file = None, seqlen=1344, **kwargs):
+        super().__init__(data, fasta_file, genotype_file, seqlen=seqlen, **kwargs)
 
     def __getitem__(self, i):
         """
