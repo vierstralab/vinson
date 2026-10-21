@@ -48,4 +48,4 @@ if __name__ == "__main__":
         jitter=args.jitter,
     )
 
-    np.savez(args.jitter_output, **offsets_by_sample)
+    np.savez(args.output, **offsets_by_sample)
