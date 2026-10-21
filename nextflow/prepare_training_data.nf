@@ -16,17 +16,17 @@ process sample_epoch {
         tuple val(meta), val(epoch)
     
     output:
-        tuple val(meta), val(epoch), path(name), path(sample_names)
+        tuple val(meta), val(epoch), path(sampled_examples), path(sample_names)
     
     script:
-    name = "${epoch}.sampled_examples_mat.npz"
+    sampled_examples = "${epoch}.sampled_examples_mat.npz"
     sample_names = "${epoch}.sample_names.txt"
     """
     python3 $moduleDir/bin/sample_examples.py \
         ${meta.zarr_anndata} \
         ${params.sampling_dist} \
+        ${sampled_examples} \
         ${sample_names} \
-        ${name} \
         --seed ${meta.seed}
     """
 }

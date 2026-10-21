@@ -64,8 +64,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("anndata", type=str, help="Path to zarr-backed AnnData file")
     parser.add_argument("delta_radius", type=float, help="Optimal distance between selected samples")
-    parser.add_argument("output", type=str, help="Path to save sampled examples (.npz file)")
 
+    parser.add_argument("output", type=str, help="Path to save sampled examples (.npz file)")
     parser.add_argument("sample_names", type=str, help="Path to save corresponding sample names (from the anndata)")
 
 
