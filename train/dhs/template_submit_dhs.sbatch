@@ -24,7 +24,7 @@ srun python {script_dir}/dhs/train_dhs.py \
     --num_workers {cpus_per_task} \
     --outdir {outdir} \
     --seed 42 \
-    --genotype_file {genotype} \
+    {genotype_file} \
     {anndata} \
     {fasta} \
     {config} \
