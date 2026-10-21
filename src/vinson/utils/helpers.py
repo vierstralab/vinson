@@ -1,6 +1,8 @@
 from funkybob import RandomNameGenerator
 import yaml
 import gzip
+from typing import List
+from genome_tools import GenomicInterval, VariantInterval
 
 
 def generate_run_name() -> str:
@@ -27,6 +29,21 @@ def replace_at(s, i, char):
     making the result one character longer than `s`.
     """
     return s[:i] + char + s[i + 1:]
+
+
+def apply_edits(seq, interval: GenomicInterval, edits: List[VariantInterval], strict=True) -> str:
+    """Copy seq, apply each VariantInterval edit (writes v.alt at v.start).
+    Skips edits outside the window; strict-checks the reference allele."""
+    seq = str(seq)
+    assert len(seq) == len(interval), "Sequence length doesn't match length of the interval"
+    for v in edits:
+        rel = v.start - interval.start
+        if rel <= 0 or rel >= len(seq):
+            continue
+        if strict and seq[rel:rel + len(v.ref)] != v.ref:
+            raise AssertionError(f"ref mismatch {v.chrom}:{v.start} expected {v.ref}")
+        seq = replace_at(seq, rel, v.alt)
+    return seq
 
 
 def detect_genotype_format(genotype_file):

@@ -4,8 +4,7 @@ from genome_tools import GenomicInterval
 
 
 from vinson.utils.data_formatting import VinsonData
-from vinson.utils.sequence_utils import one_hot_encode
-
+from vinson.utils.helpers import apply_edits
 import logging
 
 from .base import BaseSequenceDataset
@@ -24,7 +23,8 @@ class InferenceSequenceOnlyDataset(BaseSequenceDataset):
     def _parse_position(self, data_dict: dict) -> GenomicInterval:
         chrom = data_dict['chrom']
         summit = data_dict['summit']
-        shift = int(data_dict.get('shift', 0))
+
+        shift = data_dict.get('shift')
 
         interval, shift = self._get_window(chrom, summit, shift=shift)
         return interval, shift
@@ -68,9 +68,9 @@ class InferenceSequenceOnlyDataset(BaseSequenceDataset):
             return str(seq)
     
         iupac_edits = self.source.get_edits(interval, indiv_id)
-        seq_iupac = self.source.apply_edits(
+        seq_iupac = apply_edits(
             seq,
-            interval_start=interval.start,
+            interval=interval,
             edits=iupac_edits
         )
         return seq_iupac
@@ -217,24 +217,12 @@ class SequenceOnlyDataset(InferenceSequenceOnlyDataset):
             - 'summit': int, center coordinate
             - 'sample_id': str, sample identifier
         """
+        # input data parsing
+        result = super().__getitem__(i)
+
+        # target data parsing
         data_slice = self._slice_data(i)
-
-        interval, shift = self._parse_position(data_slice)
-
-        ohe_seq, revcomp = self._parse_sequence(data_slice, interval)
-
-        result = {
-            "ohe_seq": ohe_seq.copy(),
-            "chrom": data_slice['chrom'],
-            "summit": data_slice['summit'],
-            "sample_id": data_slice['sample_id'],
-            "shift": shift,
-            "revcomp": revcomp
-        }
-
-        # parse target data
-        sample_id = data_slice.get('sample_id', None) 
-        is_multitask = self._is_multitask(sample_id) # method requires sample_id
+        is_multitask = self._is_multitask(result['sample_id'])
 
         density: np.ndarray = data_slice['density']
         bg = data_slice['background']

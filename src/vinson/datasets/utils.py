@@ -7,6 +7,7 @@ from vinson.utils.sequence_utils import get_iupac_char_from_alleles
 from vinson.utils.helpers import replace_at
 import numpy as np
 
+
 class TabixConnector:
     """Lazy tabix handle. Opened once, reused across intervals."""
     def __init__(self, path):
@@ -58,20 +59,6 @@ class _ConnectorSource:
 
     def get_edits(self, interval, indiv_id, anchor=None):
         raise NotImplementedError
-
-    @staticmethod
-    def apply_edits(seq, interval_start, edits, strict=True) -> str:
-        """Copy seq, apply each VariantInterval edit (writes v.alt at v.start).
-        Skips edits outside the window; strict-checks the reference allele."""
-        seq = str(seq)
-        for v in edits:
-            rel = v.start - interval_start
-            if rel <= 0 or rel >= len(seq):
-                continue
-            if strict and seq[rel:rel + len(v.ref)] != v.ref:
-                raise AssertionError(f"ref mismatch {v.chrom}:{v.start} expected {v.ref}")
-            seq = replace_at(seq, rel, v.alt)
-        return seq
 
 
 class IUPACSource(_ConnectorSource):
