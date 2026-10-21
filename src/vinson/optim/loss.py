@@ -82,7 +82,7 @@ class NegativeBinomialLoss(torch.nn.Module):
         self.relative = relative
 
     def forward(
-        self, input: torch.Tensor, target: torch.Tensor, r: Union[float, torch.Tensor]
+        self, input: torch.Tensor, target: torch.Tensor, mu_params: torch.Tensor, r_params: torch.Tensor
     ) -> torch.Tensor:
         """
         Compute the negative binomial loss.
@@ -102,12 +102,12 @@ class NegativeBinomialLoss(torch.nn.Module):
             The computed negative binomial loss. If reduction is 'sum' or 'mean', returns a scalar tensor;
             otherwise, returns a tensor of losses per element.
         """
-        if self.method == "mode":
-            p = (r - 1) / (input + r - 1)
-            phat = (r - 1) / (input + r - 1)
-        else:
-            p = r / (r + input)
-            phat = r / (r + target)
+
+        # TODO: add 'fit_piecewise' function
+        mu = fit_piecewise(input, mu_params) 
+        r = fit_piecewise(input, r_params)
+        p = r / (r+mu)
+        phat = 0 # TODO 
 
         if self.relative:
             nll = -(
