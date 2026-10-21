@@ -80,7 +80,7 @@ workflow {
         | map(it -> tuple(it, it.epoch))
         | sample_epoch
         | jitter_offsets
-        | map(it -> tuple(it[1], it[3], it[0].zarr_anndata)) //epoch offsets, anndata
+        | map(it -> tuple(it[1], it[2], it[0].zarr_anndata)) //epoch offsets, anndata
         | extractDataWithOffsets
 
 }
