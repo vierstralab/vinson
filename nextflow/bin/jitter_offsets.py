@@ -38,8 +38,6 @@ if __name__ == "__main__":
     parser.add_argument("--jitter", type=int, default=200, help="If >0, sample a random position offset in [-jitter, jitter] for each selected example")
     args = parser.parse_args()
 
-    sampling_anndata = read_zarr_backed(args.anndata)
-
     sampled_matrix = sp.load_npz(args.sampled_matrix)
     sample_names = np.loadtxt(args.sample_names, dtype=str)
 
