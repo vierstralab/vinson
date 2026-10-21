@@ -135,13 +135,14 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
     )
 
 
-def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str, pre_jitter=False) -> VariantVinsonData:
+def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str = None, pre_jitter=False) -> VariantVinsonData:
     """
     Convert AnnData object to H5 format and extract embeddings.
     Args:
         adata (ad.AnnData): AnnData object containing DHS data.
-        suffix (str): Suffix of the epoch/layer to extract. Gets added to layer names as `{layer}.{suffix}`. E.g. epoch_1, epoch_2, etc.
-    
+        suffix (str, optional): Suffix of the epoch/layer to extract. Gets added to layer names as
+            `{layer}.{suffix}`, e.g. epoch_1, epoch_2, etc. If None, layers are read by their bare name.
+
     Returns:
         data (dict): Dictionary containing extracted data arrays.
         embeddings_df (pd.DataFrame): DataFrame containing motif embeddings.
@@ -190,7 +191,6 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str, pre_
         embeddings_df=embeddings_df,
         is_inference=False
     )
-
 
 
 def _extract_wide_raw(
@@ -288,6 +288,7 @@ def extract_data_from_backed_anndata(
         embeddings_df=embeddings_df,
         is_inference=False
     )
+
 
 def extract_data_from_backed_anndata_wide(
     backed_anndata,

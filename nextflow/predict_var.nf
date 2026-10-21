@@ -28,6 +28,29 @@ process predict {
     """
 }
 
+process concat_by_cell_type {
+
+    conda "${params.conda}"
+
+    publishDir "${params.outdir}/cell_type_results"
+
+    tag "${cell_type}"
+
+    input:
+        tuple val(cell_type), path(pred_files)
+
+    output:
+        path "${cell_type}_all_variants.parquet"
+
+    script:
+
+    """
+    python3 $moduleDir/bin/variants/concat_results.py \
+        ${cell_type}_all_variants.parquet \
+        ${pred_files}
+    """
+}
+
 process combine_predictions {
 
     conda "${params.conda}"
@@ -128,5 +151,26 @@ workflow aggregate {
     aggregated
         | collect
         | concat_results
+}
+
+workflow cell_type {
+
+    predictions = Channel.fromPath(params.samples_file)
+        | splitCsv(header:true, sep:'\t')
+        | map { tuple(it, file(it.dhs_dataset)) }
+        | predict
+
+    combined = predictions | combine_predictions
+
+    // combine_predictions only emits the parquet path (no meta), so recover the
+    // originating cell type by joining back on meta.prefix == pred_file.baseName.
+    meta_by_prefix = predictions.map { meta, h5_file, pred_file -> tuple(meta.prefix, meta.celltype) }
+
+    combined
+        .map { pred_file -> tuple(pred_file.baseName, pred_file) }
+        .join(meta_by_prefix)
+        .map { prefix, pred_file, celltype -> tuple(celltype, pred_file) }
+        .groupTuple()
+        | concat_by_cell_type
 }
 
