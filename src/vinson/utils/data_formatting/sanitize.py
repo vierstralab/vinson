@@ -49,6 +49,8 @@ DHS = ModelDataSchema(
     },
     optional={
         "indiv_id": np.str_,
+        "shift": np.int32,
+        "revcomp": np.bool_,
     }
 )
 
@@ -70,7 +72,8 @@ VARIANT = ModelDataSchema(
     },
     optional={
         "indiv_id": np.str_,
-        "dhs_weight": np.float32
+        "shift": np.int32,
+        "revcomp": np.bool_,
     }
 )
 
@@ -92,7 +95,10 @@ def encode_inplace(
     key : str
         Key in `data` to encode.
     """
-    arr = data[key]
+    arr = np.asarray(data[key], dtype=object)
+    mask = pd.isna(arr) | np.isin(arr, ['None', 'nan'])
+    arr = arr.copy()
+    arr[mask] = ''
     enc, inv = np.unique(arr, return_inverse=True)
     data[key] = inv.astype(np.int32)
     encodings[key] = enc.astype(np.str_)
@@ -100,7 +106,8 @@ def encode_inplace(
 
 def sanitize_data(schema: ModelDataSchema, data: dict, encodings: dict = None, is_inference=False) -> tuple:
     """
-        Ensure that all data arrays are contiguous and of the correct dtype.
+        Ensure that all data arrays are contiguous and of the correct dtype. Columns not part of
+        `schema` (required/targets/optional) are dropped from the result.
     """
     if encodings is None:
         encodings = {}
@@ -118,6 +125,8 @@ def sanitize_data(schema: ModelDataSchema, data: dict, encodings: dict = None, i
             data[key] = np.asarray(data[key], dtype=dtype)
         if not data[key].flags["C_CONTIGUOUS"]:
             data[key] = np.ascontiguousarray(data[key])
+
+    data = {key: data[key] for key in keys}
 
     if 'background' in data:
         data['background'] = np.nan_to_num(data['background'], copy=False)

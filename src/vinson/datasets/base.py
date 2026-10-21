@@ -64,13 +64,12 @@ class BaseSequenceDataset(Dataset):
         self.noise = noise
         self.genotype_file = genotype_file
 
-        if not self.is_training and (jitter or reverse_complement or noise):
+        if data.is_inference and (jitter or reverse_complement or noise):
             logger.warning(
                 f"{type(self).__name__}: random augmentation enabled in an inference dataset "
                 f"(jitter={jitter}, reverse_complement={reverse_complement}, noise={noise}); "
                 "predictions will be non-deterministic."
             )
-
 
         assert seqlen % 2 == 0, "Error 'seqlen' must be a even number!"
         self.seqlen = seqlen
@@ -115,10 +114,10 @@ class BaseSequenceDataset(Dataset):
     
     def _get_window(self, chrom, summit, shift: int = None):
         interval = GenomicInterval(chrom, summit, summit + 1).resize(self.seqlen)
-        
-        if (shift is None) and (self.jitter > 0):
-            shift = np.random.randint(-self.jitter, self.jitter + 1)
-        
+
+        if shift is None:
+            shift = np.random.randint(-self.jitter, self.jitter + 1) if self.jitter > 0 else 0
+
         interval.shift(shift, inplace=True)
         return interval, shift
 

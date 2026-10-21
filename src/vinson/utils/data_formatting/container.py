@@ -205,9 +205,9 @@ class VinsonData:
     def inference_from_bed(
         cls,
         bed_df: pd.DataFrame,
+        sample_ids: List[str],
         embeddings_df: pd.DataFrame = None,
         sample_indiv_mapping: pd.DataFrame = None,
-        sample_ids: List[str]= None,
         shifts: Iterable[int] = (0,),
         revcomp: bool=False
     ):
@@ -222,13 +222,13 @@ class VinsonData:
         bed_df : pd.DataFrame
             Regions to score; must have `chrom`, `start`, `end` (and optionally `summit`, computed as
             the midpoint of `start`/`end` if absent).
+        sample_ids : list[str]
+            Samples to score every region against.
         embeddings_df : pd.DataFrame, optional
             Per-sample cell-type/state embeddings, indexed by `sample_id`.
         sample_indiv_mapping : pd.DataFrame, optional
             `indiv_id` column indexed by `sample_id`, for genotype injection (requires a `genotype_file`
             at dataset construction).
-        sample_ids : list[str]
-            Samples to score every region against.
         shifts : Iterable[int], default (0,)
             Genomic-window shifts (bp) to score every region at, for test-time augmentation.
         revcomp : bool, default False
