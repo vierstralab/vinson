@@ -15,7 +15,7 @@ process predict {
     name = "${prefix}.npy"
     genotype_args = meta?.genotype_file ? "--genotype_file ${meta.genotype_file}" : ""
     """
-    python3 $moduleDir/bin/predict_variant_model.py \
+    python3 $moduleDir/bin/variants/predict_variant_model.py \
         ${meta.zarr_anndata} \
         ${meta.fasta_file} \
         ${meta.checkpoint} \
@@ -45,7 +45,7 @@ process combine_predictions {
     script:
 
     """
-    python3 $moduleDir/bin/combine_predictions.py \
+    python3 $moduleDir/bin/variants/combine_predictions.py \
         ${h5_file} \
         ${pred_file} \
         ${meta.prefix} \
@@ -72,7 +72,7 @@ process aggregate_group {
     script:
 
     """
-    python3 $moduleDir/bin/aggregate.py \
+    python3 $moduleDir/bin/variants/aggregate.py \
         ${h5_file} \
         ${pred_file} \
         ${meta.prefix} \
@@ -95,7 +95,7 @@ process concat_results {
         path "all_groups_with_predictions_wmeta_agg.parquet"
 
     """
-    python3 $moduleDir/bin/concat_results.py \
+    python3 $moduleDir/bin/variants/concat_results.py \
         all_groups_with_predictions_wmeta_agg.parquet \
         ${parquet_files}
     """

@@ -46,7 +46,6 @@ class BaseSequenceDataset(Dataset):
     genotype_extr : TabixExtractor
         Genotype data extractor, if provided.
     """
-    is_training = False
 
     def __init__(
         self,
@@ -138,6 +137,9 @@ class BaseSequenceDataset(Dataset):
 
         return ohe_seq, revcomp
 
+    def _slice_data(self, i: int):
+        return self.data[i]
+
     def __getitem__(self, i):
         """
         Retrieve a single data item by index.
@@ -179,7 +181,6 @@ class BaseSequenceDataset(Dataset):
             noise = np.random.normal(0, self.noise, len(x)).astype(np.float32)
         elif noise is None:
             noise = 0
-            return x  #genome_tools/plotting/modular_plot/loaders/prediction.py: 212 expects to have only embed as out 
 
         x = x + noise
         return x, noise

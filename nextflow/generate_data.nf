@@ -1,4 +1,4 @@
-include { predict; annotate_with_predictions } from "./predictions"
+include { predict; annotate_with_predictions } from "./predictions" addParams(conda: "/home/sabramov/miniconda3/envs/super-index")
 
 
 process generate_sample_validation_data {
@@ -17,7 +17,7 @@ process generate_sample_validation_data {
     prefix = "${meta.prefix}"
     name = "${prefix}.validation_data.h5"
     """
-    python3 $moduleDir/bin/generate_validation_data.py \
+    python3 $moduleDir/bin/dhs/generate_validation_data.py \
         ${meta.zarr_anndata} \
         ${name} \
         --sample_ids ${meta.sample_id} \
@@ -42,7 +42,7 @@ process generate_dhs_validation_data {
     prefix = "${meta.prefix}"
     name = "${prefix}.validation_data.h5"
     """
-    python3 $moduleDir/bin/generate_validation_data.py \
+    python3 $moduleDir/bin/dhs/generate_validation_data.py \
         ${meta.zarr_anndata} \
         ${name} \
         --dhs_ids ${meta.dhs_id}

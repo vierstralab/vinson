@@ -1,61 +1,86 @@
 
+
+include { extractDataWithOffsets } from "./pipelines/nf-index/extract_data_with_offsets" addParams(conda: params.conda_index)
+
+
 params.sampling_dist = 0.38
+params.jitter = 40
 
 
-process sample_examples {
+process sample_epoch {
     conda "${params.conda}"
-    label "gpu"
-    tag "${prefix}"
+    tag "${epoch}"
+    cpus 10
 
     input:
         tuple val(meta), val(epoch)
     
     output:
-        tuple val(meta), path(epoch), path(name)
+        tuple val(meta), val(epoch), path(sampled_examples), path(sample_names)
     
     script:
-    name = "${epoch}.sampled_offsets.npy"
+    sampled_examples = "${epoch}.sampled_examples_mat.npz"
+    sample_names = "${epoch}.sample_names.txt"
     """
-    python3 $moduleDir/bin/sample_with_offsets \
+    python3 $moduleDir/bin/sample_examples.py \
         ${meta.zarr_anndata} \
         ${params.sampling_dist} \
-        ${name}
+        ${sampled_examples} \
+        ${sample_names} \
+        --seed ${meta.seed}
     """
 }
 
 
-
-process save_epochs_data {
+process jitter_offsets {
     conda "${params.conda}"
+    tag "${epoch}"
 
     input:
-        tuple val(meta), val(epoch)
-
+        tuple val(meta), val(epoch), path(examples), path(sample_names)
+    
     output:
-        path name
-
+        tuple val(meta), val(epoch), path(name)
+    
     script:
-    name = "${epoch}.annotated_with_predictions.tsv"
+    name = "${epoch}.sampled_offsets.npz"
     """
-    python3 $moduleDir/bin/annotate_meta.py \
-        ${samples_file} \
-        ${base_path}/ \
-        ${name}
+    python3 $moduleDir/bin/jitter_offsets.py \
+        ${examples} \
+        ${sample_names} \
+        ${name} \
+        --seed ${meta.seed} \
+        --jitter ${params.jitter}
     """
 }
 
-process assemble_train_anndata {
 
-}
+
+// process save_epochs_data {
+//     conda "${params.conda}"
+
+//     input:
+//         tuple val(meta), val(epoch)
+
+//     output:
+//         path name
+
+//     script:
+
+// }
+
+// process assemble_train_anndata {
+
+// }
 
 
 workflow {
-    Channel.fromPath(params.samples_file)
+    Channel.fromPath(params.epochs_meta)
         | splitCsv(header:true, sep:'\t')
-        | map(it -> tuple(it, file(it.dhs_dataset)))
-        | predict
-        | visualize_cell_selective_predictions
-    
-    annotate_with_predictions(params.samples_file, "${params.outdir}")
-    
+        | map(it -> tuple(it, it.epoch))
+        | sample_epoch
+        | jitter_offsets
+        | map(it -> tuple(it[1], it[2], it[0].zarr_anndata)) //epoch offsets, anndata
+        | extractDataWithOffsets
+
 }

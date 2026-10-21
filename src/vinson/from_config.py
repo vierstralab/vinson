@@ -1,4 +1,3 @@
-import anndata as ad
 import torch 
 
 from datetime import datetime
@@ -34,6 +33,7 @@ MODEL_FACTORY_REGISTRY = {
     "legnet_variant_embed": LegNetTrunkEmbed,
 }
 
+
 LIGHTNING_MODEL_REGISTRY = {
     "basset": SequenceOnlyModel,
     "legnet": SequenceOnlyModel,
@@ -44,6 +44,7 @@ LIGHTNING_MODEL_REGISTRY = {
     "basset_variant_embed": VariantEmbedModel,
     "legnet_variant_embed": VariantEmbedModel,
 }
+
 
 def read_configs(config_path, overwrite_config_path=None):
     """
@@ -79,7 +80,6 @@ def _parse_scheduler_and_optimizer(config: dict):
         'lr_scheduler_kwargs': scheduler_kwargs,
         'optimizer_kwargs': optimizer_kwargs
     }
-
 
 
 def classifier_model_from_config(config: dict, checkpoint_path: str = None, device='cpu'):
