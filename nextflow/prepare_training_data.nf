@@ -43,7 +43,7 @@ process jitter_offsets {
     script:
     name = "${epoch}.sampled_offsets.npz"
     """
-    python3 $moduleDir/bin/sample_examples.py \
+    python3 $moduleDir/bin/jitter_offsets.py \
         ${examples} \
         ${name} \
         --seed ${meta.seed} \
