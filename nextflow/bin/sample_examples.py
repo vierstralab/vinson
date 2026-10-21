@@ -66,6 +66,8 @@ if __name__ == "__main__":
     parser.add_argument("delta_radius", type=float, help="Optimal distance between selected samples")
     parser.add_argument("output", type=str, help="Path to save sampled examples (.npz file)")
 
+    parser.add_argument("sample_names", type=str, help="Path to save corresponding sample names (from the anndata)")
+
 
     parser.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility")
     parser.add_argument("--negatives_mult", type=int, default=2, help="Multiplier of negatives relative to positives")
@@ -80,5 +82,6 @@ if __name__ == "__main__":
         seed=args.seed,
     )
 
+    np.savetxt(args.sample_names, sampling_anndata.obs_names, fmt='%s')
     sp.save_npz(args.output, class_mat, compressed=True)
 

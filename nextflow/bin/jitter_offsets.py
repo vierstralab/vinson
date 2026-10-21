@@ -5,7 +5,7 @@ from genome_tools.data.anndata import read_zarr_backed
 import scipy.sparse as sp
 
 
-def sample_jitter_offsets(class_mat, sample_ids, jitter, seed=0):
+def sample_jitter_offsets(class_mat, sample_names, jitter, seed=0):
     """
     For each sample (row of class_mat), sample a random position offset in [-jitter, jitter]
     for every DHS selected as a training example for that sample.
@@ -17,7 +17,7 @@ def sample_jitter_offsets(class_mat, sample_ids, jitter, seed=0):
     """
     rng = np.random.default_rng(seed=seed)
     offsets_by_sample = {}
-    for i, sample_id in enumerate(sample_ids):
+    for i, sample_id in enumerate(sample_names):
         dhs_idx = class_mat.indices[class_mat.indptr[i]:class_mat.indptr[i + 1]]
         if dhs_idx.size == 0:
             continue
@@ -31,6 +31,7 @@ if __name__ == "__main__":
         description="Sample positive/negative training examples via delta-ball exclusion sampling"
     )
     parser.add_argument("sampled_matrix", type=str, help="Path to saved sampled examples (.npz sparse matrix)")
+    parser.add_argument("sample_names", type=str, help="Path to corresponding sample names (rows)")
     parser.add_argument("output", type=str, help="Path to save per-sample jitter offsets (.npz file, keyed by sample_id)")
 
     parser.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility")
@@ -39,8 +40,12 @@ if __name__ == "__main__":
 
     sampling_anndata = read_zarr_backed(args.anndata)
 
+    sampled_matrix = sp.load_npz(args.sampled_matrix)
+    sample_names = np.loadtxt(args.sample_names, dtype=str)
+
     offsets_by_sample = sample_jitter_offsets(
-        args.sampled_matrix,
+        sampled_matrix,
+        sample_names,
         seed=args.seed,
         jitter=args.jitter,
     )

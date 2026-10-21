@@ -16,14 +16,16 @@ process sample_epoch {
         tuple val(meta), val(epoch)
     
     output:
-        tuple val(meta), val(epoch), path(name)
+        tuple val(meta), val(epoch), path(name), path(sample_names)
     
     script:
     name = "${epoch}.sampled_examples_mat.npz"
+    sample_names = "${epoch}.sample_names.txt"
     """
     python3 $moduleDir/bin/sample_examples.py \
         ${meta.zarr_anndata} \
         ${params.sampling_dist} \
+        ${sample_names} \
         ${name} \
         --seed ${meta.seed}
     """
@@ -35,7 +37,7 @@ process jitter_offsets {
     tag "${epoch}"
 
     input:
-        tuple val(meta), val(epoch), path(examples)
+        tuple val(meta), val(epoch), path(examples), path(sample_names)
     
     output:
         tuple val(meta), val(epoch), path(name)
@@ -45,6 +47,7 @@ process jitter_offsets {
     """
     python3 $moduleDir/bin/jitter_offsets.py \
         ${examples} \
+        ${sample_names} \
         ${name} \
         --seed ${meta.seed} \
         --jitter ${params.jitter}
