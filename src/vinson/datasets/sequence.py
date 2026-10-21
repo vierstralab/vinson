@@ -21,9 +21,6 @@ class InferenceSequenceOnlyDataset(BaseSequenceDataset):
     `VinsonData.inference_from_bed`) instead of applied randomly. Requires `data.is_inference=True`.
     """
 
-    def _slice_data(self, i: int):
-        return self.data[i]
-
     def _parse_position(self, data_dict: dict) -> GenomicInterval:
         chrom = data_dict['chrom']
         summit = data_dict['summit']
@@ -113,7 +110,7 @@ class InferenceSequenceOnlyDataset(BaseSequenceDataset):
             "summit": data_slice['summit'],
             "sample_id": data_slice['sample_id'],
             "shift": shift,
-            "ohe_revcomp": revcomp
+            "revcomp": revcomp
         }
 
 
@@ -123,8 +120,7 @@ class InferenceSequenceEmbedDataset(InferenceSequenceOnlyDataset):
     `reverse_complement`/`jitter` constructor args — inference examples are deterministic, with
     `shift`/`revcomp` already fixed per-row in `data`.
     """
-
-    def __init__(self, data, fasta_file, genotype_file = None, seqlen=1344, **kwargs):
+    def __init__(self, data: VinsonData, fasta_file, genotype_file = None, seqlen=1344, **kwargs):
         super().__init__(data, fasta_file, genotype_file, seqlen=seqlen, **kwargs)
 
     def __getitem__(self, i):
@@ -134,22 +130,9 @@ class InferenceSequenceEmbedDataset(InferenceSequenceOnlyDataset):
         dict
             'ohe_seq', 'chrom', 'summit', 'sample_id', 'shift', 'revcomp', 'embed' (cell-type embedding).
         """
-        self._init_fileread()
-        data = self.data[i]
-        interval, shift = self._parse_position(data)
-        ohe_seq, revcomp = self._parse_sequence(data, interval)
-        embed = self.get_embedding_vec(data['sample_id'])
-
-        return {
-                "ohe_seq": ohe_seq.copy(),
-                "chrom": data['chrom'],
-                "summit": data['summit'],
-                "sample_id": data['sample_id'],
-                "shift": shift,
-                "revcomp": revcomp,
-                "embed": embed,
-
-            }
+        data = super().__getitem__(i)
+        data['embed'], _ = self.get_embedding_vec(data['sample_id'])
+        return data
 
 
 class SequenceOnlyDataset(InferenceSequenceOnlyDataset):
@@ -319,5 +302,5 @@ class SequenceEmbedDataset(SequenceOnlyDataset):
             - 'sample_id': str, sample identifier
         """
         data = super().__getitem__(i)
-        data['embed'] = self.get_embedding_vec(data['sample_id'])
+        data['embed'], _ = self.get_embedding_vec(data['sample_id'])
         return data

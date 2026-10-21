@@ -3,27 +3,6 @@ import numba
 import numpy as np
 
 
-def sample_jitter_offsets(class_mat, obs_names, jitter, seed=0):
-    """
-    For each sample (row of class_mat), sample a random position offset in [-jitter, jitter]
-    for every DHS selected as a training example for that sample.
-
-    Returns
-    -------
-    dict[str, np.ndarray]
-        Mapping from sample_id to an (n_selected, 2) array of [dhs_index, offset].
-    """
-    rng = np.random.default_rng(seed=seed)
-    offsets_by_sample = {}
-    for i, sample_id in enumerate(obs_names):
-        dhs_idx = class_mat.indices[class_mat.indptr[i]:class_mat.indptr[i + 1]]
-        if dhs_idx.size == 0:
-            continue
-        offsets = rng.integers(-jitter, jitter + 1, size=dhs_idx.size)
-        offsets_by_sample[str(sample_id)] = np.stack([dhs_idx, offsets], axis=1)
-    return offsets_by_sample
-
-
 def delta_ball_exclusion_sampling(
         distance_matrix,
         delta_radius,

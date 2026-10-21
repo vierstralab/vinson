@@ -6,13 +6,11 @@ from vinson.utils.data_formatting import VariantVinsonData
 from vinson.utils.sequence_utils import one_hot_encode
 
 from .base import BaseSequenceDataset
-from .sequence import InferenceSequenceEmbedDataset
 
 from vinson.datasets.utils import PhasedSource, UnphasedSource, TabixConnector
 from vinson.utils.sequence_utils import one_hot_encode
 from vinson.utils.helpers import detect_genotype_format
 
-import warnings
 
 from vinson.utils.helpers import replace_at
 import logging 
@@ -48,13 +46,15 @@ class InferenceVariantEmbedDataset(BaseSequenceDataset):
             fasta_file: str,
             genotype_file: str = None,
             seqlen=1344,
-            strict_ref_check=True
+            strict_ref_check=True,
+            **kwargs
         ):
         super().__init__(
             data=data,
             fasta_file=fasta_file,
             genotype_file=genotype_file,
-            seqlen=seqlen
+            seqlen=seqlen,
+            **kwargs
         )
         self.strict_ref_check = strict_ref_check
 
@@ -233,13 +233,13 @@ class VariantEmbedDataset(InferenceVariantEmbedDataset):
         else:
             self.source.random_phase = random_phase
 
-        assert not data.is_inference, f'Sequency only dataset requires targets to be present in VariantVinsonData data.is_inference={data.is_inference}. Use infererence dataset instead.'
+        assert not data.is_inference, f'Sequence dataset requires targets to be present in VariantVinsonData data.is_inference={data.is_inference}. Use infererence dataset instead.'
 
     def get_sample_sequence(
             self,
             interval: GenomicInterval,
             indiv_id: str,
-            anchor_variant: VariantInterval=None,
+            anchor_variant: VariantInterval,
         ):
         """
         Returns:
@@ -249,7 +249,7 @@ class VariantEmbedDataset(InferenceVariantEmbedDataset):
 
         indiv_id = self._normalize_indiv_id(indiv_id)
 
-        if indiv_id == "":
+        if indiv_id == "": # FIXME
             return str(seq), str(seq)
     
         ref_edits, alt_edits = self.source.get_edits(interval, indiv_id, anchor_variant)
@@ -311,38 +311,23 @@ class VariantEmbedDataset(InferenceVariantEmbedDataset):
         lfc = data_slice['logit_es']
         sample_id = data_slice['sample_id']
 
-        variant = GenomicInterval(chrom, pos - 1, pos)
-        interval = variant.resize(self.seqlen)
+        anchor_variant = GenomicInterval(chrom, pos - 1, pos)
+        interval = anchor_variant.resize(self.seqlen)
 
         if self.jitter > 0:
             shift = np.random.randint(-self.jitter, self.jitter + 1)
             interval.shift(shift, inplace=True)
-
-        rel_pos = pos - interval.start
         
         # Inject genotypes if genotype files provided
         if self.include_genotypes:
             indiv_id = data_slice['indiv_id']
-            anchor_variant = VariantInterval(
-                chrom=chrom,
-                start=pos-1,
-                end=pos,
-                ref=ref,
-                alt=alt,
-            )
         else:
-            anchor_variant = None
+            indiv_id = ""
 
         dna_seq_ref, dna_seq_alt = self.get_sample_sequence(
             interval, 
             indiv_id,
             anchor_variant
-        )
-
-        if len(dna_seq_ref) != self.seqlen or len(dna_seq_alt) != self.seqlen:
-            logger.warning(
-            f"[DEBUG WARNING] idx={i}, chrom={chrom}, pos={pos}, "
-            f"ref_seq length={len(dna_seq_ref)} alt_len expected seqlen={len(dna_seq_alt)}, relpos {rel_pos}, alt {alt}, ref {ref}"
         )
 
         try:
@@ -352,7 +337,7 @@ class VariantEmbedDataset(InferenceVariantEmbedDataset):
             )
         except ValueError as e:
             logger.error(
-                f"Error converting DNA to one-hot encoding ({chrom}:{variant.start} -- {sample_id})"
+                f"Error converting DNA to one-hot encoding ({anchor_variant.to_str()} -- {sample_id})"
             )
             raise e
 
@@ -378,10 +363,10 @@ class VariantEmbedDataset(InferenceVariantEmbedDataset):
             "ohe_seq_ref": ohe_seq_ref.copy(),
             "ohe_seq_alt": ohe_seq_alt.copy(),
             "embed": embed.copy(),
-            "ref_counts": np.float32(ref_counts),
-            "total_counts": np.float32(total_counts),
-            "bad_score": np.float32(bad),
-            "lfc": lfc * np.log(2),
+            "ref_counts": ref_counts,
+            "total_counts": total_counts,
+            "bad_score": bad,
+            "lfc": lfc, # CHANGE LFC to be log2 IN the model.py
             "sample_id": sample_id,
             "weight": 1.0,
             "chrom": chrom,

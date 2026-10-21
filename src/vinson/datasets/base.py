@@ -46,7 +46,6 @@ class BaseSequenceDataset(Dataset):
     genotype_extr : TabixExtractor
         Genotype data extractor, if provided.
     """
-    is_training = False
 
     def __init__(
         self,
@@ -137,6 +136,9 @@ class BaseSequenceDataset(Dataset):
             ohe_seq = np.flip(ohe_seq, [0, 1])
 
         return ohe_seq, revcomp
+
+    def _slice_data(self, i: int):
+        return self.data[i]
 
     def __getitem__(self, i):
         """
