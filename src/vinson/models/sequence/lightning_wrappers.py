@@ -14,7 +14,7 @@ import torch
 
 from torch.nn import BCEWithLogitsLoss
 import torch.nn as nn
-from vinson.optim.loss import PoissonNLLLoss
+from vinson.optim.loss import PoissonNLLLoss, NegativeBinomialLoss
 from vinson.utils.optim import configure_optimizer
 
 from vinson.models.shared import MLPBlock, initialize_weights
@@ -27,10 +27,10 @@ class AbstractSequenceModel(L.LightningModule):
         trunk_model: torch.nn.Module,
         head_model: MLPBlock,
         n_tasks=1,
-        lr_scheduler: Optional[str]=None,
-        optimizer_kwargs: Optional[Dict[str, Any]]=None,
-        lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
-        init_weights: bool=True,
+        lr_scheduler: Optional[str] = None,
+        optimizer_kwargs: Optional[Dict[str, Any]] = None,
+        lr_scheduler_kwargs: Optional[Dict[str, Any]] = None,
+        init_weights: bool = True,
     ) -> None:
         super().__init__()
         self.n_tasks = n_tasks
@@ -47,7 +47,7 @@ class AbstractSequenceModel(L.LightningModule):
 
         self.train_metrics = MetricCollection({}, prefix="train_")
         self.valid_metrics = MetricCollection({}, prefix="val_")
-        
+
         if init_weights:
             self.trunk_model.apply(initialize_weights)
             self.head_model.apply(initialize_weights)
@@ -79,11 +79,11 @@ class SequenceOnlyModel(AbstractSequenceModel):
         regression: bool = False,
         log_output: bool = False,
         n_tasks: int = 1,
-        lr_scheduler: Optional[str]=None,
-        optimizer_kwargs: Optional[Dict[str, Any]]=None,
-        lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
+        lr_scheduler: Optional[str] = None,
+        optimizer_kwargs: Optional[Dict[str, Any]] = None,
+        lr_scheduler_kwargs: Optional[Dict[str, Any]] = None,
         save_hyperparameters: bool = True,
-        init_weights: bool=True,
+        init_weights: bool = True,
     ) -> None:
         super().__init__(
             trunk_model=trunk_model,
@@ -182,12 +182,16 @@ class SequenceOnlyModel(AbstractSequenceModel):
 
         y = self._forward_from_batch(batch)
         if self.regression:
-            return self._run_step_regression(
+            return (
+                self._run_step_regression(
+                    y,
+                    read_depth=batch["read_depth"],
+                    bg=batch["bg"],
+                    density=batch["density"],
+                ),
+                weight,
                 y,
-                read_depth=batch["read_depth"],
-                bg=batch["bg"],
-                density=batch["density"],
-            ), weight, y
+            )
         else:
             return self._run_step_classification(y, batch["class"] == 1), weight
 
@@ -220,15 +224,15 @@ class SequenceOnlyModel(AbstractSequenceModel):
                 y_hat = torch.log(y_hat + 1e-6)
 
             y = torch.log(y + 1e-6).squeeze(-1)
-            self.valid_metrics.update(y_hat, y) # correlation of log counts
+            self.valid_metrics.update(y_hat, y)  # correlation of log counts
         else:
             self.valid_metrics.update(torch.sigmoid(y_hat), y.int())
 
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
 
         return loss
-    
-    def predict_step(self, batch, batch_idx: int=None) -> torch.Tensor:
+
+    def predict_step(self, batch, batch_idx: int = None) -> torch.Tensor:
         return self._forward_from_batch(batch)
 
     def on_validation_epoch_end(self):
@@ -241,8 +245,8 @@ class SequenceOnlyModel(AbstractSequenceModel):
                 # Log each task separately (Need to check which sample perform better)
                 for j in range(v.numel()):
                     out[f"{k}_task{j:02d}"] = v[j]
-                    
-                out[k] = v.mean() # log mean over tasks for multi-task
+
+                out[k] = v.mean()  # log mean over tasks for multi-task
             else:
                 out[k] = v.item()
 
@@ -254,15 +258,15 @@ class SequenceEmbedModel(SequenceOnlyModel):
     """Sequence with embeddings model"""
 
     def __init__(
-            self,
-            trunk_model: nn.Module,
-            head_model: MLPBlock,
-            lr_scheduler: Optional[str]=None,
-            optimizer_kwargs: Optional[Dict[str, Any]]=None,
-            lr_scheduler_kwargs: Optional[Dict[str, Any]]=None,
-            init_weights: bool=True,
-            **kwargs
-        ):
+        self,
+        trunk_model: nn.Module,
+        head_model: MLPBlock,
+        lr_scheduler: Optional[str] = None,
+        optimizer_kwargs: Optional[Dict[str, Any]] = None,
+        lr_scheduler_kwargs: Optional[Dict[str, Any]] = None,
+        init_weights: bool = True,
+        **kwargs,
+    ):
         super().__init__(
             trunk_model=trunk_model,
             head_model=head_model,
@@ -271,8 +275,9 @@ class SequenceEmbedModel(SequenceOnlyModel):
             lr_scheduler_kwargs=lr_scheduler_kwargs,
             init_weights=init_weights,
             save_hyperparameters=False,
-            **kwargs
+            **kwargs,
         )
+
         self.save_hyperparameters(ignore=["trunk_model", "head_model"])
 
     def forward(self, seq: torch.Tensor, embedding: torch.Tensor) -> torch.Tensor:
@@ -293,3 +298,102 @@ class SequenceEmbedModel(SequenceOnlyModel):
 
     def validation_step(self, batch: Dict[str, Any], batch_idx: int) -> torch.Tensor:
         return super().validation_step(batch, batch_idx)
+
+
+class SequenceEmbedProfileModel(SequenceEmbedModel):
+    """Extension of sequence-by-embedding model to predict
+    per-nucleotide cleavage deviations."""
+
+    def __init__(
+        self,
+        trunk_model: nn.Module,
+        head_model: MLPBlock,
+        lr_scheduler: Optional[str] = None,
+        optimizer_kwargs: Optional[Dict[str, Any]] = None,
+        lr_scheduler_kwargs: Optional[Dict[str, Any]] = None,
+        init_weights: bool = True,
+        n_lfc_outputs=151,
+        **kwargs,
+    ):
+        super().__init__(
+            trunk_model=trunk_model,
+            head_model=head_model,
+            lr_scheduler=lr_scheduler,
+            optimizer_kwargs=optimizer_kwargs,
+            lr_scheduler_kwargs=lr_scheduler_kwargs,
+            init_weights=init_weights,
+            save_hyperparameters=False,
+            **kwargs,
+        )
+
+        self.criterion = NegativeBinomialLoss(reduction=None)
+
+        self.final_density = self.final
+
+        self.n_lfc_outputs = n_lfc_outputs
+        self.final_lfc = torch.nn.Linear(self.head_model.output_dim, self.n_lfc_outputs)
+
+        self.save_hyperparameters(ignore=["trunk_model", "head_model"])
+
+    def forward(self, seq, embedding):
+        features = self.trunk_model(seq, embedding)
+        x = self.head_model(features)
+
+        # density head
+        density = self.final_density(x)
+        density = torch.nn.Softplus()(density)
+
+        # lfc head -- no activation (predicting in logit space)
+        lfc = self.final_lfc(x)
+
+        return density, lfc
+
+    def _forward_from_batch(self, batch):
+        X_seq = batch["ohe_seq"]
+        X_embed = batch["embed"]
+        y_density, y_lfc = self(X_seq, X_embed)
+        return y_density.squeeze(-1), y_lfc
+
+    def step(self, batch):
+
+        y_density, y_lfc = self.forward(batch)
+
+        weight = batch["weight"]
+
+        # read_depth = batch["read_depth"]
+        # bg = batch["bg"]
+        density = batch["density"]  # full density (not bg-corrected)
+
+        obs = batch["obs"]  # true observed counts
+        exp = batch["exp"]  # true expected counts
+        lfc = torch.log(obs + 1, exp + 1)
+
+        # parameters for the negative binomial distributions
+        mu_params = batch["mu_params"]
+        r_params = batch["r_params"]
+
+        # predicted expected counts (scale true expected counts by
+        # predicted LFC) with further scaling by the density output head
+        # to force model to also remember the normalized read depth 
+        # per peak
+        exp_hat = torch.exp(y_lfc) * exp * (y_density / density)
+
+        # negative binomial loss
+        loss = self.criterion(obs, exp_hat, mu_params, r_params)
+
+        if loss.ndim == 1:
+            loss = loss * weight
+        else:
+            loss = loss * weight[:, None]
+        loss = loss.mean()
+
+        return loss, y_density, y_lfc, density, lfc
+
+    def validation_step(self, batch, batch_idx):
+        loss, y_density_, y_lfc, density, lfc = self.step(batch, batch_idx)
+
+        # TODO: report validation metrics
+
+        self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+
+        return loss
