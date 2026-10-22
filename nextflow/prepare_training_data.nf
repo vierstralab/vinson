@@ -10,6 +10,7 @@ params.jitter = 40
 process sample_epoch {
     conda "${params.conda}"
     tag "${epoch}"
+    publishDir "${params.outdir}/raw_matices"
     cpus 10
 
     input:
