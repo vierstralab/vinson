@@ -19,7 +19,7 @@ process sample_epoch {
         tuple val(meta), val(epoch), path(sampled_examples), path(sample_names)
     
     script:
-    sampled_examples = "${epoch}.sampled_examples_mat.npz"
+    sampled_examples = "matrix.${epoch}.class.npz"
     sample_names = "${epoch}.sample_names.txt"
     """
     python3 $moduleDir/bin/sample_examples.py \
@@ -65,7 +65,7 @@ process assemble_train_anndata {
         tuple val(prefix), path(name)
 
     script:
-    name = "${prefix}.anndata.zarr"
+    name = "${prefix}.anndata.h5ad"
     """
     python3 $moduleDir/bin/add_matrices_to_anndata.py \
         ${zarr_anndata} \
@@ -80,11 +80,12 @@ workflow {
         | splitCsv(header:true, sep:'\t')
         | map(it -> tuple(it, it.epoch))
 
-    input_data
-        | sample_epoch
+    out = input_data 
+        | sample_epoch // meta, epoch, class matrix, sample_names
         | jitter_offsets
         | map(it -> tuple(it[1], it[2], it[0].zarr_anndata)) //epoch offsets, anndata
         | extractDataWithOffsets
+        | mix(sample_epoch.out.map(it -> tuple('class', it[2])))
         | combine(input_data)
         | map(it -> tuple(it[2].zarr_anndata, "train_dhs", it[1])) // zarr_anndata, prefix, matrix
         | unique()
