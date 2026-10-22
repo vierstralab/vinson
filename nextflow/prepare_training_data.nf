@@ -86,7 +86,7 @@ workflow {
         | map(it -> tuple(it[1], it[2], it[0].zarr_anndata)) //epoch offsets, anndata
         | extractDataWithOffsets
         | combine(input_data)
-        | map(it -> tuple(it[2].zarr_anndata, it[2].prefix, it[1])) // zarr_anndata, prefix, matrix
+        | map(it -> tuple(it[2].zarr_anndata, "train_dhs", it[1])) // zarr_anndata, prefix, matrix
         | unique()
         | groupTuple(by: [0, 1])
         | assemble_train_anndata
