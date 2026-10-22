@@ -38,7 +38,8 @@ if __name__ == "__main__":
     parser.add_argument("--jitter", type=int, default=200, help="If >0, sample a random position offset in [-jitter, jitter] for each selected example")
     args = parser.parse_args()
 
-    sampled_matrix = sp.load_npz(args.sampled_matrix)
+    # stored as dhs x samples; transpose back to samples x dhs for the per-sample row logic below
+    sampled_matrix = sp.load_npz(args.sampled_matrix).T.tocsr()
     sample_names = np.loadtxt(args.sample_names, dtype=str)
 
     offsets_by_sample = sample_jitter_offsets(

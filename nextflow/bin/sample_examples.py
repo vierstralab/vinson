@@ -83,5 +83,6 @@ if __name__ == "__main__":
     )
 
     np.savetxt(args.sample_names, sampling_anndata.obs_names, fmt='%s')
-    sp.save_npz(args.output, class_mat, compressed=True)
+    # saved as dhs x samples, matching nf-index's on-disk matrix convention
+    sp.save_npz(args.output, class_mat.T, compressed=True)
 
