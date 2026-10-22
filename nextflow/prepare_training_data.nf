@@ -54,33 +54,39 @@ process jitter_offsets {
     """
 }
 
+process assemble_train_anndata {
+    conda "${params.conda}"
+    publishDir "${params.outdir}/train_data"
 
+    input:
+        tuple val(zarr_anndata), val(prefix), path(matrices)
 
-// process save_epochs_data {
-//     conda "${params.conda}"
+    output:
+        tuple val(prefix), path(name)
 
-//     input:
-//         tuple val(meta), val(epoch)
-
-//     output:
-//         path name
-
-//     script:
-
-// }
-
-// process assemble_train_anndata {
-
-// }
+    script:
+    name = "${prefix}.anndata.zarr"
+    """
+    python3 $moduleDir/bin/add_matrices_to_anndata.py \
+        ${zarr_anndata} \
+        ${name} \
+        ${matrices} \
+    """
+}
 
 
 workflow {
-    Channel.fromPath(params.epochs_meta)
+    input_data = Channel.fromPath(params.epochs_meta)
         | splitCsv(header:true, sep:'\t')
         | map(it -> tuple(it, it.epoch))
+
+    input_data
         | sample_epoch
         | jitter_offsets
         | map(it -> tuple(it[1], it[2], it[0].zarr_anndata)) //epoch offsets, anndata
         | extractDataWithOffsets
-
+        | combine(input_data)
+        | map(it -> tuple(it[2].zarr_anndata, it[2].prefix, it[1])) // zarr_anndata, prefix, matrix
+        | groupTuple(by: [0, 1])
+        | assemble_train_anndata
 }
