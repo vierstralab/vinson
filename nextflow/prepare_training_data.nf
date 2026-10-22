@@ -87,6 +87,7 @@ workflow {
         | extractDataWithOffsets
         | combine(input_data)
         | map(it -> tuple(it[2].zarr_anndata, it[2].prefix, it[1])) // zarr_anndata, prefix, matrix
+        | unique()
         | groupTuple(by: [0, 1])
         | assemble_train_anndata
 }
