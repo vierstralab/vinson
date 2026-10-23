@@ -1,4 +1,4 @@
-import numpy as np
+yimport numpy as np
 
 from genome_tools import GenomicInterval, VariantInterval
 from vinson.utils.data_formatting import VariantVinsonData
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class InferenceVariantEmbedDataset(BaseSequenceDataset):
     """
     Prediction-only counterpart of `VariantEmbedDataset`: doesn't parse/require target fields
-    (`ref_counts`/`total_counts`/...), and `shift`/`revcomp` are read per-example from `data` (e.g. as
+    (`ref_counts`/`total_counts`/...), and `shift`/`revcomp` are read per-example from `data` (e.g. asso whi
     built by `VariantVinsonData.inference_from_variant`) instead of applied randomly. Requires
     `data.is_inference=True`.
 
@@ -272,3 +272,62 @@ class VariantEmbedDataset(InferenceVariantEmbedDataset):
             }
         )
         return result
+
+
+class VariantEmbedDensityDataset(VariantEmbedDataset):
+    """
+    `VariantEmbedDataset` with DNase density targets, for training `VariantEmbedDensityModel`.
+
+    Returns everything `VariantEmbedDataset` does (ref/alt sequences, embedding, allelic
+    imbalance targets) plus the DNase density at the center of the window, with the
+    background and read depth needed to convert density to counts in the model's loss.
+
+    Expects pre-jittered data: density is measured at the center of the stored window, so
+    shifting the window here would misalign the sequence and its target. `jitter` must be 0.
+
+    Parameters
+    ----------
+    *args, **kwargs
+        Passed to `VariantEmbedDataset` (`data`, `fasta_file`, `genotype_file`,
+        `flip_alleles`, `reverse_complement`, `random_phase`, `noise`, `seqlen`,
+        `strict_ref_check`). `data` must include `density`, `background` and `read_depth`.
+    clip_density : float, default 20
+        Maximum value to clip density.
+    min_bg : float, default 0.1
+        Minimum value to clip background.
+
+    Raises
+    ------
+    ValueError
+        If `jitter` is nonzero.
+
+    Notes
+    -----
+    Density is not swapped when `flip_alleles` swaps ref and alt: the model predicts density
+    as the mean of the ref and alt predictions, so the target is the same either way.
+
+    Returns (from `__getitem__`)
+    ----------------------------
+    dict
+        Keys from `VariantEmbedDataset.__getitem__`, plus:
+            - 'density': float, clipped DNase density at the window center
+            - 'bg': float, clipped background
+            - 'read_depth': float, sample read depth
+    """
+    def __init__(self, *args, clip_density=20, min_bg=0.1, **kwargs):
+        if kwargs.get("jitter", 0):
+            raise ValueError("Data is pre-jittered; set jitter=0")
+        super().__init__(*args, **kwargs)
+        self.clip_density = clip_density
+        self.min_bg = min_bg
+
+    def __getitem__(self, i):
+        result = super().__getitem__(i)
+        d = self._slice_data(i)
+        result.update({
+            "density": np.float32(np.clip(d["density"], None, self.clip_density)),
+            "bg": np.float32(np.clip(d["background"], self.min_bg, None)),
+            "read_depth": np.float32(d["read_depth"]),
+        })
+        return result
+
