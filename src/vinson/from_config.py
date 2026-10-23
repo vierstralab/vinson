@@ -11,7 +11,7 @@ from vinson.models.sequence.lightning_wrappers import SequenceEmbedModel, Sequen
 from vinson.models.sequence.basset import BassetTrunk, BassetTrunkEmbed
 from vinson.models.sequence.legnet import LegNetTrunk, LegNetTrunkEmbed
 
-from vinson.models.variant.lightning_wrappers import VariantEmbedModel
+from vinson.models.variant.lightning_wrappers import VariantEmbedModel, VariantEmbedDensityModel
 
 from vinson.models.cell_classifier import CellClassifierModel
 
@@ -19,7 +19,9 @@ from vinson.models.shared import MLPBlock
 
 
 from vinson.datamodules.sequence import SeqEmbedDataModule
-from vinson.datamodules.variant import SeqEmbedVariantDataModule
+from vinson.datamodules.variant import SeqEmbedVariantDataModule, SeqEmbedVariantDensityDataModule
+
+
 
 
 MODEL_FACTORY_REGISTRY = {
@@ -31,6 +33,7 @@ MODEL_FACTORY_REGISTRY = {
 
     "basset_variant_embed": BassetTrunkEmbed,
     "legnet_variant_embed": LegNetTrunkEmbed,
+
 }
 
 
@@ -43,6 +46,8 @@ LIGHTNING_MODEL_REGISTRY = {
 
     "basset_variant_embed": VariantEmbedModel,
     "legnet_variant_embed": VariantEmbedModel,
+
+    "legnet_variant_density_embed": VariantEmbedDensityModel,
 }
 
 
@@ -108,7 +113,7 @@ def _sequence_model_from_config(config):
     model_type = config["model_type"]
     BaseModelCls = MODEL_FACTORY_REGISTRY[model_type]
 
-    if model_type in ("basset_embed", "legnet_embed", "basset_variant_embed", "legnet_variant_embed"):
+    if model_type in ("basset_embed", "legnet_embed", "basset_variant_embed", "legnet_variant_embed",'legnet_variant_density_embed'):
         cell_embed_config = config['model_arch']['cell_embed']
 
         n_independent_embeds = config['model_arch'].get('n_independent_embeds', 1)
@@ -189,7 +194,7 @@ def dhs_model_from_config(config, checkpoint_path=None, device='cpu'):
 def variant_model_from_config(config, checkpoint_path=None, *, sequence_model_checkpoint=None, 
                                device='cpu'):
     model_type = config["model_type"]
-    assert model_type in ("basset_variant_embed", "legnet_variant_embed"), f"Model type {model_type} not supported for variant models. Available types: 'basset_variant_embed', 'legnet_variant_embed'"
+    assert model_type in ("basset_variant_embed", "legnet_variant_embed",'legnet_variant_density_embed'), f"Model type {model_type} not supported for variant models. Available types: 'basset_variant_embed', 'legnet_variant_embed'"
 
     head = MLPBlock(
         **config['model_arch']['head']
@@ -296,6 +301,16 @@ def datamodule_from_config(
             valid_dataset_kwargs=valid_dataset_kwargs,
             **dataloader_kwargs,
         )
+    elif config["model_type"] == "legnet_variant_density_embed":
+        return SeqEmbedVariantDensityDataModule(
+            anndata_file=anndata_file,
+            fasta_file=fasta_file,
+            genotype_file=genotype_file,
+            train_dataset_kwargs=train_dataset_kwargs,
+            valid_dataset_kwargs=valid_dataset_kwargs,
+            **dataloader_kwargs,
+        )
+        
     else:
         return SeqEmbedDataModule(
             anndata_file=anndata_file,
