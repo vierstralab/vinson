@@ -2,6 +2,10 @@ import os
 import re
 import sys
 
+import dask.array as da
+import numpy as np
+import scipy.sparse as sp
+
 from genome_tools.data.anndata import read_zarr_backed, add_matrices_to_anndata
 
 # 'matrix.<tag>.<matrix_type>.npy|npz' -> layer key '<matrix_type>.<tag>'.
@@ -26,19 +30,26 @@ def get_matrices_mapping_by_tag(matrices, matrices_types):
 
 
 def main(adata, matrices):
-    matrices_types = ['density', 'mean_bg_agg_cutcounts', 'class'] + list(adata.layers.keys())
+    matrices_types = ['density', 'mean_bg_agg_cutcounts', 'class', 'offsets'] + list(adata.layers.keys())
     matrices_mapping, epochs = get_matrices_mapping_by_tag(matrices, matrices_types)
 
     add_matrices_to_anndata(adata, matrices_mapping)
 
+    # downstream training code (vinson.utils.data_formatting) calls .tocoo() on these
+    # layers unconditionally, so they must be sparse regardless of the generic
+    # sufficiently-sparse heuristic (can leave them dense on smaller datasets).
+    for layer_name in matrices_mapping:
+        if not sp.issparse(adata.layers[layer_name]):
+            adata.layers[layer_name] = sp.csr_matrix(adata.layers[layer_name])
+
     existing_epochs = list(adata.uns.get('epoch_names', []))
     adata.uns['epoch_names'] = existing_epochs + [e for e in epochs if e not in existing_epochs]
 
-    adata.uns['n_training_examples'] = sum(
-        adata.layers[f"class.{epoch}"].getnnz()
-        for epoch in adata.uns['epoch_names']
-        if f"class.{epoch}" in adata.layers
-    )
+    # only DHS/sequence training data has a 'class' layer; variants rely on obsm/varm
+    # split_data instead, so leave n_training_examples untouched when there's no class layer.
+    class_epochs = [e for e in adata.uns['epoch_names'] if f"class.{e}" in adata.layers]
+    if class_epochs:
+        adata.uns['n_training_examples'] = sum(adata.layers[f"class.{e}"].getnnz() for e in class_epochs)
 
     return adata
 
