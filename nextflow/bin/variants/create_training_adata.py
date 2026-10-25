@@ -52,9 +52,9 @@ def build_variant_training_adata(variants, epochs, reference_anndata, val_chroms
 
     # the datamodule only ever requests sample_split == "train"; variants are held out
     # for validation, not samples, so split_data on the var axis is what actually matters.
-    adata.obsm["split_data"] = np.full(adata.n_obs, "train", dtype="U5") # FIXME
+    adata.obsm["split_data"] = np.full(adata.n_obs, "train")
     is_val = adata.var["#chr"].isin(val_chroms).to_numpy()
-    adata.varm["split_data"] = np.where(is_val, "val", "train").astype("U5")
+    adata.varm["split_data"] = np.where(is_val, "val", "train")
 
     adata.uns["epoch_names"] = list(epochs)
 

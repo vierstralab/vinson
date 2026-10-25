@@ -3,7 +3,6 @@ import re
 import sys
 
 import dask.array as da
-import numpy as np
 import scipy.sparse as sp
 
 from genome_tools.data.anndata import read_zarr_backed, add_matrices_to_anndata
@@ -59,4 +58,15 @@ if __name__ == '__main__':
     output = sys.argv[2]
     matrices = sys.argv[3:]
 
-    main(adata_obj, matrices).write_h5ad(output)
+    adata_obj = main(adata_obj, matrices)
+
+    # read_zarr_backed loads varm lazily as dask arrays regardless of their dtype;
+    # h5ad can't write those (or object-dtype string arrays), so materialize first.
+    for key, value in list(adata_obj.varm.items()):
+        if isinstance(value, da.Array):
+            value = value.compute()
+        if getattr(value, 'dtype', None) == object:
+            value = value.astype(str)
+        adata_obj.varm[key] = value
+
+    adata_obj.write_h5ad(output)
