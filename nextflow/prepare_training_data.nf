@@ -160,11 +160,11 @@ workflow fromVariants {
 
     matrices = jittered
         | map(it -> it[3]) // offsets_matrix.npz
-        | mix(density_matrices)
-        | collect(sort: true, flat: true) // [offsets_matrix.npz, density/bg matrices, ...] once all epochs are done
+        | mix(density_matrices) // bare matrix files, emitted individually (not pre-collected)
 
     assembled
         | map(it -> tuple(it[1], "train_variant")) // zarr_anndata, prefix
-        | combine(matrices) // zarr_anndata, prefix, [all matrix files]
+        | combine(matrices) // zarr_anndata, prefix, matrix (cross join: 1 x N -> N single-matrix tuples)
+        | groupTuple(by: [0, 1]) // zarr_anndata, prefix, [all matrix files]
         | assemble_train_anndata // reused: merges everything in and writes the final h5ad
 }
