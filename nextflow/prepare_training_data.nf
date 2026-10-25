@@ -137,10 +137,10 @@ workflow fromVariants {
         | splitCsv(header:true, sep:'\t')
         | map(it -> tuple(it, it.epoch)) // epoch, meta (meta.seed needed by jitter_offsets)
 
-    // all epochs reuse the same variants_parquet + reference_anndata (only the jitter
+    // all epochs reuse the same variants_parquet + zarr_anndata (only the jitter
     // seed differs), so build the base anndata + class matrix once for every epoch
     assembled = input_data
-        | map(it -> tuple(it[1], file(it[0].variants_parquet), it[0].reference_anndata))
+        | map(it -> tuple(it[1], file(it[0].variants_parquet), it[0].zarr_anndata))
         | groupTuple(by: [1, 2]) // [epochs], variants_parquet, reference_anndata
         | assemble_variant_train_anndata // epochs, assembled_anndata, class_matrix, sample_names
 
