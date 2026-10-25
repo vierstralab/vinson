@@ -10,23 +10,23 @@ from genome_tools.data.anndata import read_zarr_backed
 LAYER_COLUMNS = ["ref_counts", "total_counts", "BAD", "logit_es"]
 
 
-def classify(variants):
-    passed = (variants["total_counts"] > 20) & (variants["ref_counts"] > 0) & (variants["alt_counts"] > 0)
-    is_positive = passed & (variants["FDR_sample"] < 0.1) & (variants["logit_es"].abs() < 6)
-    is_negative = passed & (variants["FDR_sample"] > 0.5)
-    return variants[is_positive | is_negative].copy()
-
-
 def build_variant_training_adata(variants, epochs, reference_anndata, val_chroms=("chr9", "chr21")):
     """
     Same classified variant set is replicated under every epoch's layer suffix: only
     the jitter offsets differ per epoch (added later, by jitter_offsets), not the
     underlying variant calls. The matrices are small - duplicating them is cheap.
     """
-    variants = classify(variants)
     variants["variant_id"] = (
         variants["#chr"] + ":" + variants["end"].astype(str) + ":" + variants["ref"] + ":" + variants["alt"]
     )
+    variants['total_counts'] = variants.eval('ref_counts + alt_counts')
+    passed = (variants["total_counts"] > 20) & (variants["ref_counts"] > 0) & (variants["alt_counts"] > 0)
+    is_positive = passed & (variants["FDR_sample"] < 0.1) & (variants["logit_es"].abs() < 6)
+    is_negative = passed & (variants["FDR_sample"] > 0.5)
+    variants["class"] = np.where(is_positive, 1, -1)
+    variants = variants[is_positive | is_negative].copy()
+
+
 
     reference_anndata.obs_names = reference_anndata.obs_names.astype(str)
     ref_slice = reference_anndata[reference_anndata.obs_names.isin(variants["sample_id"])].copy()
@@ -67,7 +67,7 @@ def build_variant_training_adata(variants, epochs, reference_anndata, val_chroms
     # on-disk convention as nf-index's matrices, so the existing jitter_offsets
     # process can be reused unmodified (once per epoch, with a different seed).
     class_matrix = sp.coo_matrix(
-        (np.ones(len(variants)), (row_idx, col_idx)), shape=adata.shape
+        (variants["class"].to_numpy(dtype=np.float32), (row_idx, col_idx)), shape=adata.shape
     ).tocsr().T
 
     return adata, class_matrix
