@@ -11,18 +11,17 @@ LAYER_COLUMNS = ["ref_counts", "total_counts", "BAD", "logit_es"]
 
 
 def classify(variants):
-    """Keep only variants confidently called positive (real CAV) or negative; class is implicit in inclusion."""
     passed = (variants["total_counts"] > 20) & (variants["ref_counts"] > 0) & (variants["alt_counts"] > 0)
     is_positive = passed & (variants["FDR_sample"] < 0.1) & (variants["logit_es"].abs() < 6)
     is_negative = passed & (variants["FDR_sample"] > 0.5)
     return variants[is_positive | is_negative].copy()
 
 
-def build_variant_training_adata(variants, epochs, reference_anndata, val_fraction=0.1, seed=0):
+def build_variant_training_adata(variants, epochs, reference_anndata, val_chroms=("chr9", "chr21")):
     """
     Same classified variant set is replicated under every epoch's layer suffix: only
     the jitter offsets differ per epoch (added later, by jitter_offsets), not the
-    underlying variant calls. The matrices are small, so duplicating them is cheap.
+    underlying variant calls. The matrices are small - duplicating them is cheap.
     """
     variants = classify(variants)
     variants["variant_id"] = (
@@ -59,8 +58,7 @@ def build_variant_training_adata(variants, epochs, reference_anndata, val_fracti
     # the datamodule only ever requests sample_split == "train"; variants are held out
     # for validation, not samples, so split_data on the var axis is what actually matters.
     adata.obsm["split_data"] = np.full(adata.n_obs, "train", dtype="U5")
-    rng = np.random.default_rng(seed)
-    is_val = rng.random(adata.n_vars) < val_fraction
+    is_val = adata.var["#chr"].isin(val_chroms).to_numpy()
     adata.varm["split_data"] = np.where(is_val, "val", "train").astype("U5")
 
     adata.uns["epoch_names"] = list(epochs)
@@ -76,15 +74,14 @@ def build_variant_training_adata(variants, epochs, reference_anndata, val_fracti
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Build a variant training AnnData, replicated across epochs (same variants, different pre-jitter offsets per epoch).")
-    parser.add_argument("variants_parquet", help="Merged/genotype-filtered variant table (parquet)")
-    parser.add_argument("reference_anndata", help="Reference AnnData zarr (for obs + motif_embeddings); pre-merge multiple sources yourself if needed")
-    parser.add_argument("output", help="Output AnnData zarr path (not yet h5ad: jitter_offsets still needs to add the offsets layer)")
-    parser.add_argument("class_matrix_output", help="Output path for the tested (sample, variant) sparsity pattern, shared by all epochs, for jitter_offsets")
+    parser = argparse.ArgumentParser(description="Build a variant training AnnData, same variants but different pre-jitter offsets per epoch).")
+    parser.add_argument("variants_parquet", help="Non-aggregated variant table (parquet)")
+    parser.add_argument("reference_anndata", help="Reference AnnData zarr (for obs + motif_embeddings)")
+    parser.add_argument("output", help="Output AnnData zarr path")
+    parser.add_argument("class_matrix_output", help="Output path for the npz matrix, for jitter_offsets")
     parser.add_argument("sample_names_output", help="Output path for the sample names matching the class matrix columns")
-    parser.add_argument("--epoch", nargs="+", required=True, help="Epoch names; layers are replicated under each one")
-    parser.add_argument("--val_fraction", type=float, default=0.1, help="Fraction of variants held out for validation")
-    parser.add_argument("--seed", type=int, default=0, help="Random seed for the train/val variant split")
+    parser.add_argument("--epoch", nargs="+", required=True, help="Epoch names")
+    parser.add_argument("--val_chroms", default="chr9,chr21", help="Comma-separated chromosomes held out for validation")
     args = parser.parse_args()
 
     variants = pd.read_parquet(args.variants_parquet)
@@ -92,7 +89,7 @@ if __name__ == "__main__":
 
     adata, class_matrix = build_variant_training_adata(
         variants, args.epoch, reference_anndata,
-        val_fraction=args.val_fraction, seed=args.seed,
+        val_chroms=args.val_chroms.split(','),
     )
     adata.write_zarr(args.output)
     sp.save_npz(args.class_matrix_output, class_matrix, compressed=True)

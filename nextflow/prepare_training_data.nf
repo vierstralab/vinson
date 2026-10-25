@@ -105,7 +105,8 @@ process assemble_variant_train_anndata {
         ${name} \
         ${class_matrix} \
         ${sample_names} \
-        --epoch ${epochs.join(' ')}
+        --epoch ${epochs.join(' ')} \
+        --val_chroms ${params.val_chroms}
     """
 }
 

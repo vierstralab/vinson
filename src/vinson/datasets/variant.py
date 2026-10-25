@@ -1,4 +1,4 @@
-yimport numpy as np
+import numpy as np
 
 from genome_tools import GenomicInterval, VariantInterval
 from vinson.utils.data_formatting import VariantVinsonData
