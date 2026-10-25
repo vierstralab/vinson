@@ -88,6 +88,8 @@ process assemble_variant_train_anndata {
     conda "${params.conda}"
     publishDir "${params.outdir}/raw_matrices", pattern: "${class_matrix}"
 
+    label "high_mem"
+
     input:
         tuple val(epochs), path(variants_parquet), val(reference_anndata)
 

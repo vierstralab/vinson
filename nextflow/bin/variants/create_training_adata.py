@@ -26,8 +26,6 @@ def build_variant_training_adata(variants, epochs, reference_anndata, val_chroms
     variants["class"] = np.where(is_positive, 1, -1)
     variants = variants[is_positive | is_negative].copy()
 
-
-
     reference_anndata.obs_names = reference_anndata.obs_names.astype(str)
     ref_slice = reference_anndata[reference_anndata.obs_names.isin(variants["sample_id"])].copy()
 
@@ -52,12 +50,9 @@ def build_variant_training_adata(variants, epochs, reference_anndata, val_chroms
         for col in LAYER_COLUMNS:
             add_layer(col, variants[col].to_numpy(dtype=np.float32))
 
-    indiv_id = variants.drop_duplicates("sample_id").set_index("sample_id")["indiv_id"]
-    adata.obs["genotype_id"] = adata.obs_names.map(indiv_id)
-
     # the datamodule only ever requests sample_split == "train"; variants are held out
     # for validation, not samples, so split_data on the var axis is what actually matters.
-    adata.obsm["split_data"] = np.full(adata.n_obs, "train", dtype="U5")
+    adata.obsm["split_data"] = np.full(adata.n_obs, "train", dtype="U5") # FIXME
     is_val = adata.var["#chr"].isin(val_chroms).to_numpy()
     adata.varm["split_data"] = np.where(is_val, "val", "train").astype("U5")
 
