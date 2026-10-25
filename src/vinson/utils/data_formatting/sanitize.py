@@ -74,6 +74,9 @@ VARIANT = ModelDataSchema(
         "indiv_id": np.str_,
         "shift": np.int32,
         "revcomp": np.bool_,
+        "read_depth": np.float32,
+        "background": np.float32,
+        "density": np.float32
     }
 )
 

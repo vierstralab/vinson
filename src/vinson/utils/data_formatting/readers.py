@@ -135,13 +135,17 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
     )
 
 
-def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str = None, pre_jitter=False) -> VariantVinsonData:
+def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str = None, pre_jitter=False, with_density=False) -> VariantVinsonData:
     """
     Convert AnnData object to H5 format and extract embeddings.
     Args:
         adata (ad.AnnData): AnnData object containing DHS data.
         suffix (str, optional): Suffix of the epoch/layer to extract. Gets added to layer names as
             `{layer}.{suffix}`, e.g. epoch_1, epoch_2, etc. If None, layers are read by their bare name.
+        pre_jitter (bool): Whether epochs are pre-jittered. If true, .layers['offsets.{suffix}'] should exist.
+            Offsets are stored as the per-example window `shift`; the variant position is unchanged.
+        with_density (bool): Also extract DNase `density`, `background` (from the `mean_bg_agg_cutcounts`
+            layer) and `read_depth` (from obs['nuclear_reads']), as needed by `VariantEmbedDensityDataset`.
 
     Returns:
         data (dict): Dictionary containing extracted data arrays.
@@ -149,7 +153,13 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str = Non
     """
     
     data = {"ref_counts": None, "total_counts": None, "BAD": None, "logit_es": None}
+    if with_density:
+        data["density"] = None
+        data["mean_bg_agg_cutcounts"] = None
+    if pre_jitter:
+        data["offsets"] = None
     update_layers_dict(data, train_adata, suffix)
+    layers = data
     row_idx, col_idx = get_examples_indices_from_layer(data["ref_counts"])
     
     encodings = {}
@@ -157,7 +167,6 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str = Non
     encoding_sources = {
         "sample_id": train_adata.obs_names,
         "chrom": train_adata.var["#chr"],
-        # "pos": train_adata.var["end"],
         'ref': train_adata.var['ref'],
         'alt': train_adata.var['alt']
     }
@@ -169,7 +178,6 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str = Non
 
     data = {
         'chrom': encoding_sources['chrom'][col_idx],
-        #'pos': encoding_sources['pos'][col_idx],
         'pos': train_adata.var['end'].values[col_idx],
         'ref': encoding_sources['ref'][col_idx],
         'alt': encoding_sources['alt'][col_idx],
@@ -179,6 +187,12 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str = Non
         'BAD': data['BAD'].data,
         'logit_es': data['logit_es'].data,
     }
+    if with_density:
+        data['read_depth'] = train_adata.obs['nuclear_reads'].values[row_idx]
+        data['background'] = layers['mean_bg_agg_cutcounts'].data
+        data['density'] = layers['density'].data
+    if pre_jitter:
+        data['shift'] = layers['offsets'].data
     if 'indiv_id' in encoding_sources:
         data['indiv_id'] = encoding_sources["indiv_id"][row_idx]
     
