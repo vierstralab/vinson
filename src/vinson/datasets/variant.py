@@ -37,6 +37,7 @@ class InferenceVariantEmbedDataset(BaseSequenceDataset):
             data: VariantVinsonData,
             fasta_file: str,
             genotype_file: str = None,
+            fasta_in_memory: bool = False,
             seqlen=1344,
             strict_ref_check=True,
             **kwargs
@@ -45,6 +46,7 @@ class InferenceVariantEmbedDataset(BaseSequenceDataset):
             data=data,
             fasta_file=fasta_file,
             genotype_file=genotype_file,
+            fasta_in_memory=fasta_in_memory,
             seqlen=seqlen,
             **kwargs
         )
@@ -168,6 +170,8 @@ class VariantEmbedDataset(InferenceVariantEmbedDataset):
         Path to reference genome FASTA file.
     genotype_file : str
         Path to genotype file in tabix format. Requires 'indiv_id' in data.
+    fasta_in_memory : bool, default False
+        If True, use `InMemoryFastaExtractor` instead of `FastaExtractor`.
     flip_alleles : bool, default True
         Randomly swap reference and alternate sequences for augmentation.
     reverse_complement : bool, default True
@@ -191,6 +195,7 @@ class VariantEmbedDataset(InferenceVariantEmbedDataset):
         data: VariantVinsonData,
         fasta_file: str,
         genotype_file: str = None,
+        fasta_in_memory: bool = False,
         flip_alleles=False,
         reverse_complement=False,
         random_phase=False,
@@ -203,6 +208,7 @@ class VariantEmbedDataset(InferenceVariantEmbedDataset):
             data=data,
             fasta_file=fasta_file,
             genotype_file=genotype_file,
+            fasta_in_memory=fasta_in_memory,
             reverse_complement=reverse_complement,
             jitter=jitter,
             noise=noise,

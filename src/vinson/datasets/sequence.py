@@ -120,8 +120,8 @@ class InferenceSequenceEmbedDataset(InferenceSequenceOnlyDataset):
     `reverse_complement`/`jitter` constructor args — inference examples are deterministic, with
     `shift`/`revcomp` already fixed per-row in `data`.
     """
-    def __init__(self, data: VinsonData, fasta_file, genotype_file = None, seqlen=1344, **kwargs):
-        super().__init__(data, fasta_file, genotype_file, seqlen=seqlen, **kwargs)
+    def __init__(self, data: VinsonData, fasta_file, genotype_file = None, fasta_in_memory: bool = False, seqlen=1344, **kwargs):
+        super().__init__(data, fasta_file, genotype_file, fasta_in_memory=fasta_in_memory, seqlen=seqlen, **kwargs)
 
     def __getitem__(self, i):
         """
@@ -148,6 +148,8 @@ class SequenceOnlyDataset(InferenceSequenceOnlyDataset):
         Path to reference genome FASTA file.
     genotype_file : str, optional
         Path to genotype file in tabix format. If provided, requires 'indiv_id' in data.
+    fasta_in_memory : bool, default False
+        If True, use `InMemoryFastaExtractor` instead of `FastaExtractor`.
     negatives_weight : float, default 1.0
         Weight applied to negative class examples.
     clip_density : float, default 20
@@ -166,6 +168,7 @@ class SequenceOnlyDataset(InferenceSequenceOnlyDataset):
         data: VinsonData,
         fasta_file: str,
         genotype_file: str = None,
+        fasta_in_memory: bool = False,
         negatives_weight: float = 1.0,
         clip_density=20,
         min_bg=0.1,
@@ -178,6 +181,7 @@ class SequenceOnlyDataset(InferenceSequenceOnlyDataset):
             data=data,
             fasta_file=fasta_file,
             genotype_file=genotype_file,
+            fasta_in_memory=fasta_in_memory,
             reverse_complement=reverse_complement,
             jitter=jitter,
             noise=noise,

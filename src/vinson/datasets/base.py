@@ -1,10 +1,12 @@
+from typing import Union
+
 import numpy as np
 import pandas as pd
 
 from torch.utils.data import Dataset
 
 from genome_tools import GenomicInterval, VariantInterval
-from genome_tools.data.extractors import FastaExtractor
+from genome_tools.data.extractors import FastaExtractor, InMemoryFastaExtractor
 
 from vinson.utils.data_formatting import VinsonData
 
@@ -30,6 +32,10 @@ class BaseSequenceDataset(Dataset):
         Path to reference genome FASTA file.
     genotype_file : str, optional
         Path to genotype file in tabix format.
+    fasta_in_memory : bool, default False
+        If True, load the whole FASTA into memory (`InMemoryFastaExtractor`) instead of
+        reading from disk per-example (`FastaExtractor`). Faster for repeated random access
+        (e.g. training), at the cost of holding the genome (~1 byte/base) in RAM.
     reverse_complement : bool, default False
         Randomly reverse-complement sequences for augmentation.
     jitter : int, default 0
@@ -41,7 +47,7 @@ class BaseSequenceDataset(Dataset):
 
     Attributes
     ----------
-    fasta_extr : FastaExtractor
+    fasta_extr : Union[FastaExtractor, InMemoryFastaExtractor]
         Reference genome sequence extractor.
     genotype_extr : TabixExtractor
         Genotype data extractor, if provided.
@@ -52,12 +58,14 @@ class BaseSequenceDataset(Dataset):
         data: VinsonData,
         fasta_file: str,
         genotype_file: str = None,
+        fasta_in_memory: bool = False,
         reverse_complement=False,
         jitter=0,
         noise=0,
         seqlen=1344,
     ):
         self.fasta_file = fasta_file
+        self.fasta_in_memory = fasta_in_memory
         self.data = data
         self.reverse_complement = reverse_complement
         self.jitter = jitter
@@ -74,7 +82,7 @@ class BaseSequenceDataset(Dataset):
         assert seqlen % 2 == 0, "Error 'seqlen' must be a even number!"
         self.seqlen = seqlen
 
-        self.fasta_extr: FastaExtractor = None
+        self.fasta_extr: Union[FastaExtractor, InMemoryFastaExtractor] = None
 
         self.include_genotypes = False
         if genotype_file is not None:
@@ -187,7 +195,8 @@ class BaseSequenceDataset(Dataset):
 
     def _init_fileread(self):
         if not self.fasta_extr:
-            self.fasta_extr = FastaExtractor(self.fasta_file)
+            extractor_cls = InMemoryFastaExtractor if self.fasta_in_memory else FastaExtractor
+            self.fasta_extr = extractor_cls(self.fasta_file)
 
     @staticmethod
     def _normalize_indiv_id(indiv_id):     
