@@ -1,13 +1,29 @@
 """
-Compares matmul precision settings (fp32 baseline / TF32 / bf16 autocast) for DHS model
-inference, using the same dataloader/model path as nextflow/bin/dhs/predict_DHS_model.py.
-Earlier profiling on this script (see git history) showed data loading (fasta_disk vs
-InMemoryFastaExtractor) is not the bottleneck -- compute_sec is ~99% of steady_state_sec -- so
-the thing being compared across modes here is GPU compute precision instead. Fasta backend is
-fixed for the whole run (disk by default; pass --fasta_in_memory to use InMemoryFastaExtractor
-instead), not itself varied across modes. Reports warmup time, steady-state throughput,
-data_wait vs compute split, and CPU/RAM (GB used)/GPU (GB) for each mode, and checks predictions
-stay numerically close to the fp32 baseline.
+Compares GPU compute settings for DHS model inference, using the same dataloader/model path as
+nextflow/bin/dhs/predict_DHS_model.py. Earlier profiling on this script (see git history) showed
+data loading (fasta_disk vs InMemoryFastaExtractor) is not the bottleneck -- compute_sec is ~99%
+of steady_state_sec -- so fasta backend is fixed for the whole run (disk by default; pass
+--fasta_in_memory to use InMemoryFastaExtractor instead), not itself varied across modes here.
+
+The trunk (LegNetTrunk, see vinson/models/sequence/legnet.py) is a depthwise-separable CNN (SE
+blocks, grouped Conv1d, BatchNorm, residual concat) looped block-by-block in Python. That shape
+informs the ladder below:
+  - fp32_strict: true fp32 baseline (TF32 explicitly off for both matmul and cudnn -- cudnn's
+    allow_tf32 defaults to True, so without this the "baseline" would already be doing TF32 convs).
+  - cudnn_benchmark: + cudnn.benchmark=True. Seqlen/batch_size are fixed per run, so cuDNN can
+    autotune the fastest conv algorithm for that exact shape -- free, precision-safe.
+  - tf32: + real TF32 (matmul and cudnn). Depthwise convs have low arithmetic intensity (few FLOPs
+    per byte moved) so are memory-bandwidth- rather than GEMM-bound -- expect this to matter less
+    than it would for a dense/attention-heavy model.
+  - tf32_compile: + torch.compile(model). Many small ops per block (conv->BN->SiLU->...->SE) are
+    exactly what compile's fusion + reduced dispatch overhead targets.
+  - bf16_autocast / bf16_compile: kept for completeness/reference even though bf16_autocast was
+    already found to cause large prediction drift (see max_diff_vs_baseline) -- probably
+    disqualifying regardless of speed, but useful to see if compile changes that picture.
+
+torch.compile's first call pays a JIT trace+compile cost (seconds, not amortized by the usual
+num_workers-batch warmup), so for compile modes that cost is paid in a dedicated, fully untimed
+step before the monitored region starts.
 
 Regions/sample are taken directly from the training AnnData (no h5 export needed): every DHS
 region (`adata.var`) is scored against the first sample (`adata.obs_names[0]`).
@@ -38,11 +54,13 @@ GB = 1024 ** 3
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-# (mode_name, torch.set_float32_matmul_precision arg, autocast dtype or None)
 MODES = [
-    ("fp32_baseline", "highest", None),
-    ("tf32", "high", None),
-    ("bf16_autocast", "high", torch.bfloat16),
+    {"name": "fp32_strict", "matmul_precision": "highest", "tf32": False, "cudnn_benchmark": False, "autocast_dtype": None, "compile": False},
+    {"name": "cudnn_benchmark", "matmul_precision": "highest", "tf32": False, "cudnn_benchmark": True, "autocast_dtype": None, "compile": False},
+    {"name": "tf32", "matmul_precision": "high", "tf32": True, "cudnn_benchmark": True, "autocast_dtype": None, "compile": False},
+    {"name": "tf32_compile", "matmul_precision": "high", "tf32": True, "cudnn_benchmark": True, "autocast_dtype": None, "compile": True},
+    {"name": "bf16_autocast", "matmul_precision": "high", "tf32": True, "cudnn_benchmark": True, "autocast_dtype": torch.bfloat16, "compile": False},
+    {"name": "bf16_compile", "matmul_precision": "high", "tf32": True, "cudnn_benchmark": True, "autocast_dtype": torch.bfloat16, "compile": True},
 ]
 
 
@@ -103,7 +121,7 @@ def subset_data(data: VinsonData, n: int) -> VinsonData:
     return VinsonData(sliced, data.encodings, data.embeddings_df, is_inference=data.is_inference)
 
 
-def run_mode(mode_name, matmul_precision, autocast_dtype, vinson_data, model, args):
+def run_mode(mode_cfg, vinson_data, model, args):
     """
     Excludes the one-time fasta load from steady-state throughput (see module docstring for why
     fasta backend is no longer the variable here). DataLoader assigns batches to workers
@@ -115,9 +133,14 @@ def run_mode(mode_name, matmul_precision, autocast_dtype, vinson_data, model, ar
     from vinson.inference.score_bed_with_dhs_model is inlined to split timing within a single
     iterator.
     """
-    print(f"\n=== {mode_name} (matmul_precision={matmul_precision}, autocast_dtype={autocast_dtype}) ===",
-          flush=True)
-    torch.set_float32_matmul_precision(matmul_precision)
+    mode_name = mode_cfg["name"]
+    print(f"\n=== {mode_name} ({mode_cfg}) ===", flush=True)
+
+    torch.set_float32_matmul_precision(mode_cfg["matmul_precision"])
+    torch.backends.cuda.matmul.allow_tf32 = mode_cfg["tf32"]
+    torch.backends.cudnn.allow_tf32 = mode_cfg["tf32"]
+    torch.backends.cudnn.benchmark = mode_cfg["cudnn_benchmark"]
+    autocast_dtype = mode_cfg["autocast_dtype"]
     autocast_ctx = (
         torch.autocast(device_type=device, dtype=autocast_dtype)
         if autocast_dtype is not None
@@ -143,6 +166,20 @@ def run_mode(mode_name, matmul_precision, autocast_dtype, vinson_data, model, ar
         drop_last=False,
     )
 
+    run_model = model
+    if mode_cfg["compile"]:
+        # torch.compile's first call pays a JIT trace+compile cost (seconds) -- trigger that here,
+        # fully before the monitored/timed region, using a throwaway single-process batch of the
+        # same shape as the real ones so it doesn't contaminate warmup_sec/steady_state_sec.
+        run_model = torch.compile(model)
+        warmup_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
+        compile_batch = next(iter(warmup_loader))
+        with torch.no_grad(), autocast_ctx:
+            for _ in range(2):  # a couple calls to settle any dynamic-shape guards
+                run_model(compile_batch['ohe_seq'].to(device), compile_batch['embed'].to(device))
+        if device == 'cuda':
+            torch.cuda.synchronize()
+
     monitor = UtilizationMonitor(interval=args.poll_interval)
     preds = []
     with monitor, torch.no_grad(), autocast_ctx:
@@ -157,7 +194,7 @@ def run_mode(mode_name, matmul_precision, autocast_dtype, vinson_data, model, ar
         n_warmup_examples = 0
         for batch in warmup_batches:
             n_warmup_examples += len(batch['ohe_seq'])
-            preds.append(model(batch['ohe_seq'].to(device), batch['embed'].to(device)).float().cpu().numpy())
+            preds.append(run_model(batch['ohe_seq'].to(device), batch['embed'].to(device)).float().cpu().numpy())
 
         # Split "blocked waiting for next batch" (CPU: dataloader workers -- collate, one-hot
         # encoding, embedding lookup) from "forward pass" (GPU compute) to localize the
@@ -171,7 +208,7 @@ def run_mode(mode_name, matmul_precision, autocast_dtype, vinson_data, model, ar
             t0 = time.monotonic()
             batch = next(loader_iter)
             t1 = time.monotonic()
-            preds.append(model(batch['ohe_seq'].to(device), batch['embed'].to(device)).float().cpu().numpy())
+            preds.append(run_model(batch['ohe_seq'].to(device), batch['embed'].to(device)).float().cpu().numpy())
             t2 = time.monotonic()
             data_wait_sec += t1 - t0
             compute_sec += t2 - t1
@@ -251,25 +288,31 @@ if __name__ == "__main__":
 
     results = []
     predictions = {}
-    for mode_name, matmul_precision, autocast_dtype in MODES:
-        result, y_hat = run_mode(mode_name, matmul_precision, autocast_dtype, vinson_data, model, args)
+    for mode_cfg in MODES:
+        result, y_hat = run_mode(mode_cfg, vinson_data, model, args)
         results.append(result)
-        predictions[mode_name] = y_hat
+        predictions[mode_cfg["name"]] = y_hat
 
     # Reduced-precision modes are expected to differ slightly from the fp32 baseline -- this is a
     # sanity check that they're still close, not a strict equality check like the earlier
     # fasta-backend comparison was.
-    baseline_name = MODES[0][0]
+    baseline_name = MODES[0]["name"]
     baseline_preds = predictions[baseline_name]
+    for result in results:
+        mode_name = result["mode"]
+        result["max_diff_vs_baseline"] = (
+            0.0 if mode_name == baseline_name
+            else float(np.max(np.abs(predictions[mode_name] - baseline_preds)))
+        )
+
     print(f"\n=== Prediction drift vs {baseline_name} ===")
-    for mode_name, _, _ in MODES[1:]:
-        max_diff = np.max(np.abs(predictions[mode_name] - baseline_preds))
-        print(f"{mode_name}: max absolute difference = {max_diff:.6f}")
+    for result in results:
+        print(f"{result['mode']}: max absolute difference = {result['max_diff_vs_baseline']:.6f}")
 
     print("\n=== Summary ===")
     fieldnames = ["mode", "warmup_sec", "steady_state_sec", "data_wait_sec", "compute_sec",
-                  "elapsed_sec", "examples_per_sec", "ram_used_gb_mean", "ram_used_gb_max",
-                  "gpu_mem_gb_mean", "gpu_mem_gb_max"]
+                  "elapsed_sec", "examples_per_sec", "max_diff_vs_baseline", "ram_used_gb_mean",
+                  "ram_used_gb_max", "gpu_mem_gb_mean", "gpu_mem_gb_max"]
     for row in results:
         print({k: (round(v, 2) if isinstance(v, float) else v) for k, v in row.items()})
 
