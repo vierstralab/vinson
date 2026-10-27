@@ -1,17 +1,19 @@
 """
-Compares FastaExtractor (disk, re-read per example) vs InMemoryFastaExtractor (whole genome
-loaded once) for DHS model inference, using the same dataloader/model path as
-nextflow/bin/dhs/predict_DHS_model.py. Reports fasta-load time, steady-state throughput, and
-CPU/RAM (GB used)/GPU (util % and GB) for each, and checks that both backends produce identical
-predictions.
+Compares matmul precision settings (fp32 baseline / TF32 / bf16 autocast) for DHS model
+inference, using the same dataloader/model path as nextflow/bin/dhs/predict_DHS_model.py.
+Earlier profiling on this script (see git history) showed data loading (fasta_disk vs
+InMemoryFastaExtractor) is not the bottleneck -- compute_sec is ~99% of steady_state_sec -- so
+the thing being compared across modes here is GPU compute precision instead. Fasta backend is
+fixed for the whole run (disk by default; pass --fasta_in_memory to use InMemoryFastaExtractor
+instead), not itself varied across modes. Reports warmup time, steady-state throughput,
+data_wait vs compute split, and CPU/RAM (GB used)/GPU (GB) for each mode, and checks predictions
+stay numerically close to the fp32 baseline.
 
 Regions/sample are taken directly from the training AnnData (no h5 export needed): every DHS
 region (`adata.var`) is scored against the first sample (`adata.obs_names[0]`).
-
-Note: with --num_workers > 0, InMemoryFastaExtractor is loaded once per worker process (each
-worker gets its own copy), so peak RAM scales with num_workers for the in-memory run.
 """
 import argparse
+import contextlib
 import csv
 import shutil
 import subprocess
@@ -36,9 +38,11 @@ GB = 1024 ** 3
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+# (mode_name, torch.set_float32_matmul_precision arg, autocast dtype or None)
 MODES = [
-    ("fasta_disk", False),
-    ("fasta_in_memory", True),
+    ("fp32_baseline", "highest", None),
+    ("tf32", "high", None),
+    ("bf16_autocast", "high", torch.bfloat16),
 ]
 
 
@@ -99,18 +103,26 @@ def subset_data(data: VinsonData, n: int) -> VinsonData:
     return VinsonData(sliced, data.encodings, data.embeddings_df, is_inference=data.is_inference)
 
 
-def run_mode(mode_name, fasta_in_memory, vinson_data, model, args):
+def run_mode(mode_name, matmul_precision, autocast_dtype, vinson_data, model, args):
     """
-    Excludes the one-time fasta load from steady-state throughput: with fasta_in_memory=True, the
-    genome is loaded lazily on each worker's first __getitem__ call. DataLoader assigns batches to
-    workers round-robin, so with num_workers=N, each of the first N batches blocks on a *different*
-    worker's one-time load -- timing just the first batch (as if num_workers=1) would still leave
-    most of that cost smeared across "steady state". So the first `num_workers` batches (at least 1)
-    are treated as warmup and timed separately. A standalone priming pass isn't usable here since it
-    would spin up its own (redundant) workers and double the load cost, so the scoring loop from
-    vinson.inference.score_bed_with_dhs_model is inlined to split timing within a single iterator.
+    Excludes the one-time fasta load from steady-state throughput (see module docstring for why
+    fasta backend is no longer the variable here). DataLoader assigns batches to workers
+    round-robin, so with num_workers=N, each of the first N batches blocks on a *different*
+    worker's one-time dataset init -- timing just the first batch (as if num_workers=1) would
+    still leave most of that cost smeared across "steady state". So the first `num_workers`
+    batches (at least 1) are treated as warmup and timed separately. A standalone priming pass
+    isn't usable here since it would spin up its own (redundant) workers, so the scoring loop
+    from vinson.inference.score_bed_with_dhs_model is inlined to split timing within a single
+    iterator.
     """
-    print(f"\n=== {mode_name} (fasta_in_memory={fasta_in_memory}) ===", flush=True)
+    print(f"\n=== {mode_name} (matmul_precision={matmul_precision}, autocast_dtype={autocast_dtype}) ===",
+          flush=True)
+    torch.set_float32_matmul_precision(matmul_precision)
+    autocast_ctx = (
+        torch.autocast(device_type=device, dtype=autocast_dtype)
+        if autocast_dtype is not None
+        else contextlib.nullcontext()
+    )
 
     n_examples = len(vinson_data)
     total_batches = -(-n_examples // args.batch_size)  # ceil div
@@ -120,7 +132,7 @@ def run_mode(mode_name, fasta_in_memory, vinson_data, model, args):
         data=vinson_data,
         fasta_file=args.fasta_file,
         genotype_file=args.genotype_file,
-        fasta_in_memory=fasta_in_memory,
+        fasta_in_memory=args.fasta_in_memory,
     )
     dataloader = DataLoader(
         dataset,
@@ -133,38 +145,37 @@ def run_mode(mode_name, fasta_in_memory, vinson_data, model, args):
 
     monitor = UtilizationMonitor(interval=args.poll_interval)
     preds = []
-    with monitor:
+    with monitor, torch.no_grad(), autocast_ctx:
         loader_iter = iter(dataloader)
-        with torch.no_grad():
-            load_start = time.monotonic()
-            warmup_batches = [
-                next(loader_iter)
-                for _ in tqdm(range(num_warmup_batches), desc=f"{mode_name}: loading fasta")
-            ]
-            fasta_load_sec = time.monotonic() - load_start
+        load_start = time.monotonic()
+        warmup_batches = [
+            next(loader_iter)
+            for _ in tqdm(range(num_warmup_batches), desc=f"{mode_name}: warmup")
+        ]
+        warmup_sec = time.monotonic() - load_start
 
-            n_warmup_examples = 0
-            for batch in warmup_batches:
-                n_warmup_examples += len(batch['ohe_seq'])
-                preds.append(model(batch['ohe_seq'].to(device), batch['embed'].to(device)).cpu().numpy())
+        n_warmup_examples = 0
+        for batch in warmup_batches:
+            n_warmup_examples += len(batch['ohe_seq'])
+            preds.append(model(batch['ohe_seq'].to(device), batch['embed'].to(device)).float().cpu().numpy())
 
-            # Split "blocked waiting for next batch" (CPU: dataloader workers -- collate, one-hot
-            # encoding, embedding lookup) from "forward pass" (GPU compute) to localize the
-            # bottleneck. If data_wait_sec is near zero, workers are prefetching fast enough and
-            # the GPU is the bottleneck; if it dominates, the CPU-side dataloader is.
-            data_wait_sec = 0.0
-            compute_sec = 0.0
-            remaining_batches = total_batches - num_warmup_batches
-            loop_start = time.monotonic()
-            for _ in tqdm(range(remaining_batches), desc=f"{mode_name}: steady-state"):
-                t0 = time.monotonic()
-                batch = next(loader_iter)
-                t1 = time.monotonic()
-                preds.append(model(batch['ohe_seq'].to(device), batch['embed'].to(device)).cpu().numpy())
-                t2 = time.monotonic()
-                data_wait_sec += t1 - t0
-                compute_sec += t2 - t1
-            steady_state_sec = time.monotonic() - loop_start
+        # Split "blocked waiting for next batch" (CPU: dataloader workers -- collate, one-hot
+        # encoding, embedding lookup) from "forward pass" (GPU compute) to localize the
+        # bottleneck. If data_wait_sec is near zero, workers are prefetching fast enough and
+        # the GPU is the bottleneck; if it dominates, the CPU-side dataloader is.
+        data_wait_sec = 0.0
+        compute_sec = 0.0
+        remaining_batches = total_batches - num_warmup_batches
+        loop_start = time.monotonic()
+        for _ in tqdm(range(remaining_batches), desc=f"{mode_name}: steady-state"):
+            t0 = time.monotonic()
+            batch = next(loader_iter)
+            t1 = time.monotonic()
+            preds.append(model(batch['ohe_seq'].to(device), batch['embed'].to(device)).float().cpu().numpy())
+            t2 = time.monotonic()
+            data_wait_sec += t1 - t0
+            compute_sec += t2 - t1
+        steady_state_sec = time.monotonic() - loop_start
 
     y_hat = np.concatenate(preds)
     remaining_examples = n_examples - n_warmup_examples
@@ -172,15 +183,15 @@ def run_mode(mode_name, fasta_in_memory, vinson_data, model, args):
 
     result = {
         "mode": mode_name,
-        "fasta_load_sec": fasta_load_sec,
+        "warmup_sec": warmup_sec,
         "steady_state_sec": steady_state_sec,
         "data_wait_sec": data_wait_sec,
         "compute_sec": compute_sec,
-        "elapsed_sec": fasta_load_sec + steady_state_sec,
+        "elapsed_sec": warmup_sec + steady_state_sec,
         "examples_per_sec": examples_per_sec,
         **monitor.summary(),
     }
-    print(f"{mode_name}: loading fasta {fasta_load_sec:.1f}s ({num_warmup_batches} warmup batches), "
+    print(f"{mode_name}: warmup {warmup_sec:.1f}s ({num_warmup_batches} warmup batches), "
           f"steady-state {steady_state_sec:.1f}s (data_wait {data_wait_sec:.1f}s, compute {compute_sec:.1f}s), "
           f"{examples_per_sec:.1f} examples/sec", flush=True)
     return result, y_hat
@@ -188,13 +199,16 @@ def run_mode(mode_name, fasta_in_memory, vinson_data, model, args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Benchmark FastaExtractor vs InMemoryFastaExtractor for DHS model inference."
+        description="Benchmark matmul precision settings (fp32/TF32/bf16 autocast) for DHS model inference."
     )
     parser.add_argument("anndata", type=str, help="Path to AnnData file (zarr-backed; read via read_zarr_backed)")
     parser.add_argument("fasta_file", type=str, help="Path to reference FASTA file")
     parser.add_argument("model_checkpoint", type=str, help="Path to model checkpoint")
     parser.add_argument("model_config_path", type=str, help="Path to model config YAML file")
     parser.add_argument("--genotype_file", type=str, default=None, help="Path to TABIX indexed genotype file (optional)")
+    parser.add_argument("--fasta_in_memory", action="store_true",
+                         help="Use InMemoryFastaExtractor instead of disk-based FastaExtractor for every mode "
+                              "in this run (fixed for the whole run, not itself compared across modes)")
 
     parser.add_argument("--batch_size", type=int, default=128)
     parser.add_argument("--num_workers", type=int, default=8)
@@ -237,20 +251,23 @@ if __name__ == "__main__":
 
     results = []
     predictions = {}
-    for mode_name, fasta_in_memory in MODES:
-        result, y_hat = run_mode(mode_name, fasta_in_memory, vinson_data, model, args)
+    for mode_name, matmul_precision, autocast_dtype in MODES:
+        result, y_hat = run_mode(mode_name, matmul_precision, autocast_dtype, vinson_data, model, args)
         results.append(result)
         predictions[mode_name] = y_hat
 
-    disk_preds, memory_preds = predictions["fasta_disk"], predictions["fasta_in_memory"]
-    matches = np.allclose(disk_preds, memory_preds)
-    print(f"\nPredictions match between backends: {matches}", flush=True)
-    if not matches:
-        max_diff = np.max(np.abs(disk_preds - memory_preds))
-        print(f"WARNING: max absolute difference between backends = {max_diff}", flush=True)
+    # Reduced-precision modes are expected to differ slightly from the fp32 baseline -- this is a
+    # sanity check that they're still close, not a strict equality check like the earlier
+    # fasta-backend comparison was.
+    baseline_name = MODES[0][0]
+    baseline_preds = predictions[baseline_name]
+    print(f"\n=== Prediction drift vs {baseline_name} ===")
+    for mode_name, _, _ in MODES[1:]:
+        max_diff = np.max(np.abs(predictions[mode_name] - baseline_preds))
+        print(f"{mode_name}: max absolute difference = {max_diff:.6f}")
 
     print("\n=== Summary ===")
-    fieldnames = ["mode", "fasta_load_sec", "steady_state_sec", "data_wait_sec", "compute_sec",
+    fieldnames = ["mode", "warmup_sec", "steady_state_sec", "data_wait_sec", "compute_sec",
                   "elapsed_sec", "examples_per_sec", "ram_used_gb_mean", "ram_used_gb_max",
                   "gpu_mem_gb_mean", "gpu_mem_gb_max"]
     for row in results:
