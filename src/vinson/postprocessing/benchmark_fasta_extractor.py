@@ -251,6 +251,15 @@ def run_mode(mode_cfg, vinson_data, model, args):
     print(f"{mode_name}: warmup {warmup_sec:.1f}s ({num_warmup_batches} warmup batches), "
           f"steady-state {steady_state_sec:.1f}s (data_wait {data_wait_sec:.1f}s, compute {compute_sec:.1f}s), "
           f"{examples_per_sec:.1f} examples/sec", flush=True)
+
+    if device == 'cuda':
+        total_gb = torch.cuda.get_device_properties(0).total_memory / GB
+        if result["gpu_mem_gb_max"] > total_gb:
+            print(f"WARNING: {mode_name} reported gpu_mem_gb_max={result['gpu_mem_gb_max']:.2f} "
+                  f"but the device only has {total_gb:.2f} GB total -- this reading is not real "
+                  f"physical usage. Allocator breakdown:", flush=True)
+            print(torch.cuda.memory_summary(), flush=True)
+
     return result, y_hat
 
 
@@ -276,6 +285,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print(f"Device: {device}", flush=True)
+    if device == 'cuda':
+        props = torch.cuda.get_device_properties(0)
+        print(f"GPU: {props.name}, total memory: {props.total_memory / GB:.2f} GB", flush=True)
 
     # var/obsm/obs_names are eager (only layers/varm are dask-backed by read_zarr_backed),
     # so no .compute() needed here.
