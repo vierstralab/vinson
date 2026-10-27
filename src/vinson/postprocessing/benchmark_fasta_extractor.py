@@ -25,8 +25,8 @@ torch.compile's first call pays a JIT trace+compile cost (seconds, not amortized
 num_workers-batch warmup), so for compile modes that cost is paid in a dedicated, fully untimed
 step before the monitored region starts.
 
-Regions/sample are taken directly from the training AnnData (no h5 export needed): every DHS
-region (`adata.var`) is scored against the first sample (`adata.obs_names[0]`).
+Regions/sample are taken directly from the AnnData (no h5 export needed): every DHS
+region (`adata.var`) is scored with the first sample's embedding (`adata.obs_names[0]`).
 """
 import argparse
 import contextlib
@@ -171,6 +171,12 @@ def run_mode(mode_cfg, vinson_data, model, args):
         # torch.compile's first call pays a JIT trace+compile cost (seconds) -- trigger that here,
         # fully before the monitored/timed region, using a throwaway single-process batch of the
         # same shape as the real ones so it doesn't contaminate warmup_sec/steady_state_sec.
+        # Dynamo's compiled-artifact cache is keyed to model.forward's code object + guards, not to
+        # the torch.compile() wrapper instance -- since every mode here wraps the *same* underlying
+        # model, a later mode (e.g. bf16_compile) could reuse an earlier mode's (e.g. tf32_compile)
+        # cached graph if its guards don't fully capture the TF32/autocast change. Reset first so
+        # each mode gets a clean compile reflecting its own current global settings.
+        torch._dynamo.reset()
         run_model = torch.compile(model)
         warmup_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
         compile_batch = next(iter(warmup_loader))
@@ -295,24 +301,34 @@ if __name__ == "__main__":
 
     # Reduced-precision modes are expected to differ slightly from the fp32 baseline -- this is a
     # sanity check that they're still close, not a strict equality check like the earlier
-    # fasta-backend comparison was.
+    # fasta-backend comparison was. Relative diff is normalized by |baseline| (eps-guarded against
+    # near-zero baseline values, which would otherwise blow up an otherwise-tiny absolute diff).
     baseline_name = MODES[0]["name"]
     baseline_preds = predictions[baseline_name]
+    eps = 1e-8
     for result in results:
         mode_name = result["mode"]
-        result["max_diff_vs_baseline"] = (
-            0.0 if mode_name == baseline_name
-            else float(np.max(np.abs(predictions[mode_name] - baseline_preds)))
-        )
+        if mode_name == baseline_name:
+            result["max_abs_diff"] = result["mean_abs_diff"] = 0.0
+            result["max_rel_diff"] = result["mean_rel_diff"] = 0.0
+            continue
+        abs_diff = np.abs(predictions[mode_name] - baseline_preds)
+        rel_diff = abs_diff / (np.abs(baseline_preds) + eps)
+        result["max_abs_diff"] = float(np.max(abs_diff))
+        result["mean_abs_diff"] = float(np.mean(abs_diff))
+        result["max_rel_diff"] = float(np.max(rel_diff))
+        result["mean_rel_diff"] = float(np.mean(rel_diff))
 
     print(f"\n=== Prediction drift vs {baseline_name} ===")
     for result in results:
-        print(f"{result['mode']}: max absolute difference = {result['max_diff_vs_baseline']:.6f}")
+        print(f"{result['mode']}: max_abs={result['max_abs_diff']:.6f} mean_abs={result['mean_abs_diff']:.6f} "
+              f"max_rel={result['max_rel_diff']:.6f} mean_rel={result['mean_rel_diff']:.6f}")
 
     print("\n=== Summary ===")
     fieldnames = ["mode", "warmup_sec", "steady_state_sec", "data_wait_sec", "compute_sec",
-                  "elapsed_sec", "examples_per_sec", "max_diff_vs_baseline", "ram_used_gb_mean",
-                  "ram_used_gb_max", "gpu_mem_gb_mean", "gpu_mem_gb_max"]
+                  "elapsed_sec", "examples_per_sec", "max_abs_diff", "mean_abs_diff",
+                  "max_rel_diff", "mean_rel_diff", "ram_used_gb_mean", "ram_used_gb_max",
+                  "gpu_mem_gb_mean", "gpu_mem_gb_max"]
     for row in results:
         print({k: (round(v, 2) if isinstance(v, float) else v) for k, v in row.items()})
 
