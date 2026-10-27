@@ -188,7 +188,7 @@ if __name__ == "__main__":
         embeddings_df=adata.obsm["motif_embeddings"],
     )
     vinson_data = subset_data(vinson_data, args.max_examples)
-    print(vinson_data)
+    print(vinson_data.to_df())
     print(f"Benchmarking on {len(vinson_data)} examples", flush=True)
 
     results = []
