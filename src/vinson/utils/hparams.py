@@ -19,7 +19,7 @@ _LR_SCHEDULERS = {
 }
 
 
-def get_hidden_dims(values: Union[int, List[int]], n_layers: int | None = None):
+def get_hidden_dims(values: Union[int, List[int]], n_layers: Union[int, None] = None):
     if is_list_like(values):
         if n_layers is not None and len(values) != n_layers:
             raise ValueError(
@@ -103,7 +103,7 @@ def _replace_none_with_identity(modules: List[Union[torch.nn.Module, None]]):
 def _sanitize_value(
     v: Any,
     *,
-    registry: Dict[str, Any] | None = None,
+    registry: Union[Dict[str, Any], None] = None,
 ):
     if registry is not None and isinstance(v, str):
         key = v
@@ -119,7 +119,7 @@ def _sanitize_list(
     values: Union[List[Any], Any],
     n_expected: int,
     *,
-    registry: Dict[str, Any] | None = None,
+    registry: Union[Dict[str, Any], None] = None,
 ):
     if is_list_like(values):
         if len(values) != n_expected:
