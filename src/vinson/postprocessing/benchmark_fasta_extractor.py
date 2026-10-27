@@ -40,6 +40,7 @@ import numpy as np
 import pandas as pd
 import psutil
 import torch
+import torch._inductor.config
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -48,6 +49,12 @@ from vinson.utils.data_formatting import VinsonData
 from vinson.datasets.sequence import InferenceSequenceEmbedDataset
 
 from genome_tools.data.anndata import read_zarr_backed
+
+# Inductor's default async (multi-process) compile pool can deadlock on cleanup when repeatedly
+# compiling the same model with torch._dynamo.reset() in between (one process, several modes) --
+# seen in practice as a hang right after the last steady-state batch finishes. Forcing synchronous,
+# in-process compilation avoids spawning that pool at all.
+torch._inductor.config.compile_threads = 1
 
 GB = 1024 ** 3
 
