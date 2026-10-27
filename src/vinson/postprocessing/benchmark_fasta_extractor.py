@@ -23,6 +23,7 @@ import pandas as pd
 import psutil
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from vinson.from_config import read_configs, dhs_model_from_config
 from vinson.utils.data_formatting import VinsonData
@@ -136,7 +137,10 @@ def run_mode(mode_name, fasta_in_memory, vinson_data, model, args):
         loader_iter = iter(dataloader)
         with torch.no_grad():
             load_start = time.monotonic()
-            warmup_batches = [next(loader_iter) for _ in range(num_warmup_batches)]
+            warmup_batches = [
+                next(loader_iter)
+                for _ in tqdm(range(num_warmup_batches), desc=f"{mode_name}: loading fasta")
+            ]
             fasta_load_sec = time.monotonic() - load_start
 
             n_warmup_examples = 0
@@ -145,7 +149,8 @@ def run_mode(mode_name, fasta_in_memory, vinson_data, model, args):
                 preds.append(model(batch['ohe_seq'].to(device), batch['embed'].to(device)).cpu().numpy())
 
             loop_start = time.monotonic()
-            for batch in loader_iter:
+            for batch in tqdm(loader_iter, total=total_batches - num_warmup_batches,
+                               desc=f"{mode_name}: steady-state"):
                 preds.append(model(batch['ohe_seq'].to(device), batch['embed'].to(device)).cpu().numpy())
             steady_state_sec = time.monotonic() - loop_start
 
