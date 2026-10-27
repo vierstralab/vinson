@@ -15,15 +15,18 @@ informs the ladder below:
   - tf32: + real TF32 (matmul and cudnn). Depthwise convs have low arithmetic intensity (few FLOPs
     per byte moved) so are memory-bandwidth- rather than GEMM-bound -- expect this to matter less
     than it would for a dense/attention-heavy model.
-  - tf32_compile: + torch.compile(model). Many small ops per block (conv->BN->SiLU->...->SE) are
-    exactly what compile's fusion + reduced dispatch overhead targets.
-  - bf16_autocast / bf16_compile: kept for completeness/reference even though bf16_autocast was
-    already found to cause large prediction drift (see max_diff_vs_baseline) -- probably
-    disqualifying regardless of speed, but useful to see if compile changes that picture.
+  - tf32_compile: + torch.compile(model) on top of tf32. bf16 is excluded here -- bf16_autocast
+    already showed large prediction drift (see max_abs_diff/max_rel_diff in earlier results) and
+    isn't worth testing further even under compile. tf32_compile itself previously hung mid-run
+    (grouped/depthwise Conv1d -- EffBlock's groups=self.inner_dim -- is a much less-tested path
+    for Inductor's lowering/autotuning than dense/Conv2d patterns) even after forcing synchronous,
+    non-pooled compilation via torch._inductor.config.compile_threads=1. Isolating it to this one
+    mode, with bf16 out of the mix, to narrow down whether the hang is compile itself or specific
+    to the tf32+compile combination.
 
-torch.compile's first call pays a JIT trace+compile cost (seconds, not amortized by the usual
-num_workers-batch warmup), so for compile modes that cost is paid in a dedicated, fully untimed
-step before the monitored region starts.
+If this also hangs: debugging a hung remote process with no attached profiler isn't a good
+tradeoff against the gains already available without it (cudnn_benchmark is a free win; tf32 is
+marginal). Drop tf32_compile from MODES and keep the first three.
 
 Regions/sample are taken directly from the AnnData (no h5 export needed): every DHS
 region (`adata.var`) is scored with the first sample's embedding (`adata.obs_names[0]`).
@@ -61,13 +64,16 @@ GB = 1024 ** 3
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+# bf16 already ruled out (large prediction drift, see earlier max_abs_diff/max_rel_diff results)
+# -- not worth testing further, including under compile. tf32_compile previously hung mid-run
+# (grouped/depthwise Conv1d is a weak spot for Inductor's lowering/autotuning); isolating it to a
+# single compile mode, with no bf16 variant in the mix, to narrow down whether it's compile itself
+# or specifically the tf32+compile combination.
 MODES = [
     {"name": "fp32_strict", "matmul_precision": "highest", "tf32": False, "cudnn_benchmark": False, "autocast_dtype": None, "compile": False},
     {"name": "cudnn_benchmark", "matmul_precision": "highest", "tf32": False, "cudnn_benchmark": True, "autocast_dtype": None, "compile": False},
     {"name": "tf32", "matmul_precision": "high", "tf32": True, "cudnn_benchmark": True, "autocast_dtype": None, "compile": False},
     {"name": "tf32_compile", "matmul_precision": "high", "tf32": True, "cudnn_benchmark": True, "autocast_dtype": None, "compile": True},
-    {"name": "bf16_autocast", "matmul_precision": "high", "tf32": True, "cudnn_benchmark": True, "autocast_dtype": torch.bfloat16, "compile": False},
-    {"name": "bf16_compile", "matmul_precision": "high", "tf32": True, "cudnn_benchmark": True, "autocast_dtype": torch.bfloat16, "compile": True},
 ]
 
 
@@ -249,7 +255,7 @@ def run_mode(mode_cfg, vinson_data, model, args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Benchmark matmul precision settings (fp32/TF32/bf16 autocast) for DHS model inference."
+        description="Benchmark GPU compute settings (fp32/cudnn.benchmark/TF32/TF32+compile) for DHS model inference."
     )
     parser.add_argument("anndata", type=str, help="Path to AnnData file (zarr-backed; read via read_zarr_backed)")
     parser.add_argument("fasta_file", type=str, help="Path to reference FASTA file")
