@@ -42,13 +42,11 @@ MODES = [
 
 
 class UtilizationMonitor:
-    """Samples CPU/RAM/GPU usage in a background thread for the duration of a `with` block."""
+    """Samples RAM/GPU memory (GB) in a background thread for the duration of a `with` block."""
 
     def __init__(self, interval=1.0):
         self.interval = interval
-        self.cpu_pct = []
         self.ram_used_gb = []
-        self.gpu_util_pct = []
         self.gpu_mem_gb = []
         self._has_nvidia_smi = shutil.which("nvidia-smi") is not None
         self._stop = threading.Event()
@@ -56,19 +54,14 @@ class UtilizationMonitor:
 
     def _poll_gpu(self):
         out = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used",
-             "--format=csv,noheader,nounits"],
+            ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
             text=True,
         )
-        for line in out.strip().splitlines():
-            util, mem_mb = line.split(",")
-            self.gpu_util_pct.append(float(util))
+        for mem_mb in out.strip().splitlines():
             self.gpu_mem_gb.append(float(mem_mb) / 1024)
 
     def _run(self):
-        psutil.cpu_percent(percpu=False)  # prime; first call always returns 0.0
         while not self._stop.is_set():
-            self.cpu_pct.append(psutil.cpu_percent(percpu=False))
             self.ram_used_gb.append(psutil.virtual_memory().used / GB)
             if self._has_nvidia_smi:
                 try:
@@ -90,14 +83,10 @@ class UtilizationMonitor:
         return (max(values), sum(values) / len(values)) if values else (float("nan"), float("nan"))
 
     def summary(self):
-        cpu_max, cpu_mean = self._agg(self.cpu_pct)
         ram_max, ram_mean = self._agg(self.ram_used_gb)
-        gpu_util_max, gpu_util_mean = self._agg(self.gpu_util_pct)
         gpu_mem_max, gpu_mem_mean = self._agg(self.gpu_mem_gb)
         return {
-            "cpu_pct_mean": cpu_mean, "cpu_pct_max": cpu_max,
             "ram_used_gb_mean": ram_mean, "ram_used_gb_max": ram_max,
-            "gpu_util_pct_mean": gpu_util_mean, "gpu_util_pct_max": gpu_util_max,
             "gpu_mem_gb_mean": gpu_mem_mean, "gpu_mem_gb_max": gpu_mem_max,
         }
 
@@ -111,40 +100,49 @@ def subset_data(data: VinsonData, n: int) -> VinsonData:
 
 def run_mode(mode_name, fasta_in_memory, vinson_data, model, args):
     """
-    Times the first batch separately from the rest: with fasta_in_memory=True, the genome is
-    loaded lazily on each worker's first __getitem__ call, so "time to first batch" is dominated
-    by that one-time load (plus worker startup) rather than steady-state throughput. A separate
-    priming pass isn't usable here since it would spin up its own (redundant) workers and double
-    the load cost, so the scoring loop from vinson.inference.score_bed_with_dhs_model is inlined
-    to split timing within a single dataloader iterator.
+    Excludes the one-time fasta load from steady-state throughput: with fasta_in_memory=True, the
+    genome is loaded lazily on each worker's first __getitem__ call. DataLoader assigns batches to
+    workers round-robin, so with num_workers=N, each of the first N batches blocks on a *different*
+    worker's one-time load -- timing just the first batch (as if num_workers=1) would still leave
+    most of that cost smeared across "steady state". So the first `num_workers` batches (at least 1)
+    are treated as warmup and timed separately. A standalone priming pass isn't usable here since it
+    would spin up its own (redundant) workers and double the load cost, so the scoring loop from
+    vinson.inference.score_bed_with_dhs_model is inlined to split timing within a single iterator.
     """
     print(f"\n=== {mode_name} (fasta_in_memory={fasta_in_memory}) ===", flush=True)
+
+    n_examples = len(vinson_data)
+    total_batches = -(-n_examples // args.batch_size)  # ceil div
+    num_warmup_batches = min(max(1, args.num_workers), total_batches)
+
+    dataset = InferenceSequenceEmbedDataset(
+        data=vinson_data,
+        fasta_file=args.fasta_file,
+        genotype_file=args.genotype_file,
+        fasta_in_memory=fasta_in_memory,
+    )
+    dataloader = DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=device == 'cuda',
+        drop_last=False,
+    )
 
     monitor = UtilizationMonitor(interval=args.poll_interval)
     preds = []
     with monitor:
-        dataset = InferenceSequenceEmbedDataset(
-            data=vinson_data,
-            fasta_file=args.fasta_file,
-            genotype_file=args.genotype_file,
-            fasta_in_memory=fasta_in_memory,
-        )
-        dataloader = DataLoader(
-            dataset,
-            batch_size=args.batch_size,
-            shuffle=False,
-            num_workers=args.num_workers,
-            pin_memory=device == 'cuda',
-            drop_last=False,
-        )
-
         loader_iter = iter(dataloader)
         with torch.no_grad():
             load_start = time.monotonic()
-            first_batch = next(loader_iter)
+            warmup_batches = [next(loader_iter) for _ in range(num_warmup_batches)]
             fasta_load_sec = time.monotonic() - load_start
 
-            preds.append(model(first_batch['ohe_seq'].to(device), first_batch['embed'].to(device)).cpu().numpy())
+            n_warmup_examples = 0
+            for batch in warmup_batches:
+                n_warmup_examples += len(batch['ohe_seq'])
+                preds.append(model(batch['ohe_seq'].to(device), batch['embed'].to(device)).cpu().numpy())
 
             loop_start = time.monotonic()
             for batch in loader_iter:
@@ -152,8 +150,7 @@ def run_mode(mode_name, fasta_in_memory, vinson_data, model, args):
             steady_state_sec = time.monotonic() - loop_start
 
     y_hat = np.concatenate(preds)
-    n_examples = len(vinson_data)
-    remaining_examples = n_examples - len(first_batch['ohe_seq'])
+    remaining_examples = n_examples - n_warmup_examples
     examples_per_sec = remaining_examples / steady_state_sec if steady_state_sec > 0 else float("nan")
 
     result = {
@@ -164,8 +161,8 @@ def run_mode(mode_name, fasta_in_memory, vinson_data, model, args):
         "examples_per_sec": examples_per_sec,
         **monitor.summary(),
     }
-    print(f"{mode_name}: loading fasta {fasta_load_sec:.1f}s, steady-state {steady_state_sec:.1f}s, "
-          f"{examples_per_sec:.1f} examples/sec", flush=True)
+    print(f"{mode_name}: loading fasta {fasta_load_sec:.1f}s ({num_warmup_batches} warmup batches), "
+          f"steady-state {steady_state_sec:.1f}s, {examples_per_sec:.1f} examples/sec", flush=True)
     return result, y_hat
 
 
