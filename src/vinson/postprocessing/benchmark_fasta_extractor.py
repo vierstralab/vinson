@@ -148,10 +148,22 @@ def run_mode(mode_name, fasta_in_memory, vinson_data, model, args):
                 n_warmup_examples += len(batch['ohe_seq'])
                 preds.append(model(batch['ohe_seq'].to(device), batch['embed'].to(device)).cpu().numpy())
 
+            # Split "blocked waiting for next batch" (CPU: dataloader workers -- collate, one-hot
+            # encoding, embedding lookup) from "forward pass" (GPU compute) to localize the
+            # bottleneck. If data_wait_sec is near zero, workers are prefetching fast enough and
+            # the GPU is the bottleneck; if it dominates, the CPU-side dataloader is.
+            data_wait_sec = 0.0
+            compute_sec = 0.0
+            remaining_batches = total_batches - num_warmup_batches
             loop_start = time.monotonic()
-            for batch in tqdm(loader_iter, total=total_batches - num_warmup_batches,
-                               desc=f"{mode_name}: steady-state"):
+            for _ in tqdm(range(remaining_batches), desc=f"{mode_name}: steady-state"):
+                t0 = time.monotonic()
+                batch = next(loader_iter)
+                t1 = time.monotonic()
                 preds.append(model(batch['ohe_seq'].to(device), batch['embed'].to(device)).cpu().numpy())
+                t2 = time.monotonic()
+                data_wait_sec += t1 - t0
+                compute_sec += t2 - t1
             steady_state_sec = time.monotonic() - loop_start
 
     y_hat = np.concatenate(preds)
@@ -162,12 +174,15 @@ def run_mode(mode_name, fasta_in_memory, vinson_data, model, args):
         "mode": mode_name,
         "fasta_load_sec": fasta_load_sec,
         "steady_state_sec": steady_state_sec,
+        "data_wait_sec": data_wait_sec,
+        "compute_sec": compute_sec,
         "elapsed_sec": fasta_load_sec + steady_state_sec,
         "examples_per_sec": examples_per_sec,
         **monitor.summary(),
     }
     print(f"{mode_name}: loading fasta {fasta_load_sec:.1f}s ({num_warmup_batches} warmup batches), "
-          f"steady-state {steady_state_sec:.1f}s, {examples_per_sec:.1f} examples/sec", flush=True)
+          f"steady-state {steady_state_sec:.1f}s (data_wait {data_wait_sec:.1f}s, compute {compute_sec:.1f}s), "
+          f"{examples_per_sec:.1f} examples/sec", flush=True)
     return result, y_hat
 
 
@@ -235,9 +250,9 @@ if __name__ == "__main__":
         print(f"WARNING: max absolute difference between backends = {max_diff}", flush=True)
 
     print("\n=== Summary ===")
-    fieldnames = ["mode", "fasta_load_sec", "steady_state_sec", "elapsed_sec", "examples_per_sec",
-                  "cpu_pct_mean", "cpu_pct_max", "ram_used_gb_mean", "ram_used_gb_max",
-                  "gpu_util_pct_mean", "gpu_util_pct_max", "gpu_mem_gb_mean", "gpu_mem_gb_max"]
+    fieldnames = ["mode", "fasta_load_sec", "steady_state_sec", "data_wait_sec", "compute_sec",
+                  "elapsed_sec", "examples_per_sec", "ram_used_gb_mean", "ram_used_gb_max",
+                  "gpu_mem_gb_mean", "gpu_mem_gb_max"]
     for row in results:
         print({k: (round(v, 2) if isinstance(v, float) else v) for k, v in row.items()})
 
