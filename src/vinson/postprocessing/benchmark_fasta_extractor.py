@@ -34,8 +34,6 @@ region (`adata.var`) is scored with the first sample's embedding (`adata.obs_nam
 import argparse
 import contextlib
 import csv
-import shutil
-import subprocess
 import threading
 import time
 
@@ -78,32 +76,32 @@ MODES = [
 
 
 class UtilizationMonitor:
-    """Samples RAM/GPU memory (GB) in a background thread for the duration of a `with` block."""
+    """
+    Samples RAM (GB, periodic) and this process's own GPU memory (GB) for the duration of a
+    `with` block.
+
+    GPU memory is read via torch.cuda's per-process accounting, not nvidia-smi: on a shared
+    multi-GPU node (see the sbatch template's --gres=gpu:N), nvidia-smi reports every physical
+    GPU on the node regardless of which one this job was actually allocated (CUDA_VISIBLE_DEVICES
+    restricts the CUDA runtime, not nvidia-smi/NVML) -- a prior version of this monitor hit
+    exactly that: gpu_mem_gb_max exceeding the card's actual capacity because another job's GPU on
+    the same node got mixed into the samples.
+    """
 
     def __init__(self, interval=1.0):
         self.interval = interval
         self.ram_used_gb = []
         self.gpu_mem_gb = []
-        self._has_nvidia_smi = shutil.which("nvidia-smi") is not None
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
-
-    def _poll_gpu(self):
-        out = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
-            text=True,
-        )
-        for mem_mb in out.strip().splitlines():
-            self.gpu_mem_gb.append(float(mem_mb) / 1024)
+        if device == 'cuda':
+            torch.cuda.reset_peak_memory_stats()
 
     def _run(self):
         while not self._stop.is_set():
             self.ram_used_gb.append(psutil.virtual_memory().used / GB)
-            if self._has_nvidia_smi:
-                try:
-                    self._poll_gpu()
-                except Exception:
-                    pass
+            if device == 'cuda':
+                self.gpu_mem_gb.append(torch.cuda.memory_reserved() / GB)
             self._stop.wait(self.interval)
 
     def __enter__(self):
@@ -120,7 +118,10 @@ class UtilizationMonitor:
 
     def summary(self):
         ram_max, ram_mean = self._agg(self.ram_used_gb)
-        gpu_mem_max, gpu_mem_mean = self._agg(self.gpu_mem_gb)
+        _, gpu_mem_mean = self._agg(self.gpu_mem_gb)
+        # torch.cuda's own peak tracker is an exact continuous high-water-mark, unlike the sampled
+        # max above which could miss a spike that happens between two poll ticks.
+        gpu_mem_max = torch.cuda.max_memory_reserved() / GB if device == 'cuda' else float("nan")
         return {
             "ram_used_gb_mean": ram_mean, "ram_used_gb_max": ram_max,
             "gpu_mem_gb_mean": gpu_mem_mean, "gpu_mem_gb_max": gpu_mem_max,
