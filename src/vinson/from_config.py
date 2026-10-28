@@ -6,8 +6,13 @@ import mergedeep
 import torch
 from vinson.utils.helpers import read_yaml_config
 
-from vinson.models.sequence.lightning_wrappers import AbstractSequenceModel
-from vinson.models.sequence.lightning_wrappers import SequenceEmbedModel, SequenceOnlyModel
+from vinson.models.sequence.lightning_wrappers import (
+    AbstractSequenceModel,
+    SequenceEmbedModel,
+    SequenceOnlyModel,
+    SequenceEmbedProfileModel
+)
+
 from vinson.models.sequence.basset import BassetTrunk, BassetTrunkEmbed
 from vinson.models.sequence.legnet import LegNetTrunk, LegNetTrunkEmbed
 
@@ -17,11 +22,8 @@ from vinson.models.cell_classifier import CellClassifierModel
 
 from vinson.models.shared import MLPBlock
 
-
 from vinson.datamodules.sequence import SeqEmbedDataModule
 from vinson.datamodules.variant import SeqEmbedVariantDataModule, SeqEmbedVariantDensityDataModule
-
-
 
 
 MODEL_FACTORY_REGISTRY = {
@@ -43,6 +45,8 @@ LIGHTNING_MODEL_REGISTRY = {
 
     "basset_embed": SequenceEmbedModel,
     "legnet_embed": SequenceEmbedModel,
+
+    "legnet_profile_embed": SequenceEmbedProfileModel,
 
     "basset_variant_embed": VariantEmbedModel,
     "legnet_variant_embed": VariantEmbedModel,

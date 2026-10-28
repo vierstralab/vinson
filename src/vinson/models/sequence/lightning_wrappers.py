@@ -265,6 +265,7 @@ class SequenceEmbedModel(SequenceOnlyModel):
         optimizer_kwargs: Optional[Dict[str, Any]] = None,
         lr_scheduler_kwargs: Optional[Dict[str, Any]] = None,
         init_weights: bool = True,
+        save_hyperparameters: bool = True,
         **kwargs,
     ):
         super().__init__(
@@ -278,7 +279,8 @@ class SequenceEmbedModel(SequenceOnlyModel):
             **kwargs,
         )
 
-        self.save_hyperparameters(ignore=["trunk_model", "head_model"])
+        if save_hyperparameters:
+            self.save_hyperparameters(ignore=["trunk_model", "head_model"])
 
     def forward(self, seq: torch.Tensor, embedding: torch.Tensor) -> torch.Tensor:
         x = self.trunk_model(seq, embedding)

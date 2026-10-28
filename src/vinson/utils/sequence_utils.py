@@ -168,6 +168,7 @@ def intervals_to_ohe(intervals, seqlen, fasta_extr):
     
     return np.stack(ohe)
 
+
 def variants_to_ohe(variants, seqlen, fasta_extr):
     """
     Convert variant objects to one-hot encoded reference and alternate allele sequences.
