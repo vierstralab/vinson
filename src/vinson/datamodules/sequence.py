@@ -165,3 +165,29 @@ class SeqEmbedDataModule(L.LightningDataModule):
         ]
 
         return extract_data_from_train_anndata(adata, suffix, pre_jitter=pre_jitter)
+
+
+class SeqEmbedProfileDataModule(SeqEmbedDataModule):
+    def __init__(self, anndata_file, fasta_file, dm_mu_params_file, dm_r_params_file, **kwargs):
+        super().__init__(anndata_file, fasta_file, **kwargs)
+        self.dm_mu_params_file = dm_mu_params_file
+        self.dm_r_params_file = dm_r_params_file
+        self.dm_mu_params = self.dm_r_params = None
+
+    def setup(self, stage):
+        self.dm_mu_params = pd.read_table(self.dm_mu_params_file, index_col=0)
+        self.dm_r_params = pd.read_table(self.dm_r_params_file, index_col=0)
+        super().setup(stage)
+
+    def _dataset(self, data, dataset_kwargs):
+        return SequenceEmbedProfileDataset(
+            data=data, fasta_file=self.fasta_file, genotype_file=self.genotype_file,
+            dm_mu_params=self.dm_mu_params, dm_r_params=self.dm_r_params, **dataset_kwargs,
+        )
+
+    def train_dataset(self, epoch=None):
+        epoch = self.current_train_epoch if epoch is None else epoch
+        return self._dataset(self.train_data[epoch], self.train_dataset_kwargs)
+
+    def validation_dataset(self):
+        return self._dataset(self.validation_data[self.validation_epoch], self.valid_dataset_kwargs)

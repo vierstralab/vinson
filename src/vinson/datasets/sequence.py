@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 from genome_tools import GenomicInterval
 
@@ -295,4 +296,28 @@ class SequenceEmbedDataset(SequenceOnlyDataset):
         """
         data = super().__getitem__(i)
         data['embed'], _ = self.get_embedding_vec(data['sample_id'])
+        return data
+    
+
+class SequenceEmbedProfileDataset(SequenceEmbedDataset):
+    """
+    Dataset for sequence embeddings with profile information.
+    """
+    def __init__(self, data, fasta_file, dm_mu_params, dm_r_params, **kwargs):
+        super().__init__(data, fasta_file, **kwargs)
+        sample_names = pd.Index(self.data.encodings["sample_id"])
+        has_dm = sample_names.isin(dm_mu_params.index) & sample_names.isin(dm_r_params.index)
+        self.indices = np.flatnonzero(has_dm[self.data.data["sample_id"]])
+        self.mu_params = dm_mu_params.reindex(sample_names).to_numpy(np.float32)
+        self.r_params = dm_r_params.reindex(sample_names).to_numpy(np.float32)
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, i):
+        j = self.indices[i]
+        data = super().__getitem__(j)
+        sample_id_code = self.data.data["sample_id"][j]
+        data["mu_params"] = self.mu_params[sample_id_code]
+        data["r_params"] = self.r_params[sample_id_code]
         return data

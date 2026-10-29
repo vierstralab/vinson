@@ -55,71 +55,48 @@ class MSELoss(torch.nn.Module):
         else:
             return nll
 
+import torch
+
+
 class NegativeBinomialLoss(torch.nn.Module):
     """
-    Negative log-likelihood loss for the negative binomial distribution.
+    Negative log-likelihood of observed counts under a per-sample
+    footprint_tools dispersion model evaluated at the predicted expected counts.
 
-    This loss computes the NLL for observed counts assuming a negative binomial distribution,
-    with options for relative loss and different parameterizations.
+    Since ``r`` depends on the prediction, the full log-pmf (including the
+    ``lgamma`` terms) is used.
 
     Parameters
     ----------
     relative : bool, optional
-        If True, computes the relative NLL compared to the best possible prediction (default is True).
+        If True, subtracts the NLL at the saturated mean (``mu = target``, with
+        ``r`` detached). This is a constant offset for readability; it does not
+        change gradients (default is True).
     reduction : str, optional
         Specifies the reduction: 'mean', 'sum', or 'none' (default is 'mean').
     """
 
-    def __init__(
-        self, relative: bool = True, reduction: str = "mean"
-    ):
+    def __init__(self, relative: bool = True, reduction: str = "mean"):
         super(NegativeBinomialLoss, self).__init__()
-        self.reduction = reduction
         self.relative = relative
+        self.reduction = reduction
 
-    def forward(
-        self, input: torch.Tensor, target: torch.Tensor, mu_params: torch.Tensor, r_params: torch.Tensor
-    ) -> torch.Tensor:
+    @staticmethod
+    def piecewise_linear(x: torch.Tensor, params: torch.Tensor, n_seg: int) -> torch.Tensor:
         """
-        Compute the negative binomial loss.
+        Evaluate per-sample piecewise-linear functions (footprint_tools
+        ``piecewise_three`` / ``piecewise_five``).
 
         Parameters
         ----------
-        input : torch.Tensor
-            Predicted counts.
-        target : torch.Tensor
-            Observed counts.
-        r : float or torch.Tensor
-            Dispersion parameter of the negative binomial distribution.
-
-        Returns
-        -------
-        torch.Tensor
-            The computed negative binomial loss. If reduction is 'sum' or 'mean', returns a scalar tensor;
-            otherwise, returns a tensor of losses per element.
+        x : torch.Tensor
+            Values of shape (B, ...).
+        params : torch.Tensor
+            Per-sample parameters of shape (B, 3 * n_seg): breaks, intercepts, slopes.
+            The last break is unused, as in footprint_tools.
+        n_seg : int
+            Number of linear segments.
         """
-        mu = NegativeBinomialLoss.dispersion_mu(input, mu_params)
-        r = NegativeBinomialLoss.dispersion_r(input, r_params)
-        nll = -NegativeBinomialLoss.nb_logpmf(target, mu, r)
-        if self.relative:
-            nll = nll + NegativeBinomialLoss.nb_logpmf(target, target.clamp_min(1e-6), r.detach())
-
-        if self.reduction == "sum":
-            return nll.sum()
-        elif self.reduction == "mean":
-            return nll.mean()
-        else:
-            return nll
-    
-    @staticmethod
-    def nb_logpmf(k, mu, r):
-        log_r_mu = torch.log(r + mu)
-        return (torch.lgamma(k + r) - torch.lgamma(k + 1) - torch.lgamma(r)
-                + r * (torch.log(r) - log_r_mu)
-                + torch.special.xlogy(k, mu) - k * log_r_mu)
-
-    @staticmethod
-    def apply_piecewise(x, params, n_seg):
         params = params.to(x.dtype)
         breaks = params[:, : n_seg - 1]
         b = params[:, n_seg : 2 * n_seg]
@@ -127,17 +104,65 @@ class NegativeBinomialLoss(torch.nn.Module):
         flat = x.reshape(x.shape[0], -1)
         seg = (flat.unsqueeze(-1) >= breaks.unsqueeze(1)).sum(-1)
         return (b.gather(1, seg) + k.gather(1, seg) * flat).reshape(x.shape)
-    
+
     @staticmethod
-    def dispersion_mu(exp, mu_params):
-        mu = NegativeBinomialLoss.apply_piecewise(exp, mu_params, 3)
+    def dispersion_mu(exp: torch.Tensor, mu_params: torch.Tensor) -> torch.Tensor:
+        """NB mean from the footprint_tools dispersion model (floored at 0.1)."""
+        mu = NegativeBinomialLoss.piecewise_linear(exp, mu_params, 3) # Hard-coded for now, matches footprint_tools dm
         return torch.where(mu > 0, mu, torch.full_like(mu, 0.1))
 
     @staticmethod
-    def dispersion_r(exp, r_params):
-        inv_r = NegativeBinomialLoss.apply_piecewise(exp, r_params, 5)
+    def dispersion_r(exp: torch.Tensor, r_params: torch.Tensor) -> torch.Tensor:
+        """NB dispersion from the footprint_tools dispersion model (floored at 1e-6)."""
+        inv_r = NegativeBinomialLoss.piecewise_linear(exp, r_params, 5) # Hard-coded for now, matches footprint_tools dm
         pos = inv_r > 0
         return torch.where(pos, 1.0 / torch.where(pos, inv_r, 1.0), torch.full_like(inv_r, 1e-6))
+
+    @staticmethod
+    def nb_logpmf(k: torch.Tensor, mu: torch.Tensor, r: torch.Tensor) -> torch.Tensor:
+        """Negative binomial log-pmf with mean ``mu`` and dispersion ``r``."""
+        log_r_mu = torch.log(r + mu)
+        return (
+            torch.lgamma(k + r)
+            - torch.lgamma(k + 1)
+            - torch.lgamma(r)
+            + r * (torch.log(r) - log_r_mu)
+            + torch.special.xlogy(k, mu)
+            - k * log_r_mu
+        )
+
+    def forward(
+        self,
+        input: torch.Tensor,
+        target: torch.Tensor,
+        mu_params: torch.Tensor,
+        r_params: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Parameters
+        ----------
+        input : torch.Tensor
+            Predicted expected counts, shape (B, L).
+        target : torch.Tensor
+            Observed counts, shape (B, L).
+        mu_params : torch.Tensor
+            Dispersion-model mean parameters, shape (B, 9).
+        r_params : torch.Tensor
+            Dispersion-model 1/r parameters, shape (B, 15).
+        """
+        mu = self.dispersion_mu(input, mu_params)
+        r = self.dispersion_r(input, r_params)
+        nll = -self.nb_logpmf(target, mu, r)
+
+        if self.relative:
+            nll = nll + self.nb_logpmf(target, target.clamp_min(1e-6), r.detach())
+
+        if self.reduction == "sum":
+            return nll.sum()
+        elif self.reduction == "mean":
+            return nll.mean()
+        else:
+            return nll
 
 
 
