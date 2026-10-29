@@ -2,12 +2,14 @@ import lightning.pytorch as L
 
 from torch.utils.data import DataLoader
 from vinson.utils.data_formatting import extract_data_from_train_anndata
-from vinson.datasets.sequence import SequenceEmbedDataset
+from vinson.datasets.sequence import SequenceEmbedDataset, SequenceEmbedProfileDataset
 from itertools import cycle
 
 import anndata as ad
 from tqdm import tqdm
 import gc
+
+import pandas as pd
 
 # TODO: move all logging to one helper file
 import logging

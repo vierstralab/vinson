@@ -22,7 +22,7 @@ from vinson.models.cell_classifier import CellClassifierModel
 
 from vinson.models.shared import MLPBlock
 
-from vinson.datamodules.sequence import SeqEmbedDataModule
+from vinson.datamodules.sequence import SeqEmbedDataModule, SeqEmbedProfileDataModule
 from vinson.datamodules.variant import SeqEmbedVariantDataModule, SeqEmbedVariantDensityDataModule
 
 
@@ -300,6 +300,17 @@ def datamodule_from_config(
         return SeqEmbedVariantDataModule(
             anndata_file=anndata_file,
             fasta_file=fasta_file,
+            genotype_file=genotype_file,
+            train_dataset_kwargs=train_dataset_kwargs,
+            valid_dataset_kwargs=valid_dataset_kwargs,
+            **dataloader_kwargs,
+        )
+    elif config["model_type"] == "legnet_profile_embed":
+        return SeqEmbedProfileDataModule(
+            anndata_file=anndata_file,
+            fasta_file=fasta_file,
+            dm_mu_params_file=config["dm_mu_params_file"],
+            dm_r_params_file=config["dm_r_params_file"],
             genotype_file=genotype_file,
             train_dataset_kwargs=train_dataset_kwargs,
             valid_dataset_kwargs=valid_dataset_kwargs,
