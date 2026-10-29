@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from genome_tools import GenomicInterval
-
+from genome_tools.data.extractors import TabixExtractor
 
 from vinson.utils.data_formatting import VinsonData
 from vinson.utils.helpers import apply_edits
@@ -303,21 +303,49 @@ class SequenceEmbedProfileDataset(SequenceEmbedDataset):
     """
     Dataset for sequence embeddings with profile information.
     """
-    def __init__(self, data, fasta_file, dm_mu_params, dm_r_params, **kwargs):
+    def __init__(self, data: VinsonData, fasta_file, dm_mu_params: pd.DataFrame, dm_r_params: pd.DataFrame, fp_meta_df: pd.DataFrame, **kwargs):
         super().__init__(data, fasta_file, **kwargs)
-        sample_names = pd.Index(self.data.encodings["sample_id"])
-        has_dm = sample_names.isin(dm_mu_params.index) & sample_names.isin(dm_r_params.index)
-        self.indices = np.flatnonzero(has_dm[self.data.data["sample_id"]])
-        self.mu_params = dm_mu_params.reindex(sample_names).to_numpy(np.float32)
-        self.r_params = dm_r_params.reindex(sample_names).to_numpy(np.float32)
-
-    def __len__(self):
-        return len(self.indices)
+        self.mu_params = dm_mu_params
+        self.r_params = dm_r_params
+        self.fp_meta_df = fp_meta_df
 
     def __getitem__(self, i):
-        j = self.indices[i]
-        data = super().__getitem__(j)
-        sample_id_code = self.data.data["sample_id"][j]
-        data["mu_params"] = self.mu_params[sample_id_code]
-        data["r_params"] = self.r_params[sample_id_code]
+        data = super().__getitem__(i)
+        sample_id = data['sample_id']
+        data["mu_params"] = self.mu_params.loc[sample_id].values.astype(np.float32)
+        data["r_params"] = self.r_params.loc[sample_id].values.astype(np.float32)
+
+        interval = GenomicInterval(
+            data['chrom'],
+            data['summit'] + data['shift'],
+            data['summit'] + data['shift'] + 1
+        ).widen(75)
+
+        data['obs'], data['exp'] = self.extract_obs_exp_data(
+            self.fp_meta_df.loc[sample_id, 'tabix_file'],
+            interval
+        )
+
         return data
+        
+    def extract_obs_exp_data(self, fp_track_path, interval):
+        # TODO 1: store open filehandles
+
+        # TODO 2: move extraction to a separate file (no hardcoded format in dataset)
+        
+        obs = np.zeros(len(interval), dtype=np.float32)
+        exp = np.zeros(len(interval), dtype=np.float32)
+        with TabixExtractor(
+            fp_track_path,
+            columns=[
+                'chrom', 'start', 'end', 
+                'exp', 'obs', 'neglog_pval', 
+                'neglog_winpval', 'fdr'
+            ]
+        ) as ext:
+            fp_data = ext[interval]
+
+            rel_index = fp_data['start'] - interval.start
+            obs[rel_index] = fp_data['obs']
+            exp[rel_index] = fp_data['exp']
+            return obs, exp
