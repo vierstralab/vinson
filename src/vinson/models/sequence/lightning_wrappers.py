@@ -10,6 +10,7 @@ from torchmetrics.classification import (
 )
 from torchmetrics.regression import PearsonCorrCoef
 
+import math
 import torch
 
 from torch.nn import BCEWithLogitsLoss
@@ -329,6 +330,9 @@ class SequenceEmbedProfileModel(SequenceEmbedModel):
         )
 
         self.criterion = NegativeBinomialLoss(reduction="none")
+        self.total_criterion = PoissonNLLLoss(log_input=False, reduction="none")
+
+        self.val_density_pcc = PearsonCorrCoef()
 
         self.final_density = self.final
 
@@ -336,18 +340,17 @@ class SequenceEmbedProfileModel(SequenceEmbedModel):
         self.final_lfc = torch.nn.Linear(self.head_model.output_dim, self.n_lfc_outputs)
 
         self.save_hyperparameters(ignore=["trunk_model", "head_model"])
-
+    
     def forward(self, seq, embedding):
         features = self.trunk_model(seq, embedding)
         x = self.head_model(features)
 
         # density head
-        density = self.final_density(x)
-        density = torch.nn.Softplus()(density)
+        density = torch.nn.functional.softplus(self.final_density(x))
 
         # lfc head -- no activation (predicting in logit space)
         lfc = self.final_lfc(x)
-
+        lfc = torch.log_softmax(lfc, dim=-1) + math.log(lfc.shape[-1])
         return density, lfc
 
     def _forward_from_batch(self, batch):
@@ -355,6 +358,25 @@ class SequenceEmbedProfileModel(SequenceEmbedModel):
         X_embed = batch["embed"]
         y_density, y_lfc = self(X_seq, X_embed)
         return y_density.squeeze(-1), y_lfc
+    
+    @staticmethod
+    def predict_expected(y_density, y_lfc, obs, exp, density, mu_params):
+        """
+        Predicted expected counts (in exp units): exp-weighted softmax shape times predicted total.
+
+        Returns
+        -------
+        exp_hat : (B, L) predicted expected counts
+        rel_lfc : (B, L) log(predicted share / bias-expected share), exp-weighted LSE = 0
+        valid   : (B,) windows with exp > 0 and density > 0
+        """
+        valid = (exp.sum(-1) > 0) & (density > 0)
+        log_e = torch.where(valid[:, None], torch.log(exp), 0.0)
+        shape = torch.softmax(y_lfc + log_e, dim=-1)
+        kappa = obs.sum(-1) / NegativeBinomialLoss.dispersion_mu(exp, mu_params).sum(-1)
+        total = exp.sum(-1) * kappa * y_density / torch.where(valid, density, 1.0)
+        rel_lfc = torch.log(shape) - log_e + torch.log(exp.sum(-1, keepdim=True))
+        return shape * total[:, None], rel_lfc, valid
 
     def step(self, batch, batch_idx=None):
 
@@ -362,13 +384,15 @@ class SequenceEmbedProfileModel(SequenceEmbedModel):
 
         weight = batch["weight"]
 
-        # read_depth = batch["read_depth"]
-        # bg = batch["bg"]
+        read_depth = batch["read_depth"]
+        bg = batch["bg"]
         density = batch["density"]  # full density (not bg-corrected)
 
         obs = batch["obs"]  # true observed counts
         exp = batch["exp"]  # true expected counts
         lfc = torch.log((obs + 1) / (exp + 1))
+        # normalized like y_lfc: mean fold over the window = 1
+        lfc = lfc - torch.logsumexp(lfc, dim=-1, keepdim=True) + math.log(lfc.shape[-1])
 
         # parameters for the negative binomial distributions
         mu_params = batch["mu_params"]
@@ -378,24 +402,50 @@ class SequenceEmbedProfileModel(SequenceEmbedModel):
         # predicted LFC) with further scaling by the density output head
         # to force model to also remember the normalized read depth 
         # per peak
-        exp_hat = torch.exp(y_lfc) * exp * (y_density / density)
+        exp_hat, valid = self.predict_expected(
+            y_density, y_lfc, obs, exp, density, mu_params
+        )
 
-        # negative binomial loss
-        loss = self.criterion(exp_hat, obs, mu_params, r_params)
+        # negative binomial loss (windows with expected counts and density > 0)
+        profile_loss = self.criterion(exp_hat, obs, mu_params, r_params)
+        profile_loss = (profile_loss * (weight * valid)[:, None]).sum(-1)
 
-        if loss.ndim == 1:
-            loss = loss * weight
-        else:
-            loss = loss * weight[:, None]
-        loss = loss.mean()
+        # Poisson loss on total counts for the remaining windows
+        # (e.g. negatives with zero density), as in the density model
+        million = 1e6
+        total_hat = y_density / million * read_depth + bg
+        total = torch.clip(density / million * read_depth, bg, None)
+        total_loss = self.total_criterion(total_hat, total) * weight * ~valid
+
+        # NLL per window
+        loss = (profile_loss + total_loss).mean()
 
         return loss, y_density, y_lfc, density, lfc
 
+    @staticmethod
+    def rowwise_pearson(x, y, eps=1e-8):
+        xc = x - x.mean(-1, keepdim=True)
+        yc = y - y.mean(-1, keepdim=True)
+        return (xc * yc).sum(-1) / (xc.norm(dim=-1) * yc.norm(dim=-1)).clamp_min(eps)
+
     def validation_step(self, batch, batch_idx):
-        loss, y_density_, y_lfc, density, lfc = self.step(batch, batch_idx)
-
-        # TODO: report validation metrics
-
+        loss, y_density, y_lfc, lfc, exp_hat, valid = self.step(batch, batch_idx)
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+
+        self.val_density_pcc.update(torch.log1p(y_density), torch.log1p(batch["density"]))
+        self.log("val_density_pcc", self.val_density_pcc, on_step=False, on_epoch=True)
+
+        if valid.any():
+            n = int(valid.sum())
+            profile_pcc = self.rowwise_pearson(y_lfc[valid], lfc[valid])
+            self.log("val_profile_pcc", profile_pcc.mean(),
+                     on_step=False, on_epoch=True, batch_size=n, sync_dist=True)
+
+            mu = NegativeBinomialLoss.dispersion_mu(exp_hat[valid], batch["mu_params"][valid])
+            r = NegativeBinomialLoss.dispersion_r(exp_hat[valid], batch["r_params"][valid])
+            var_total = (mu + mu ** 2 / r).sum(-1)
+            z2 = (batch["obs"][valid].sum(-1) - mu.sum(-1)) ** 2 / var_total
+            self.log("val_total_z2", z2.mean(),
+                     on_step=False, on_epoch=True, batch_size=n, sync_dist=True)
 
         return loss
