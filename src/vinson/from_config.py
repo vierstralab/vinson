@@ -311,7 +311,7 @@ def datamodule_from_config(
             fasta_file=fasta_file,
             dm_mu_params_file=config["dm_mu_params_file"],
             dm_r_params_file=config["dm_r_params_file"],
-            fp_meta_df=config['fp_meta_df'],
+            fp_meta_file=config['fp_meta_file'],
             genotype_file=genotype_file,
             train_dataset_kwargs=train_dataset_kwargs,
             valid_dataset_kwargs=valid_dataset_kwargs,
