@@ -55,7 +55,6 @@ class MSELoss(torch.nn.Module):
         else:
             return nll
 
-
 class NegativeBinomialLoss(torch.nn.Module):
     """
     Negative log-likelihood loss for the negative binomial distribution.
@@ -67,18 +66,15 @@ class NegativeBinomialLoss(torch.nn.Module):
     ----------
     relative : bool, optional
         If True, computes the relative NLL compared to the best possible prediction (default is True).
-    mom : str, optional
-        Method of moments parameterization: 'mean' or 'mode' (default is 'mean').
     reduction : str, optional
         Specifies the reduction: 'mean', 'sum', or 'none' (default is 'mean').
     """
 
     def __init__(
-        self, relative: bool = True, mom: str = "mean", reduction: str = "mean"
+        self, relative: bool = True, reduction: str = "mean"
     ):
         super(NegativeBinomialLoss, self).__init__()
         self.reduction = reduction
-        self.mom = mom
         self.relative = relative
 
     def forward(
@@ -102,22 +98,11 @@ class NegativeBinomialLoss(torch.nn.Module):
             The computed negative binomial loss. If reduction is 'sum' or 'mean', returns a scalar tensor;
             otherwise, returns a tensor of losses per element.
         """
-
-        # TODO: add 'fit_piecewise' function
-        mu = fit_piecewise(input, mu_params) 
-        r = fit_piecewise(input, r_params)
-        p = r / (r+mu)
-        phat = 0 # TODO 
-
+        mu = NegativeBinomialLoss.dispersion_mu(input, mu_params)
+        r = NegativeBinomialLoss.dispersion_r(input, r_params)
+        nll = -NegativeBinomialLoss.nb_logpmf(target, mu, r)
         if self.relative:
-            nll = -(
-                r * torch.log(p)
-                + target * torch.log1p(-p)
-                - r * torch.log(phat)
-                - target * torch.log1p(-phat)
-            )
-        else:
-            nll = -(r * torch.log(p) + target * torch.log1p(-p))
+            nll = nll + NegativeBinomialLoss.nb_logpmf(target, target.clamp_min(1e-6), r.detach())
 
         if self.reduction == "sum":
             return nll.sum()
@@ -125,6 +110,35 @@ class NegativeBinomialLoss(torch.nn.Module):
             return nll.mean()
         else:
             return nll
+    
+    @staticmethod
+    def nb_logpmf(k, mu, r):
+        log_r_mu = torch.log(r + mu)
+        return (torch.lgamma(k + r) - torch.lgamma(k + 1) - torch.lgamma(r)
+                + r * (torch.log(r) - log_r_mu)
+                + torch.special.xlogy(k, mu) - k * log_r_mu)
+
+    @staticmethod
+    def apply_piecewise(x, params, n_seg):
+        params = params.to(x.dtype)
+        breaks = params[:, : n_seg - 1]
+        b = params[:, n_seg : 2 * n_seg]
+        k = params[:, 2 * n_seg :]
+        flat = x.reshape(x.shape[0], -1)
+        seg = (flat.unsqueeze(-1) >= breaks.unsqueeze(1)).sum(-1)
+        return (b.gather(1, seg) + k.gather(1, seg) * flat).reshape(x.shape)
+    
+    @staticmethod
+    def dispersion_mu(exp, mu_params):
+        mu = NegativeBinomialLoss.apply_piecewise(exp, mu_params, 3)
+        return torch.where(mu > 0, mu, torch.full_like(mu, 0.1))
+
+    @staticmethod
+    def dispersion_r(exp, r_params):
+        inv_r = NegativeBinomialLoss.apply_piecewise(exp, r_params, 5)
+        pos = inv_r > 0
+        return torch.where(pos, 1.0 / torch.where(pos, inv_r, 1.0), torch.full_like(inv_r, 1e-6))
+
 
 
 class PoissonNLLLoss(torch.nn.Module):

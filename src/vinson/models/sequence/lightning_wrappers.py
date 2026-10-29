@@ -328,7 +328,7 @@ class SequenceEmbedProfileModel(SequenceEmbedModel):
             **kwargs,
         )
 
-        self.criterion = NegativeBinomialLoss(reduction=None)
+        self.criterion = NegativeBinomialLoss(reduction="none")
 
         self.final_density = self.final
 
@@ -356,9 +356,9 @@ class SequenceEmbedProfileModel(SequenceEmbedModel):
         y_density, y_lfc = self(X_seq, X_embed)
         return y_density.squeeze(-1), y_lfc
 
-    def step(self, batch):
+    def step(self, batch, batch_idx=None):
 
-        y_density, y_lfc = self.forward(batch)
+        y_density, y_lfc = self._forward_from_batch(batch)
 
         weight = batch["weight"]
 
@@ -368,7 +368,7 @@ class SequenceEmbedProfileModel(SequenceEmbedModel):
 
         obs = batch["obs"]  # true observed counts
         exp = batch["exp"]  # true expected counts
-        lfc = torch.log(obs + 1, exp + 1)
+        lfc = torch.log((obs + 1) / (exp + 1))
 
         # parameters for the negative binomial distributions
         mu_params = batch["mu_params"]
@@ -381,7 +381,7 @@ class SequenceEmbedProfileModel(SequenceEmbedModel):
         exp_hat = torch.exp(y_lfc) * exp * (y_density / density)
 
         # negative binomial loss
-        loss = self.criterion(obs, exp_hat, mu_params, r_params)
+        loss = self.criterion(exp_hat, obs, mu_params, r_params)
 
         if loss.ndim == 1:
             loss = loss * weight
