@@ -33,6 +33,7 @@ MODEL_FACTORY_REGISTRY = {
 
     "basset_variant_embed": BassetTrunkEmbed,
     "legnet_variant_embed": LegNetTrunkEmbed,
+    "legnet_variant_density_embed": LegNetTrunkEmbed,
 
 }
 
@@ -189,12 +190,64 @@ def dhs_model_from_config(config, checkpoint_path=None, device='cpu'):
     return model
 
 
+def _variant_density_model_from_config(config, checkpoint_path, sequence_model_checkpoint,
+                                       scheduler_kwargs, device='cpu'):
+    """
+    Build VariantEmbedDensityModel. Without checkpoint_path, initializes the trunk and the
+    density head (head_model + final) from the DHS checkpoint in config['sequence_model_checkpoint'];
+    the LFC head stays randomly initialized.
+    """
+    trunk = _sequence_model_from_config(config)
+    head_density = MLPBlock(**config['model_arch']['head_density'])
+    head_lfc = MLPBlock(**config['model_arch']['head'])
+    heads = dict(trunk_model=trunk, head_model_density=head_density, head_model_lfc=head_lfc)
+
+    if checkpoint_path is not None:
+        return VariantEmbedDensityModel.load_from_checkpoint(
+            checkpoint_path=checkpoint_path,
+            map_location=device,
+            **heads,
+        )
+
+    model = VariantEmbedDensityModel(
+        **heads,
+        **scheduler_kwargs,
+        **config.get('model_kwargs', {}),
+    )
+
+    if sequence_model_checkpoint is None:
+        print("WARNING: no sequence_model_checkpoint in config; trunk and density head are randomly initialized.")
+        return model
+
+    state_dict = torch.load(sequence_model_checkpoint, map_location=device)["state_dict"]
+    pretrained = {
+        k: v for k, v in state_dict.items()
+        if k.startswith(("trunk_model.", "head_model.", "final."))
+    }
+    missing, unexpected = model.load_state_dict(pretrained, strict=False)
+    # LFC head is new; *_density keys are aliases of head_model/final, which were loaded
+    allowed_missing = ("head_model_lfc.", "final_lfc.", "head_model_density.", "final_density.")
+    not_loaded = [k for k in missing if not k.startswith(allowed_missing)]
+    assert not not_loaded and not unexpected, (
+        f"Pretrained weights did not fully load. Not loaded: {not_loaded}; unexpected: {unexpected}"
+    )
+    print(f"Loaded trunk + density head weights from {sequence_model_checkpoint}")
+    return model
+
+
 #need to remove config key needing model_kwargs and data_params
 #MLP block expects config param to be activations not activation
-def variant_model_from_config(config, checkpoint_path=None, *, sequence_model_checkpoint=None, 
-                               device='cpu'):
+def variant_model_from_config(config, checkpoint_path=None, *, device='cpu'):
+    sequence_model_checkpoint = config.get("sequence_model_checkpoint")
     model_type = config["model_type"]
-    assert model_type in ("basset_variant_embed", "legnet_variant_embed",'legnet_variant_density_embed'), f"Model type {model_type} not supported for variant models. Available types: 'basset_variant_embed', 'legnet_variant_embed'"
+    assert model_type in ("basset_variant_embed", "legnet_variant_embed",'legnet_variant_density_embed'), f"Model type {model_type} not supported for variant models. Available types: 'basset_variant_embed', 'legnet_variant_embed', 'legnet_variant_density_embed'"
+
+    if model_type == "legnet_variant_density_embed":
+        if checkpoint_path is not None and sequence_model_checkpoint is not None:
+            print('Ignoring sequence_model_checkpoint, loading from checkpoint_path.')
+        return _variant_density_model_from_config(
+            config, checkpoint_path, sequence_model_checkpoint, _parse_scheduler_and_optimizer(config), device
+        )
 
     head = MLPBlock(
         **config['model_arch']['head']

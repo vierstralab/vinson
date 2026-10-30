@@ -80,6 +80,7 @@ class InferenceVariantEmbedDataset(BaseSequenceDataset):
             indiv_id = data_dict['indiv_id']
         else:
             indiv_id = ""
+        self._init_fileread()
 
         dna_seq_ref, dna_seq_alt = self.get_sample_sequence(interval, indiv_id, anchor_variant)
 

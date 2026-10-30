@@ -139,7 +139,7 @@ def main(args):
             )
 
     
-    model = variant_model_from_config(config, sequence_model_checkpoint=args.sequence_model_checkpoint, checkpoint_path=checkpoint)
+    model = variant_model_from_config(config, checkpoint_path=checkpoint)
 
     fit_model(
         model,
@@ -183,12 +183,6 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Path to checkpoint or 'last' to resume last checkpoint.",
-    )
-    parser.add_argument(
-        "--sequence_model_checkpoint",
-        type=str,
-        default=None,
-        help="Path to checkpoint to load weights from dhs model",
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument(

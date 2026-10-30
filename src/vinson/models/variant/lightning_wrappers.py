@@ -216,14 +216,25 @@ class VariantEmbedDensityModel(SequenceEmbedModel):
         self.final_density = self.final
 
         self.head_model_lfc = head_model_lfc
-        self.final_lfc = torch.nn.Linear(
-            self.trunk_model.output_dims,
-        )
+        self.final_lfc = torch.nn.Linear(self.head_model_lfc.output_dim, 1)
+        if init_weights:
+            self.head_model_lfc.apply(initialize_weights)
+            self.final_lfc.apply(initialize_weights)
 
         self.criterion_density = self.criterion
         self.criterion_lfc = BinomialMixtureNLLLoss(relative=True, reduction="none")
 
         self.loss_weight_density = loss_weight_density
+
+    def freeze_trunk(self):
+        for param in self.trunk_model.parameters():
+            param.requires_grad = False
+        print("Trunk frozen.")
+
+    def unfreeze_trunk(self):
+        for param in self.trunk_model.parameters():
+            param.requires_grad = True
+        print("Trunk unfrozen.")
 
     def forward_final_density(self, x):
         x = self.final_density(x)
@@ -245,23 +256,22 @@ class VariantEmbedDensityModel(SequenceEmbedModel):
         density_alt = self.head_model_density(features_alt)
         density_alt = self.forward_final_density(density_alt)
 
-        density = (density_ref + density_alt) / 2.0
-
         lfc = torch.cat([features_ref, features_alt], dim=-1)
         lfc = self.head_model_lfc(lfc)
         lfc = self.forward_final_lfc(lfc)
 
-        return density, lfc
+        return density_ref, density_alt, lfc
 
     def _forward_from_batch(self, batch):
         X_ref = batch["ohe_seq_ref"]
         X_alt = batch["ohe_seq_alt"]
         X_embed = batch["embed"]
-        density, lfc = self(X_ref, X_alt, X_embed)
-        return density.squeeze(), lfc.squeeze()
+        density_ref, density_alt, lfc = self(X_ref, X_alt, X_embed)
+        return density_ref.squeeze(-1), density_alt.squeeze(-1), lfc.squeeze(-1)
 
     def step(self, batch, batch_idx):
-        y_density, y_lfc = self._forward_from_batch(batch)
+        y_density_ref, y_density_alt, y_lfc = self._forward_from_batch(batch)
+        y_density = (y_density_ref + y_density_alt) / 2
 
         # loss of density
         y_counts, counts = self._run_step_regression(
@@ -284,6 +294,7 @@ class VariantEmbedDensityModel(SequenceEmbedModel):
 
         # total loss
         loss = self.loss_weight_density * loss_density + loss_lfc
+        loss = loss.mean()
 
         return (
             loss,
