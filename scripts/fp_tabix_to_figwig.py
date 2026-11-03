@@ -3,12 +3,12 @@ Write per-sample footprint tabix files into one figwig file, with tracks <sample
 <sample_id>.exp, as SequenceEmbedProfileDataset reads them.
 
 Usage:
-    python fp_tabix_to_figwig.py <fp_meta_file> <genome.fa.fai> <out.fw> [--n_jobs 8] [--tile 16384]
+    python fp_tabix_to_figwig.py <fp_meta_file> <chrom_sizes> <out.fw> [--n_jobs 8] [--tile 16384]
 
 fp_meta_file: tab-separated, with columns sample_id and tabix_file.
 
 Each sample's obs/exp pair is its own track group, so training reads (one sample's two tracks per
-example) decode only that pair. Samples are written one at a time, chromosome by chromosome in .fai
+example) decode only that pair. Samples are written one at a time, chromosome by chromosome in chrom sizes
 order; tabix files are parsed in parallel worker processes.
 """
 import argparse
@@ -38,9 +38,9 @@ def read_chrom(fp_tabix, chrom, size):
     return df['start'].values.astype(np.int64), df['end'].values.astype(np.int64), values
 
 
-def main(fp_meta_file, fai, out_fw, n_jobs=1, tile=None):
+def main(fp_meta_file, chrom_sizes_file, out_fw, n_jobs=1, tile=None):
     fp_meta = pd.read_table(fp_meta_file)
-    chrom_sizes = pd.read_table(fai, header=None, usecols=[0, 1], index_col=0).iloc[:, 0].to_dict()
+    chrom_sizes = pd.read_table(chrom_sizes_file, header=None, names=['chrom', 'length'], sep=r'\s+').set_index('chrom')['length'].to_dict()
 
     sample_ids = [str(s) for s in fp_meta['sample_id']]
     tracks = [
@@ -82,10 +82,10 @@ def main(fp_meta_file, fai, out_fw, n_jobs=1, tile=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('fp_meta_file', help='Tab-separated file with columns sample_id and tabix_file')
-    parser.add_argument('fai', help='Genome .fai (chromosome sizes, in the order to write)')
+    parser.add_argument('chrom_sizes_file', help='Two-column chrom sizes file (chrom, length), in the order to write')
     parser.add_argument('out_fw', help='Output figwig file')
     parser.add_argument('--n_jobs', type=int, default=1, help='Processes parsing tabix files in parallel')
     parser.add_argument('--tile', type=int, default=None, help='figwig tile size (default 16384); smaller can read faster on one thread')
     args = parser.parse_args()
 
-    main(args.fp_meta_file, args.fai, args.out_fw, n_jobs=args.n_jobs, tile=args.tile)
+    main(args.fp_meta_file, args.chrom_sizes_file, args.out_fw, n_jobs=args.n_jobs, tile=args.tile)
