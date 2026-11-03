@@ -36,6 +36,8 @@ MODEL_FACTORY_REGISTRY = {
     "basset_variant_embed": BassetTrunkEmbed,
     "legnet_variant_embed": LegNetTrunkEmbed,
 
+    "legnet_profile_embed": LegNetTrunkEmbed,
+    "legnet_variant_density_embed": LegNetTrunkEmbed,
 }
 
 
