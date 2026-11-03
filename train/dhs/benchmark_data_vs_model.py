@@ -6,8 +6,9 @@ Builds the datamodule and model the same way train_dhs.py does, then measures:
      for profile datasets)
   2. DataLoader throughput with N workers (data only, no model)
   3. GPU time for forward + backward + optimizer step on batches already on the GPU
+  4. the real interleaved loop: how long each step blocks waiting for the next batch
 
-If (2) s/batch >> (3) s/batch, training is data-bound.
+If (2) s/batch >> (3) s/batch, training is data-bound; (4) shows the resulting GPU idle time.
 """
 import os
 import time
@@ -75,6 +76,31 @@ def time_model(model, batches, n_warmup, device):
     return (time.perf_counter() - t) / (len(batches) - n_warmup)
 
 
+def time_training_loop(model, loader, n_batches, n_warmup, device):
+    """
+    Interleave loading and training like the real loop: time blocked in next(loader)
+    is how long the GPU sits idle waiting for data.
+    """
+    model.to(device).train()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    it = iter(loader)
+    wait, step = [], []
+    for i in range(n_warmup + n_batches):
+        t0 = time.perf_counter()
+        batch = to_device(next(it), device)
+        t1 = time.perf_counter()
+        optimizer.zero_grad(set_to_none=True)
+        loss = model.step(batch)[0]
+        loss.backward()
+        optimizer.step()
+        torch.cuda.synchronize(device)
+        t2 = time.perf_counter()
+        if i >= n_warmup:
+            wait.append(t1 - t0)
+            step.append(t2 - t1)
+    return np.array(wait), np.array(step)
+
+
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("anndata_file", type=str)
@@ -127,6 +153,12 @@ if __name__ == "__main__":
     batches = [to_device(next(it), device) for _ in range(args.n_batches + args.n_warmup)]
     model_time = time_model(model, batches, args.n_warmup, device)
     print(f"[3] model fwd+bwd+step on GPU: {model_time:.3f} s/batch", flush=True)
+    del batches
+
+    wait, step = time_training_loop(model, datamodule.train_dataloader(), args.n_batches, args.n_warmup, device)
+    print(f"[4] real loop: waiting for data {wait.mean():.3f} s/batch (median {np.median(wait):.3f}, "
+          f"max {wait.max():.3f}), training {step.mean():.3f} s/batch "
+          f"-> GPU idle {wait.sum() / (wait.sum() + step.sum()):.0%} of the time", flush=True)
 
     n_batches_epoch = len(loader)
     bound = "DATA" if loader_time > model_time else "GPU"
