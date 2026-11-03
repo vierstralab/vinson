@@ -5,7 +5,7 @@ Write per-sample footprint tabix files into one figwig file, with tracks <sample
 Usage:
     python fp_tabix_to_figwig.py <fp_meta_file> <chrom_sizes> <out.fw> [--n_jobs 8] [--tile 16384]
 
-fp_meta_file: tab-separated, with columns sample_id and tabix_file.
+fp_meta_file: tab-separated, sample ids in the first column, and a tabix_file column.
 
 Each sample's obs/exp pair is its own track group, so training reads (one sample's two tracks per
 example) decode only that pair. Samples are written one at a time, chromosome by chromosome in chrom sizes
@@ -39,10 +39,10 @@ def read_chrom(fp_tabix, chrom, size):
 
 
 def main(fp_meta_file, chrom_sizes_file, out_fw, n_jobs=1, tile=None):
-    fp_meta = pd.read_table(fp_meta_file)
+    fp_meta = pd.read_table(fp_meta_file, index_col=0)
     chrom_sizes = pd.read_table(chrom_sizes_file, header=None, names=['chrom', 'length'], sep=r'\s+').set_index('chrom')['length'].to_dict()
 
-    sample_ids = [str(s) for s in fp_meta['sample_id']]
+    sample_ids = [str(s) for s in fp_meta.index]
     tracks = [
         {"name": f"{s}.{kind}", "sample_id": s, "kind": kind}
         for s in sample_ids for kind in ('obs', 'exp')
@@ -81,7 +81,7 @@ def main(fp_meta_file, chrom_sizes_file, out_fw, n_jobs=1, tile=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('fp_meta_file', help='Tab-separated file with columns sample_id and tabix_file')
+    parser.add_argument('fp_meta_file', help='Tab-separated file with sample ids in the first column and a tabix_file column')
     parser.add_argument('chrom_sizes_file', help='Two-column chrom sizes file (chrom, length), in the order to write')
     parser.add_argument('out_fw', help='Output figwig file')
     parser.add_argument('--n_jobs', type=int, default=1, help='Processes parsing tabix files in parallel')
