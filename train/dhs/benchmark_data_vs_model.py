@@ -2,7 +2,7 @@
 Time data loading vs. model compute for a DHS training config.
 
 Builds the datamodule and model the same way train_dhs.py does, then measures:
-  1. per-item dataset time in the main process (and how much of it is footprint tabix reads,
+  1. per-item dataset time in the main process (and how much of it is footprint reads,
      for profile datasets)
   2. DataLoader throughput with N workers (data only, no model)
   3. GPU time for forward + backward + optimizer step on batches already on the GPU
@@ -28,7 +28,7 @@ def to_device(batch, device):
 def time_items(dataset, n_items, seed=0):
     idx = np.random.default_rng(seed).choice(len(dataset), size=n_items, replace=False)
     fp_time = 0.0
-    # profile datasets read obs/exp footprints from tabix per item; time that part separately
+    # profile datasets read obs/exp footprints per item; time that part separately
     extract = getattr(dataset, 'extract_obs_exp_data', None)
     if extract is not None:
         def timed_extract(*args, **kwargs):
@@ -141,7 +141,7 @@ if __name__ == "__main__":
     print(f"\n[1] dataset item (main process): {per_item * 1e3:.1f} ms/item "
           f"-> {per_item * batch_size:.2f} s/batch with 1 worker", flush=True)
     if per_item_fp is not None:
-        print(f"    of which footprint tabix reads: {per_item_fp * 1e3:.1f} ms/item "
+        print(f"    of which footprint reads: {per_item_fp * 1e3:.1f} ms/item "
               f"({per_item_fp / per_item:.0%})", flush=True)
 
     loader_time = time_loader(loader, args.n_batches, args.n_warmup)

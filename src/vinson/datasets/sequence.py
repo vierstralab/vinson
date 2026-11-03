@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 
 from genome_tools import GenomicInterval
-from genome_tools.data.extractors import TabixExtractor
 
 from vinson.utils.data_formatting import VinsonData
 from vinson.utils.helpers import apply_edits
@@ -303,11 +302,16 @@ class SequenceEmbedProfileDataset(SequenceEmbedDataset):
     """
     Dataset for sequence embeddings with profile information.
     """
-    def __init__(self, data: VinsonData, fasta_file, dm_mu_params: pd.DataFrame, dm_r_params: pd.DataFrame, fp_meta_df: pd.DataFrame, **kwargs):
+    def __init__(self, data: VinsonData, fasta_file, dm_mu_params: pd.DataFrame, dm_r_params: pd.DataFrame, fp_figwig_file: str, **kwargs):
+        """
+        `fp_figwig_file` is a figwig file with per-base footprint tracks
+        '<sample_id>.obs' and '<sample_id>.exp' for every sample.
+        """
         super().__init__(data, fasta_file, **kwargs)
         self.mu_params = dm_mu_params
         self.r_params = dm_r_params
-        self.fp_meta_df = fp_meta_df
+        self.fp_figwig_file = fp_figwig_file
+        self.fp_extr = None
 
     def __getitem__(self, i):
         data = super().__getitem__(i)
@@ -321,31 +325,19 @@ class SequenceEmbedProfileDataset(SequenceEmbedDataset):
             data['summit'] + data['shift'] + 1
         ).widen(75)
 
-        data['obs'], data['exp'] = self.extract_obs_exp_data(
-            self.fp_meta_df.loc[sample_id, 'tabix_file'],
-            interval
-        )
+        data['obs'], data['exp'] = self.extract_obs_exp_data(sample_id, interval)
 
         return data
-        
-    def extract_obs_exp_data(self, fp_track_path, interval):
-        # TODO 1: store open filehandles
 
-        # TODO 2: move extraction to a separate file (no hardcoded format in dataset)
-        
-        obs = np.zeros(len(interval), dtype=np.float32)
-        exp = np.zeros(len(interval), dtype=np.float32)
-        with TabixExtractor(
-            fp_track_path,
-            columns=[
-                'chrom', 'start', 'end', 
-                'exp', 'obs', 'neglog_pval', 
-                'neglog_winpval', 'fdr'
-            ]
-        ) as ext:
-            fp_data = ext[interval]
+    def extract_obs_exp_data(self, sample_id, interval):
+        if self.fp_extr is None:
+            from figwig import FigWigReader
+            self.fp_extr = FigWigReader(self.fp_figwig_file)
 
-            rel_index = fp_data['start'] - interval.start
-            obs[rel_index] = fp_data['obs']
-            exp[rel_index] = fp_data['exp']
-            return obs, exp
+        # DataLoader workers already run in parallel, so one thread per read
+        y = self.fp_extr.read(
+            [interval.chrom], [interval.start], len(interval),
+            tracks=[f"{sample_id}.obs", f"{sample_id}.exp"],
+            dtype=np.float32, n_jobs=1,
+        )
+        return y[0, 0], y[0, 1]
