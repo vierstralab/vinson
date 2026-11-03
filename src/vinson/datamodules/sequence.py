@@ -175,12 +175,12 @@ class SeqEmbedProfileDataModule(SeqEmbedDataModule):
         self.dm_mu_params_file = dm_mu_params_file
         self.dm_r_params_file = dm_r_params_file
         self.fp_meta_file = fp_meta_file
-        self.dm_mu_params = self.dm_r_params = self.fp_meta_file = None
+        self.dm_mu_params = self.dm_r_params = self.fp_meta_df = None
 
     def setup(self, stage):
         self.dm_mu_params = pd.read_table(self.dm_mu_params_file, index_col=0)
         self.dm_r_params = pd.read_table(self.dm_r_params_file, index_col=0)
-        self.fp_meta_df = pd.read_table(self.fp_meta_file)
+        self.fp_meta_df = pd.read_table(self.fp_meta_file, index_col=0)
         super().setup(stage)
 
     def _dataset(self, data, dataset_kwargs):
