@@ -119,7 +119,7 @@ def _sequence_model_from_config(config):
     model_type = config["model_type"]
     BaseModelCls = MODEL_FACTORY_REGISTRY[model_type]
 
-    if model_type in ("basset_embed", "legnet_embed", "basset_variant_embed", "legnet_variant_embed",'legnet_variant_density_embed'):
+    if model_type in ("basset_embed", "legnet_embed", "basset_variant_embed", "legnet_variant_embed",'legnet_variant_density_embed', 'legnet_profile_embed'):
         cell_embed_config = config['model_arch']['cell_embed']
 
         n_independent_embeds = config['model_arch'].get('n_independent_embeds', 1)
