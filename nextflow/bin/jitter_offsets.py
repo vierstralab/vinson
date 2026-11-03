@@ -31,7 +31,7 @@ def sample_jitter_offsets(class_mat, sample_names, jitter, seed=0):
         vals.extend(offsets)
 
     offsets_matrix = sp.coo_matrix(
-        (vals, (rows, cols)), shape=(class_mat.shape[1], len(sample_names)), dtype=np.float32
+        (vals, (rows, cols)), shape=(class_mat.shape[1], len(sample_names)), dtype=np.int32
     ).tocsr()
     return offsets_by_sample, offsets_matrix
 
