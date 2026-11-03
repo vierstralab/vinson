@@ -402,7 +402,7 @@ class SequenceEmbedProfileModel(SequenceEmbedModel):
         # predicted LFC) with further scaling by the density output head
         # to force model to also remember the normalized read depth 
         # per peak
-        exp_hat, valid = self.predict_expected(
+        exp_hat, _, valid = self.predict_expected(
             y_density, y_lfc, obs, exp, density, mu_params
         )
 
@@ -420,7 +420,7 @@ class SequenceEmbedProfileModel(SequenceEmbedModel):
         # NLL per window
         loss = (profile_loss + total_loss).mean()
 
-        return loss, y_density, y_lfc, density, lfc
+        return loss, y_density, y_lfc, lfc, exp_hat, valid
 
     @staticmethod
     def rowwise_pearson(x, y, eps=1e-8):
