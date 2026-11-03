@@ -3,6 +3,7 @@ import re
 import sys
 
 import dask.array as da
+import numpy as np
 import scipy.sparse as sp
 
 from genome_tools.data.anndata import read_zarr_backed, add_matrices_to_anndata
@@ -28,6 +29,22 @@ def get_matrices_mapping_by_tag(matrices, matrices_types):
     return mapping, tags
 
 
+def align_to_class_layer(layer, class_layer):
+    """
+    Store `layer` with exactly the sparsity pattern of `class_layer` (explicit zeros included),
+    so training code can match layers element-wise via `.data`.
+    """
+    coo = class_layer.tocoo()
+    if sp.issparse(layer):
+        values = np.asarray(layer.tocsr()[coo.row, coo.col]).ravel()
+    else:
+        values = np.asarray(layer[coo.row, coo.col]).ravel()
+    return sp.csr_matrix(
+        (values.astype(layer.dtype), class_layer.indices.copy(), class_layer.indptr.copy()),
+        shape=class_layer.shape,
+    )
+
+
 def main(adata, matrices):
     matrices_types = ['density', 'mean_bg_agg_cutcounts', 'class', 'offsets'] + list(adata.layers.keys())
     matrices_mapping, epochs = get_matrices_mapping_by_tag(matrices, matrices_types)
@@ -38,7 +55,20 @@ def main(adata, matrices):
     # layers unconditionally, so they must be sparse regardless of the generic
     # sufficiently-sparse heuristic (can leave them dense on smaller datasets).
     for layer_name in matrices_mapping:
-        if not sp.issparse(adata.layers[layer_name]):
+        if layer_name.startswith('class.'):
+            class_layer = sp.csr_matrix(adata.layers[layer_name])
+            class_layer.sort_indices()
+            adata.layers[layer_name] = class_layer
+
+    # and they're read via .data, so every other layer of an epoch must store exactly the
+    # class layer's entries; a plain dense->sparse conversion drops sampled examples whose
+    # value is 0 (e.g. density of a negative with no reads, or a jitter offset of 0).
+    for layer_name in matrices_mapping:
+        matrix_type, tag = layer_name.split('.', 1)
+        class_key = f"class.{tag}"
+        if matrix_type != 'class' and class_key in adata.layers:
+            adata.layers[layer_name] = align_to_class_layer(adata.layers[layer_name], adata.layers[class_key])
+        elif not sp.issparse(adata.layers[layer_name]):
             adata.layers[layer_name] = sp.csr_matrix(adata.layers[layer_name])
 
     existing_epochs = list(adata.uns.get('epoch_names', []))
