@@ -44,7 +44,8 @@ def assemble_batch(sample_id, interval, embeddings, fasta):
 def score_bed_with_dhs_model(
         dataloader,
         model,
-        device='cpu'
+        device='cpu', 
+        dtype=torch.float16
     ):
     """
     Run a DHS model (or its trunk, to extract embeddings) over every batch of a dataloader built from
@@ -59,6 +60,8 @@ def score_bed_with_dhs_model(
         called as `model(ohe_seq, embed)`.
     device : str, default 'cpu'
         Device to move the model and batches to for inference.
+    dtype : torch.dtype, default=torch.float16
+        Data type used for model inference when scoring intervals.
 
     Returns
     -------
@@ -69,13 +72,14 @@ def score_bed_with_dhs_model(
     model = model.to(device).eval()
 
     lst_preds = []
-    with torch.no_grad():    
-        for batch in tqdm(dataloader):
-            seq = batch['ohe_seq'].to(device)
-            embeds = batch['embed'].to(device)
+    with torch.no_grad():
+        with torch.autocast(device_type=device, dtype=dtype):    
+            for batch in tqdm(dataloader):
+                seq = batch['ohe_seq'].to(device)
+                embeds = batch['embed'].to(device)
 
-            preds = model(seq, embeds)
-            lst_preds.append(preds.cpu().numpy())
+                preds = model(seq, embeds)
+                lst_preds.append(preds.cpu().numpy())
 
     predicted_scores = np.concatenate(lst_preds)
     return predicted_scores
@@ -84,7 +88,8 @@ def score_bed_with_dhs_model(
 def score_variants_with_dhs_model(
         dataloader,
         model,
-        device='cpu'
+        device='cpu',
+        dtype=torch.float16
     ):
     """
     Run a DHS model over every batch of a dataloader built from `InferenceVariantEmbedDataset`,
@@ -99,6 +104,8 @@ def score_variants_with_dhs_model(
         Model called as `model(ohe_seq, embed)` for each allele.
     device : str, default 'cpu'
         Device to move the model and batches to for inference.
+    dtype : torch.dtype, default=torch.float16
+            Data type used for model inference when scoring variants.
 
     Returns
     -------
@@ -108,16 +115,17 @@ def score_variants_with_dhs_model(
     lst_ref, lst_alt = [], []
     model = model.to(device).eval()
 
-    with torch.no_grad():    
-        for batch in tqdm(dataloader):
-            ref = batch['ohe_seq_ref'].to(device)
-            alt = batch['ohe_seq_alt'].to(device)
-            embeds = batch['embed'].to(device)
+    with torch.no_grad():
+        with torch.autocast(device_type=device, dtype=dtype):
+            for batch in tqdm(dataloader):
+                ref = batch['ohe_seq_ref'].to(device)
+                alt = batch['ohe_seq_alt'].to(device)
+                embeds = batch['embed'].to(device)
 
-            pred_ref = model(ref, embeds)
-            pred_alt = model(alt, embeds)
+                pred_ref = model(ref, embeds)
+                pred_alt = model(alt, embeds)
 
-            lst_ref.append(pred_ref.cpu().numpy()), lst_alt.append(pred_alt.cpu().numpy())
+                lst_ref.append(pred_ref.cpu().numpy()), lst_alt.append(pred_alt.cpu().numpy())
 
     ref_scores, alt_scores = np.concatenate(lst_ref), np.concatenate(lst_alt)
     return ref_scores, alt_scores
