@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 
 from genome_tools import GenomicInterval
+from genome_tools.data.extractors import FigwigExtractor
 
 from vinson.utils.data_formatting import VinsonData
 from vinson.utils.helpers import apply_edits
@@ -331,13 +332,7 @@ class SequenceEmbedProfileDataset(SequenceEmbedDataset):
 
     def extract_obs_exp_data(self, sample_id, interval):
         if self.fp_extr is None:
-            from figwig import FigWigReader
-            self.fp_extr = FigWigReader(self.fp_figwig_file)
+            self.fp_extr = FigwigExtractor(self.fp_figwig_file)
 
-        # DataLoader workers already run in parallel, so one thread per read
-        y = self.fp_extr.read(
-            [interval.chrom], [interval.start], len(interval),
-            tracks=[f"{sample_id}.obs", f"{sample_id}.exp"],
-            dtype=np.float32, n_jobs=1,
-        )
-        return y[0, 0], y[0, 1]
+        obs, exp = self.fp_extr.read(interval, tracks=[f"{sample_id}.obs", f"{sample_id}.exp"])
+        return obs, exp
