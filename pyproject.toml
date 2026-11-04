@@ -27,6 +27,7 @@ dependencies = [
     "tqdm",
     "PyYAML",
     "genome-tools>=2.0",
+    "bx-python",
     "funkybob",
     "tangermeme",
 ]
