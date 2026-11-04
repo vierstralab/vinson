@@ -1,7 +1,8 @@
 import numpy as np
+import pandas as pd
 
 from genome_tools import GenomicInterval
-
+from genome_tools.data.extractors import FigwigExtractor
 
 from vinson.utils.data_formatting import VinsonData
 from vinson.utils.helpers import apply_edits
@@ -296,3 +297,42 @@ class SequenceEmbedDataset(SequenceOnlyDataset):
         data = super().__getitem__(i)
         data['embed'], _ = self.get_embedding_vec(data['sample_id'])
         return data
+    
+
+class SequenceEmbedProfileDataset(SequenceEmbedDataset):
+    """
+    Dataset for sequence embeddings with profile information.
+    """
+    def __init__(self, data: VinsonData, fasta_file, dm_mu_params: pd.DataFrame, dm_r_params: pd.DataFrame, fp_figwig_file: str, **kwargs):
+        """
+        `fp_figwig_file` is a figwig file with per-base footprint tracks
+        '<sample_id>.obs' and '<sample_id>.exp' for every sample.
+        """
+        super().__init__(data, fasta_file, **kwargs)
+        self.mu_params = dm_mu_params
+        self.r_params = dm_r_params
+        self.fp_figwig_file = fp_figwig_file
+        self.fp_extr = None
+
+    def __getitem__(self, i):
+        data = super().__getitem__(i)
+        sample_id = data['sample_id']
+        data["mu_params"] = self.mu_params.loc[sample_id].values.astype(np.float32)
+        data["r_params"] = self.r_params.loc[sample_id].values.astype(np.float32)
+
+        interval = GenomicInterval(
+            data['chrom'],
+            data['summit'] + data['shift'],
+            data['summit'] + data['shift'] + 1
+        ).widen(75)
+
+        data['obs'], data['exp'] = self.extract_obs_exp_data(sample_id, interval)
+
+        return data
+
+    def extract_obs_exp_data(self, sample_id, interval):
+        if self.fp_extr is None:
+            self.fp_extr = FigwigExtractor(self.fp_figwig_file)
+
+        obs, exp = self.fp_extr.read(interval, tracks=[f"{sample_id}.obs", f"{sample_id}.exp"])
+        return obs, exp

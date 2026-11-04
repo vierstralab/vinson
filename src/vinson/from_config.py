@@ -22,7 +22,7 @@ from vinson.models.cell_classifier import CellClassifierModel
 
 from vinson.models.shared import MLPBlock
 
-from vinson.datamodules.sequence import SeqEmbedDataModule
+from vinson.datamodules.sequence import SeqEmbedDataModule, SeqEmbedProfileDataModule
 from vinson.datamodules.variant import SeqEmbedVariantDataModule, SeqEmbedVariantDensityDataModule
 
 
@@ -36,6 +36,8 @@ MODEL_FACTORY_REGISTRY = {
     "basset_variant_embed": BassetTrunkEmbed,
     "legnet_variant_embed": LegNetTrunkEmbed,
 
+    "legnet_profile_embed": LegNetTrunkEmbed,
+    "legnet_variant_density_embed": LegNetTrunkEmbed,
 }
 
 
@@ -117,7 +119,7 @@ def _sequence_model_from_config(config):
     model_type = config["model_type"]
     BaseModelCls = MODEL_FACTORY_REGISTRY[model_type]
 
-    if model_type in ("basset_embed", "legnet_embed", "basset_variant_embed", "legnet_variant_embed",'legnet_variant_density_embed'):
+    if model_type in ("basset_embed", "legnet_embed", "basset_variant_embed", "legnet_variant_embed",'legnet_variant_density_embed', 'legnet_profile_embed'):
         cell_embed_config = config['model_arch']['cell_embed']
 
         n_independent_embeds = config['model_arch'].get('n_independent_embeds', 1)
@@ -300,6 +302,18 @@ def datamodule_from_config(
         return SeqEmbedVariantDataModule(
             anndata_file=anndata_file,
             fasta_file=fasta_file,
+            genotype_file=genotype_file,
+            train_dataset_kwargs=train_dataset_kwargs,
+            valid_dataset_kwargs=valid_dataset_kwargs,
+            **dataloader_kwargs,
+        )
+    elif config["model_type"] == "legnet_profile_embed":
+        return SeqEmbedProfileDataModule(
+            anndata_file=anndata_file,
+            fasta_file=fasta_file,
+            dm_mu_params_file=config["dm_mu_params_file"],
+            dm_r_params_file=config["dm_r_params_file"],
+            fp_figwig_file=config['fp_figwig_file'],
             genotype_file=genotype_file,
             train_dataset_kwargs=train_dataset_kwargs,
             valid_dataset_kwargs=valid_dataset_kwargs,
