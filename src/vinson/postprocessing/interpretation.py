@@ -254,7 +254,7 @@ class ModelWrapper(torch.nn.Module):
             self,
             X,
             args=(X_embed,),
-            device=device,
+            device=str(device),  # tangermeme passes it to torch.autocast, which needs a string ('cpu', 'cuda:0', ...)
             print_convergence_deltas=print_convergence_deltas,
             references=dinucleotide_shuffle,
             additional_nonlinear_ops={
@@ -316,7 +316,7 @@ class VariantModelWrapper(torch.nn.Module):
                 alt_seq,
                 embed,
             ),
-            device=device,
+            device=str(device),
             references=dinucleotide_shuffle,
             random_state=random_state,
             **kwargs,
@@ -330,7 +330,7 @@ class VariantModelWrapper(torch.nn.Module):
                 ref_seq,
                 embed,
             ),
-            device=device,
+            device=str(device),
             references=dinucleotide_shuffle,
             random_state=random_state,
             **kwargs,
