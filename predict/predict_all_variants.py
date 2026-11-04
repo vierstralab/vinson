@@ -7,61 +7,8 @@ import lightning as L
 from tqdm import tqdm
 
 from vinson.from_config import read_configs, variant_model_from_config
-from vinson.utils.data_formatting import extract_variant_data_from_anndata, extract_data_from_h5
-from vinson.datasets.variant import VariantEmbedDataset
-
-import h5py
-import numpy as np
-import pandas as pd
-from vinson.utils.data_formatting.readers import sanitize_data
-from vinson.utils.data_formatting.container import VinsonData
-
-def extract_variant_data_from_h5(h5_file: str, ref_adata=None, is_variant=True) -> VinsonData:
-    """
-    Extract variant data from an H5 file (all datasets, no sparse groups)
-    and create a VinsonData object similar to extract_variant_data_from_anndata.
-    """
-    with h5py.File(h5_file, 'r') as f:
-        data_raw = {key: f[key][()] for key in f.keys()}
-
-    # Convert bytes/string arrays to str
-    for key, val in data_raw.items():
-        if val.dtype.kind in {'S', 'O'}:
-            data_raw[key] = val.astype(str)
-
-    # Encode categorical/string columns
-    encodings = {}
-    for col in ['chrom', 'ref', 'alt', 'sample_id', 'indiv_id']:
-        if col in data_raw:
-            codes, uniques = pd.factorize(data_raw[col])
-            data_raw[col] = codes
-            encodings[col] = uniques
-
-    # Assemble final data dictionary
-    data = {
-        'chrom': data_raw['chrom'],
-        'pos': data_raw['pos'],
-        'ref': data_raw['ref'],
-        'alt': data_raw['alt'],
-        'sample_id': data_raw['sample_id'],
-        'ref_counts': data_raw['ref_counts'],
-        'total_counts': data_raw['total_counts'],
-        'BAD': data_raw['BAD'],
-        'logit_es': data_raw['logit_es'],
-    }
-    if 'indiv_id' in data_raw:
-        data['indiv_id'] = data_raw['indiv_id']
-
-    # Sanitize & create VinsonData
-    data, encodings = sanitize_data(data, encodings, is_variant=is_variant)
-    embeddings_df = ref_adata.obsm['motif_embeddings'] if ref_adata is not None else None
-
-    return VinsonData(
-        data,
-        encodings=encodings,
-        embeddings_df=embeddings_df,
-        is_variant=True
-    )
+from vinson.utils.data_formatting import extract_variant_data_from_anndata, VariantVinsonData
+from vinson.datasets.variant import VariantEmbedDataset, InferenceVariantEmbedDataset
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Predict variants with Vinson model")
@@ -94,7 +41,11 @@ if __name__ == "__main__":
     if args.h5_file is not None:
         print(f"Loading VinsonData from H5: {args.h5_file}")
         adata = ad.read_h5ad(args.anndata)  # need ref for embeddings
-        vinson_data = extract_variant_data_from_h5(args.h5_file, ref_adata=adata, is_variant=True)
+        vinson_data = VariantVinsonData.from_h5(
+            args.h5_file,
+            embeddings_df=adata.obsm['motif_embeddings'],
+            is_inference=True
+        )
     else:
         print(f"Loading full AnnData: {args.anndata}")
         adata = ad.read_h5ad(args.anndata)
@@ -109,13 +60,21 @@ if __name__ == "__main__":
     # -------------------------
     # Dataset & Dataloader
     # -------------------------
-    dataset = VariantEmbedDataset(
-        data=vinson_data,
-        fasta_file=args.fasta_file,
-        genotype_file=args.genotype_file,
-        flip_alleles=False,
-        **dataset_kwargs,
-    )
+    if vinson_data.is_inference:
+        dataset = InferenceVariantEmbedDataset(
+            data=vinson_data,
+            fasta_file=args.fasta_file,
+            genotype_file=args.genotype_file,
+            **dataset_kwargs,
+        )
+    else:
+        dataset = VariantEmbedDataset(
+            data=vinson_data,
+            fasta_file=args.fasta_file,
+            genotype_file=args.genotype_file,
+            flip_alleles=False,
+            **dataset_kwargs,
+        )
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     dataloader = DataLoader(

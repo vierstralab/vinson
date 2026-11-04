@@ -1,36 +1,29 @@
-import anndata as ad
 import torch 
 
 from datetime import datetime
 import mergedeep
-from typing import Union
 
 import torch
 from vinson.utils.helpers import read_yaml_config
 
-from vinson.models.sequence.lightning_wrappers import AbstractSequenceModel
-from vinson.models.sequence.lightning_wrappers import SequenceEmbedModel, SequenceOnlyModel
+from vinson.models.sequence.lightning_wrappers import (
+    AbstractSequenceModel,
+    SequenceEmbedModel,
+    SequenceOnlyModel,
+    SequenceEmbedProfileModel
+)
+
 from vinson.models.sequence.basset import BassetTrunk, BassetTrunkEmbed
 from vinson.models.sequence.legnet import LegNetTrunk, LegNetTrunkEmbed
 
-from vinson.models.variant.lightning_wrappers import VariantEmbedModel
+from vinson.models.variant.lightning_wrappers import VariantEmbedModel, VariantEmbedDensityModel
 
 from vinson.models.cell_classifier import CellClassifierModel
 
 from vinson.models.shared import MLPBlock
 
-
 from vinson.datamodules.sequence import SeqEmbedDataModule
-from vinson.datamodules.variant import SeqEmbedVariantDataModule
-from vinson.datasets.sequence import SequenceEmbedDataset
-from vinson.datasets.variant import VariantEmbedDataset
-
-from vinson.utils.data_formatting import extract_data_from_h5
-from vinson.models.shared import initialize_weights
-
-
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+from vinson.datamodules.variant import SeqEmbedVariantDataModule, SeqEmbedVariantDensityDataModule
 
 
 MODEL_FACTORY_REGISTRY = {
@@ -42,7 +35,9 @@ MODEL_FACTORY_REGISTRY = {
 
     "basset_variant_embed": BassetTrunkEmbed,
     "legnet_variant_embed": LegNetTrunkEmbed,
+
 }
+
 
 LIGHTNING_MODEL_REGISTRY = {
     "basset": SequenceOnlyModel,
@@ -51,11 +46,31 @@ LIGHTNING_MODEL_REGISTRY = {
     "basset_embed": SequenceEmbedModel,
     "legnet_embed": SequenceEmbedModel,
 
+    "legnet_profile_embed": SequenceEmbedProfileModel,
+
     "basset_variant_embed": VariantEmbedModel,
     "legnet_variant_embed": VariantEmbedModel,
+
+    "legnet_variant_density_embed": VariantEmbedDensityModel,
 }
 
+
 def read_configs(config_path, overwrite_config_path=None):
+    """
+    Load a training/model YAML config, optionally merging in overrides from a second config.
+
+    Parameters
+    ----------
+    config_path : str
+        Path to the base config YAML (see `train/dhs/default_train_dhs.config.yaml` for the schema).
+    overwrite_config_path : str, optional
+        Path to a second config YAML whose keys recursively replace matching keys in the base config.
+
+    Returns
+    -------
+    dict
+        The merged config, with a 'timestamp' key set to the current time.
+    """
     config = read_yaml_config(config_path)
     if overwrite_config_path is not None:
         update_config = read_yaml_config(overwrite_config_path)
@@ -76,8 +91,7 @@ def _parse_scheduler_and_optimizer(config: dict):
     }
 
 
-
-def classifier_model_from_config(config: dict, checkpoint_path: str = None):
+def classifier_model_from_config(config: dict, checkpoint_path: str = None, device='cpu'):
     assert config['model_type'] == "classifier"
     embedding = MLPBlock(
         **config['model_arch']['cell_embed']
@@ -103,7 +117,7 @@ def _sequence_model_from_config(config):
     model_type = config["model_type"]
     BaseModelCls = MODEL_FACTORY_REGISTRY[model_type]
 
-    if model_type in ("basset_embed", "legnet_embed", "basset_variant_embed", "legnet_variant_embed"):
+    if model_type in ("basset_embed", "legnet_embed", "basset_variant_embed", "legnet_variant_embed",'legnet_variant_density_embed'):
         cell_embed_config = config['model_arch']['cell_embed']
 
         n_independent_embeds = config['model_arch'].get('n_independent_embeds', 1)
@@ -126,7 +140,26 @@ def _sequence_model_from_config(config):
 
     return trunk
 
-def dhs_model_from_config(config, checkpoint_path=None):
+
+def dhs_model_from_config(config, checkpoint_path=None, device='cpu'):
+    """
+    Build (or load) the DHS sequence-to-function Lightning model described by `config`.
+
+    Parameters
+    ----------
+    config : dict
+        A config as returned by `read_configs`; `config['model_type']` selects the trunk/Lightning-module
+        pair from `MODEL_FACTORY_REGISTRY`/`LIGHTNING_MODEL_REGISTRY` (see docs/accessibility_model.md).
+    checkpoint_path : str, optional
+        If given, load trunk/head weights from this `.ckpt` instead of initializing them from scratch.
+    device : str, default 'cpu'
+        Device to map the checkpoint to when loading.
+
+    Returns
+    -------
+    SequenceModel (one of LIGHTNING_MODEL_REGISTRY)
+        The instantiated (or checkpoint-loaded) Lightning module, ready for `.eval()`/training.
+    """
     model_type = config["model_type"]
 
     assert model_type in MODEL_FACTORY_REGISTRY, f"Model type {model_type} not supported for DHS models. Available types: {list(MODEL_FACTORY_REGISTRY.keys())}"
@@ -161,10 +194,11 @@ def dhs_model_from_config(config, checkpoint_path=None):
 
 
 #need to remove config key needing model_kwargs and data_params
-#MLP block expcets config param to be activations not activation
-def variant_model_from_config(config, *, sequence_model_checkpoint=None, checkpoint_path=None):
+#MLP block expects config param to be activations not activation
+def variant_model_from_config(config, checkpoint_path=None, *, sequence_model_checkpoint=None, 
+                               device='cpu'):
     model_type = config["model_type"]
-    assert model_type in ("basset_variant_embed", "legnet_variant_embed"), f"Model type {model_type} not supported for variant models. Available types: 'basset_variant_embed', 'legnet_variant_embed'"
+    assert model_type in ("basset_variant_embed", "legnet_variant_embed",'legnet_variant_density_embed'), f"Model type {model_type} not supported for variant models. Available types: 'basset_variant_embed', 'legnet_variant_embed'"
 
     head = MLPBlock(
         **config['model_arch']['head']
@@ -179,7 +213,7 @@ def variant_model_from_config(config, *, sequence_model_checkpoint=None, checkpo
     #variant model doesnt currently have model_kwargs
     if sequence_model_checkpoint is not None and checkpoint_path is None:
          # Build DHS model WITHOUT loading checkpoint
-        sequence_model = dhs_model_from_config(config, checkpoint_path=None)
+        sequence_model = dhs_model_from_config(config, checkpoint_path=None, device=device)
 
         # Manually load only trunk + embed weights
         ckpt = torch.load(sequence_model_checkpoint, map_location=device)
@@ -219,42 +253,6 @@ def variant_model_from_config(config, *, sequence_model_checkpoint=None, checkpo
             )
 
     return variant_model
-
-
-def dataset_from_h5(
-    h5_file: str,
-    fasta_file: str,
-    config,
-    ref_adata: ad.AnnData = None,
-    genotype_file: str = None,
-    **dataset_kwargs
-):
-    """
-    Initialize dataset.
-    Args:
-        h5_file (str): Path to the H5 file.
-        fasta_file (str): Path to the FASTA file.
-        genotype_file (str, optional): Path to the genotype file.
-        **dataset_kwargs: Additional arguments for dataset.
-    """
-    if config["model_type"] in ('vinson_variant_embed', 'legnet_variant_embed'):
-        data = extract_data_from_h5(h5_file, ref_adata=ref_adata, is_variant=True)
-        dataset = VariantEmbedDataset(
-            data=data,
-            fasta_file=fasta_file,
-            genotype_file=genotype_file,
-            **dataset_kwargs,
-        )
-    else:
-        data = extract_data_from_h5(h5_file, ref_adata=ref_adata, is_variant=False)
-        dataset = SequenceEmbedDataset(
-            data=data,
-            fasta_file=fasta_file,
-            genotype_file=genotype_file,
-            **dataset_kwargs,
-        )
-
-    return dataset
 
 
 def datamodule_from_config(
@@ -307,6 +305,16 @@ def datamodule_from_config(
             valid_dataset_kwargs=valid_dataset_kwargs,
             **dataloader_kwargs,
         )
+    elif config["model_type"] == "legnet_variant_density_embed":
+        return SeqEmbedVariantDensityDataModule(
+            anndata_file=anndata_file,
+            fasta_file=fasta_file,
+            genotype_file=genotype_file,
+            train_dataset_kwargs=train_dataset_kwargs,
+            valid_dataset_kwargs=valid_dataset_kwargs,
+            **dataloader_kwargs,
+        )
+        
     else:
         return SeqEmbedDataModule(
             anndata_file=anndata_file,

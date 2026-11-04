@@ -24,7 +24,8 @@ def set_global_seed(seed: int = 42):
 
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    
+
+
 def set_worker_seed(worker_id: int):
     """Set seed for each dataloader worker."""
     worker_seed = torch.initial_seed() % 2**32
@@ -97,7 +98,6 @@ def init_multigpu_trainer(
                 patience=early_stopping_patience,
             )
         )
-    
     
     trainer = L.Trainer(
         logger=logger,

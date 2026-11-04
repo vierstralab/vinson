@@ -1,65 +1,35 @@
 from vinson.from_config import read_configs, dhs_model_from_config
-from vinson.postprocessing.interpretation import ModelWrapper
 import torch
 
-from vinson.utils.data_formatting import VinsonData
-from torch.utils.data import DataLoader, ConcatDataset
+from vinson.utils.data_formatting import VariantVinsonData
+from vinson.inference import score_variants_with_dhs_model
+from torch.utils.data import DataLoader
 
-from tqdm import tqdm
-from vinson.datasets.variant import VariantInferenceDataset
+from vinson.datasets.variant import InferenceVariantEmbedDataset
 from genome_tools.data.anndata import read_zarr_backed
 import argparse
 import pandas as pd
 
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def make_loaders(variants_df, motif_embeddings_df, fasta_file, offsets=(0,), num_workers=10, batch_size=256):
-    loaded_data = VinsonData(
-        data=variants_df.to_dict(orient='list'),
-        embeddings_df=motif_embeddings_df,
-        encodings={}
+# FIXME
+def make_loaders(loaded_data, fasta_file, num_workers=10, batch_size=256):
+
+    dataset = InferenceVariantEmbedDataset(
+        loaded_data,
+        fasta_file=fasta_file,
+        strict_ref_check=False,
+    )
+    print('Datasets created.', flush=True)
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=torch.cuda.is_available()
     )
 
-    datasets_qtl = [
-        VariantInferenceDataset(
-            loaded_data,
-            fasta_file=fasta_file,
-            strict_ref_check=False,
-            offset=offset
-        ) for offset in offsets
-    ]
-    print('Datasets created.', flush=True)
-    return [
-        DataLoader(
-            dataset,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            pin_memory=torch.cuda.is_available()
-        )
-        for dataset in datasets_qtl
-    ]
-
-
-def predict(model, dataloader):
-    pred_ref_all = []
-    pred_alt_all = []
-
-    for batch in tqdm(dataloader):
-        ohe_ref = batch["ohe_seq_ref"].to(device, non_blocking=True)
-        ohe_alt = batch["ohe_seq_alt"].to(device, non_blocking=True)
-        embed = batch["embed"].to(device, non_blocking=True)
-
-        pred_ref = model(ohe_ref, embed)   # (B,)
-        pred_alt = model(ohe_alt, embed)
-
-        pred_ref_all.append(pred_ref.detach().cpu())
-        pred_alt_all.append(pred_alt.detach().cpu())
-
-    pred_ref_all = torch.cat(pred_ref_all).numpy()
-    pred_alt_all = torch.cat(pred_alt_all).numpy()
-
-    return pred_ref_all, pred_alt_all
 
 def int_list(s):
     if ":" in s:
@@ -104,12 +74,17 @@ if __name__ == "__main__":
     motif_embeddings_df = anndata.obsm['motif_embeddings'].loc[sample_ids]
     if len(sample_ids) > 1:
         motif_embeddings_df = motif_embeddings_df.mean(axis=0).rename(args.sample_id).to_frame().T
-        
-    d_loaders = make_loaders(
-        variants_df=variants,
-        motif_embeddings_df=motif_embeddings_df,
+
+    loaded_data = VariantVinsonData.inference_from_variant(
+        data=variants,
+        embeddings_df=motif_embeddings_df,
+        sample_ids=sample_ids,
+        shifts=offsets,
+        is_inference=True
+    )
+    dl = make_loaders(
+        data=loaded_data,
         fasta_file=fasta,
-        offsets=offsets,
         num_workers=args.num_workers,
         batch_size=args.batch_size
     )
@@ -117,14 +92,14 @@ if __name__ == "__main__":
 
     model_predict = dhs_model_from_config(model_config, checkpoint).to(device).eval()
 
-    for offset, dl in zip(offsets, d_loaders):
-        pred_ref, pred_alt = predict(model_predict, dl)
-        variants[f"pred_ref_offset{offset}"] = pred_ref
-        variants[f"pred_alt_offset{offset}"] = pred_alt
+    expanded_preds: pd.DataFrame = loaded_data.to_df()
+    pred_ref, pred_alt = score_variants_with_dhs_model(
+        dl,
+        model_predict,
+        device=device
+    )
 
-    variants.to_csv(name, sep='\t', index=False)
+    expanded_preds['pred_ref'] = pred_ref
+    expanded_preds['pred_alt'] = pred_alt
 
-
-
-
-
+    expanded_preds.to_csv(name, sep='\t', index=False)

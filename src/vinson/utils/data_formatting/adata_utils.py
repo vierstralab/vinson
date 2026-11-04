@@ -21,11 +21,12 @@ def get_examples_indices_from_layer(layer_coo):
     row_idx, col_idx = layer_coo.row, layer_coo.col
     return row_idx, col_idx
 
-def update_layers_dict(layers: dict, train_adata: ad.AnnData, suffix: str):
+
+def update_layers_dict(layers: dict, train_adata: ad.AnnData, suffix: str = None):
     assert len(layers) > 0, "Must provide at least one layer to extract"
     for layer_name in layers:
-        epoch_layer_name = f"{layer_name}.{suffix}"
-        layers[layer_name] = train_adata.layers[epoch_layer_name].tocoo()
+        layer_key = layer_name if suffix is None else f"{layer_name}.{suffix}"
+        layers[layer_name] = train_adata.layers[layer_key].tocoo()
 
 
 def get_number_of_train_examples(anndata_file,layer_prefix="class"):

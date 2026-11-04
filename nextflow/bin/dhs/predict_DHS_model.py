@@ -3,35 +3,17 @@ import numpy as np
 import argparse
 
 from torch.utils.data import DataLoader
-import lightning as L
 
 from vinson.from_config import read_configs, dhs_model_from_config
-from vinson.utils.data_formatting import extract_data_from_h5
-from vinson.datasets.sequence import SequenceEmbedDataset
+from vinson.utils.data_formatting import VinsonData
+from vinson.inference import score_bed_with_dhs_model
+from vinson.datasets.sequence import InferenceSequenceEmbedDataset
 
 from genome_tools.data.anndata import read_zarr_backed
 
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-
-def predict_from_checkpoint(model_config, model_checkpoint, dataloader):
-    model_predict = dhs_model_from_config(
-        model_config,
-        checkpoint_path=model_checkpoint,
-    ).eval()
-
-    trainer = L.Trainer(
-        accelerator=device,
-        devices=1,
-        logger=False,
-        enable_checkpointing=False,
-        # limit_predict_batches=10
-    )
-
-    y_hat_all = trainer.predict(model_predict, dataloaders=dataloader)
-    y_hat_all = torch.cat(y_hat_all).cpu().numpy()
-    return y_hat_all
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Predict DHS model")
@@ -52,27 +34,23 @@ if __name__ == "__main__":
     adata = read_zarr_backed(args.anndata)
     
     model_config = read_configs(args.model_config_path)
+    model_predict = dhs_model_from_config(
+        model_config,
+        checkpoint_path=args.model_checkpoint,
+        device=device
+    ).eval()
 
-    dataset_kwargs: dict = model_config['data_params']
-
-    dataset_kwargs.update(
-        dict(
-            reverse_complement=False,
-            jitter=0,
-            noise=0,
-        )
-    )
-
-    vinson_data = extract_data_from_h5(
-        h5_file=args.h5_data,
-        ref_adata=adata,
+    vinson_data = VinsonData.from_h5(
+        args.h5_data,
+        adata.obsm['motif_embeddings'],
+        is_inference=True
     )
     
-    dataset = SequenceEmbedDataset(
+    
+    dataset = InferenceSequenceEmbedDataset(
         data=vinson_data,
         fasta_file=args.fasta_file,
         genotype_file=args.genotype_file,
-        **dataset_kwargs,
     )
 
     dataloader = DataLoader(
@@ -84,10 +62,11 @@ if __name__ == "__main__":
         drop_last=False,
     )
 
-    y_hat_all = predict_from_checkpoint(
-        model_config,
-        args.model_checkpoint,
-        dataloader=dataloader
+
+    y_hat_all = score_bed_with_dhs_model(
+        model_predict,
+        dataloader=dataloader,
+        device=device
     )
 
     np.save(args.output, y_hat_all)

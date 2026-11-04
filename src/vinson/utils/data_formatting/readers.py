@@ -5,9 +5,9 @@ import pandas as pd
 
 from vinson.utils.helpers import detect_genotype_format
 from .adata_utils import slice_adata, compute_if_dask, get_examples_indices_from_layer, update_layers_dict
-from .encoding import sanitize_data, encode_inplace
+from .sanitize import sanitize_data, encode_inplace, DHS, VARIANT
 
-from .container import VinsonData
+from .container import VinsonData, VariantVinsonData
 
 from genome_tools.data.extractors import TabixExtractor
 
@@ -66,19 +66,6 @@ def _parse_indiv_info(adata_slice, data):
     else:
         return False
     return True
-        
-
-def extract_data_from_h5(h5_file, ref_adata: ad.AnnData, is_variant=False) -> VinsonData:
-    with h5py.File(h5_file, 'r') as f:
-        data = {}
-        for key in f.keys():
-            data[key] = f[key][()]
-
-    return VinsonData.from_raw(
-        data,
-        ref_adata.obsm['motif_embeddings'],
-        is_variant=is_variant
-    )
 
 
 def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_jitter=False) -> VinsonData:
@@ -87,7 +74,7 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
     Args:
         adata (ad.AnnData): AnnData object containing DHS data.
         suffix (str): Suffix of the epoch/layer to extract. Gets added to layer names as `{layer}.{suffix}`. E.g. epoch_1, epoch_2, etc.
-        pre_jitter (bool): Whether to apply pre-jitter to the data. 
+        pre_jitter (bool): Whether epochs are pre-jittered. If true .layers['offsets.{suffix}'] should exist
     
     Returns:
         data (dict): Dictionary containing extracted data arrays.
@@ -137,31 +124,42 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
     if 'dhs_weight' in train_adata.varm:
         data['dhs_weight'] = train_adata.varm['dhs_weight'][col_idx]
     
-    data, encodings = sanitize_data(data, encodings, is_variant=False)
+    data, encodings = sanitize_data(DHS, data, encodings, is_inference=False)
 
     embeddings_df = train_adata.obsm['motif_embeddings']
     return VinsonData(
         data,
         encodings=encodings,
         embeddings_df=embeddings_df,
-        is_variant=False
+        is_inference=False
     )
 
 
-def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str, pre_jitter=False) -> VinsonData:
+def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str = None, pre_jitter=False, with_density=False) -> VariantVinsonData:
     """
     Convert AnnData object to H5 format and extract embeddings.
     Args:
         adata (ad.AnnData): AnnData object containing DHS data.
-        suffix (str): Suffix of the epoch/layer to extract. Gets added to layer names as `{layer}.{suffix}`. E.g. epoch_1, epoch_2, etc.
-    
+        suffix (str, optional): Suffix of the epoch/layer to extract. Gets added to layer names as
+            `{layer}.{suffix}`, e.g. epoch_1, epoch_2, etc. If None, layers are read by their bare name.
+        pre_jitter (bool): Whether epochs are pre-jittered. If true, .layers['offsets.{suffix}'] should exist.
+            Offsets are stored as the per-example window `shift`; the variant position is unchanged.
+        with_density (bool): Also extract DNase `density`, `background` (from the `mean_bg_agg_cutcounts`
+            layer) and `read_depth` (from obs['nuclear_reads']), as needed by `VariantEmbedDensityDataset`.
+
     Returns:
         data (dict): Dictionary containing extracted data arrays.
         embeddings_df (pd.DataFrame): DataFrame containing motif embeddings.
     """
     
     data = {"ref_counts": None, "total_counts": None, "BAD": None, "logit_es": None}
+    if with_density:
+        data["density"] = None
+        data["mean_bg_agg_cutcounts"] = None
+    if pre_jitter:
+        data["offsets"] = None
     update_layers_dict(data, train_adata, suffix)
+    layers = data
     row_idx, col_idx = get_examples_indices_from_layer(data["ref_counts"])
     
     encodings = {}
@@ -169,7 +167,6 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str, pre_
     encoding_sources = {
         "sample_id": train_adata.obs_names,
         "chrom": train_adata.var["#chr"],
-        # "pos": train_adata.var["end"],
         'ref': train_adata.var['ref'],
         'alt': train_adata.var['alt']
     }
@@ -181,7 +178,6 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str, pre_
 
     data = {
         'chrom': encoding_sources['chrom'][col_idx],
-        #'pos': encoding_sources['pos'][col_idx],
         'pos': train_adata.var['end'].values[col_idx],
         'ref': encoding_sources['ref'][col_idx],
         'alt': encoding_sources['alt'][col_idx],
@@ -191,19 +187,24 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str, pre_
         'BAD': data['BAD'].data,
         'logit_es': data['logit_es'].data,
     }
+    if with_density:
+        data['read_depth'] = train_adata.obs['nuclear_reads'].values[row_idx]
+        data['background'] = layers['mean_bg_agg_cutcounts'].data
+        data['density'] = layers['density'].data
+    if pre_jitter:
+        data['shift'] = layers['offsets'].data
     if 'indiv_id' in encoding_sources:
         data['indiv_id'] = encoding_sources["indiv_id"][row_idx]
-
-    data, encodings = sanitize_data(data, encodings, is_variant=True)
+    
+    data, encodings = sanitize_data(VARIANT, data, encodings, is_inference=False)
     embeddings_df = train_adata.obsm['motif_embeddings']
 
-    return VinsonData(
+    return VariantVinsonData(
         data,
         encodings=encodings,
         embeddings_df=embeddings_df,
-        is_variant=True
+        is_inference=False
     )
-
 
 
 def _extract_wide_raw(
@@ -293,14 +294,15 @@ def extract_data_from_backed_anndata(
         for key in data:
             data[key] = data[key][sample_peaks_mask]
     
-    data, encodings = sanitize_data(data, encodings, is_variant=False)
+    data, encodings = sanitize_data(DHS, data, encodings, is_inference=False)
 
     return VinsonData(
         data,
         encodings=encodings,
         embeddings_df=embeddings_df,
-        is_variant=False
+        is_inference=False
     )
+
 
 def extract_data_from_backed_anndata_wide(
     backed_anndata,
@@ -325,10 +327,10 @@ def extract_data_from_backed_anndata_wide(
         [len(data["dhs_id"]), 1]
     )
 
-    data, encodings = sanitize_data(data, encodings, is_variant=False)
+    data, encodings = sanitize_data(DHS, data, encodings, is_inference=False)
 
     return VinsonData(
         data,
         encodings=encodings,
-        is_variant=False,
+        is_inference=False,
     )

@@ -50,20 +50,24 @@ def _fast_one_hot_encode(X_ohe, seq, mapping):
 
 
 def one_hot_encode(sequence, dtype=np.float32):
-    """_Converts a string or list of characters into a one-hot encoding.
+    """Converts a DNA sequence string into a one-hot encoding.
+
+    Ambiguous/IUPAC bases (e.g. 'N', 'W') are split proportionally across the bases they represent
+    rather than encoded as all-zero.
 
     Parameters
     ----------
-    sequence : str or list
-        The sequence to convert to a one-hot encoding.
-    dtype : str or torch.dtype, optional
-        _description_, by default np.float32
+    sequence : str
+        The DNA sequence to one-hot encode.
+    dtype : numpy dtype, optional
+        Output dtype, by default np.float32.
 
     Returns
     -------
     ohe: numpy.ndarray
-        A matrix of shape (4, sequence_length)
+        A matrix of shape (4, sequence_length), rows ordered A/C/G/T.
     """
+    sequence = sequence.upper()
     seq_idxs = np.frombuffer(bytearray(sequence, "utf8"), dtype=np.int8)
     n, m = len(sequence), _dna_embed.shape[1]
     
@@ -72,7 +76,8 @@ def one_hot_encode(sequence, dtype=np.float32):
     _fast_one_hot_encode(one_hot_encoding, seq_idxs, _dna_embed)
 
     one_hot_encoding = one_hot_encoding.astype(dtype)
-    one_hot_encoding /= one_hot_encoding.sum(axis=1)[:, np.newaxis]
+    non_N = ~(one_hot_encoding == 0).all(axis=1)
+    one_hot_encoding[non_N,: ] /= one_hot_encoding[non_N].sum(axis=1)[:, np.newaxis]
 
     return one_hot_encoding.T
 
@@ -162,6 +167,7 @@ def intervals_to_ohe(intervals, seqlen, fasta_extr):
         ohe.append(one_hot_encode(seq.upper()))
     
     return np.stack(ohe)
+
 
 def variants_to_ohe(variants, seqlen, fasta_extr):
     """

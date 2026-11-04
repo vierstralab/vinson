@@ -61,7 +61,7 @@ Key fields:
 SequenceEmbedDataset(data=data, fasta_file="<fasta_file>") # optionally can provide genotype_file
 ```
 
-`data` is a `VinsonData` container ([`vinson/utils/data_formatting/container.py`](../src/vinson/utils/data_formatting/container.py)) — a lightweight wrapper around parallel arrays, one entry per training/prediction example (`chrom`, `summit`, `class`, `density`, `background`, `read_depth`, `sample_id`, optionally `indiv_id`), plus an optional per-sample `embeddings_df` (cell-type embeddings, indexed by `sample_id`). Categorical fields (e.g. `chrom`, `sample_id`) are integer-encoded on construction; the original values are recoverable via `.decode(key)` or `.to_df()`. `VinsonData` is normally built via one of the `extract_data_from_*` helpers below, rather than constructed directly.
+`data` is a `VinsonData` container ([`vinson/utils/data_formatting/container.py`](../src/vinson/utils/data_formatting/container.py)) — a lightweight wrapper around parallel arrays, one entry per training/prediction example (`chrom`, `summit`, `class`, `density`, `background`, `read_depth`, `sample_id`, optionally `indiv_id`), plus an optional per-sample `embeddings_df` (cell-type embeddings, indexed by `sample_id`). For variant predictions use the sibling `VariantVinsonData` class instead (`chrom`, `pos`, `ref`, `alt`, `sample_id`, targets `ref_counts`/`total_counts`/`BAD`/`logit_es`). Each class declares its required/target/optional fields as a `ModelDataSchema` ([`sanitize.py`](../src/vinson/utils/data_formatting/sanitize.py)); the `is_inference` flag passed at construction controls whether target fields are required (`is_inference=False`, training/validation) or optional (`is_inference=True`, prediction-only — see the inference-only datasets in [`vinson/datasets/`](../src/vinson/datasets/)). Categorical fields (e.g. `chrom`, `sample_id`) are integer-encoded on construction to reduce memory usage; the original values are recoverable via `.decode(key)` or `.to_df()`. Build a container via one of its own classmethods (`.from_h5`, `.from_raw`, `.from_df`, `.inference_from_bed` / `.inference_from_variant`) or one of the module-level `extract_data_from_*` helpers below, rather than constructing it directly.
 
 ## From train Anndata
 Training datasets are a single AnnData object (`.h5ad`) per training run, read through [`vinson/utils/data_formatting`](../src/vinson/utils/data_formatting), with the following schema:
@@ -84,14 +84,18 @@ To incorporate individual variants, `obsm.indiv_id` — a `pd.DataFrame` with an
 `extract_data_from_train_anndata(train_adata, suffix, pre_jitter=False)` ([`vinson/utils/data_formatting/readers.py`](../src/vinson/utils/data_formatting/readers.py)) builds a `VinsonData` from a training AnnData for a chosen epoch. `suffix` selects which epoch's layers to read (layers are named `{layer}.{suffix}`, e.g. `class.epoch_1`). With `pre_jitter=False`, each example's `summit` is left at the DHS's stored `dhs_summit` and jitter is instead applied on the fly during training (see `train_augmentation_kwargs.jitter` in [Config format](#config-format)). With `pre_jitter=True`, the epoch's density was already computed at a jittered offset from the summit, so the per-example offsets stored in the `offsets.<suffix>` layer are added to `summit`, yielding the actual genomic position at which density was extracted.
 
 ## From h5 file
-`extract_data_from_h5(h5_file, ref_adata, is_variant=False)` reads a previously-written `.h5` file (written by `VinsonData.write_h5`) and pairs it with cell-type embeddings looked up from `ref_adata.obsm['motif_embeddings']` — `ref_adata` is an `ad.AnnData` object, either a backed reference AnnData or a training AnnData, as long as it has `.obsm['motif_embeddings']`.
+`VinsonData.from_h5(h5_file, embeddings_df=None, is_inference=False)` reads a previously-written `.h5` file (written by `.write_h5()`) and pairs it with cell-type embeddings — typically `ref_adata.obsm['motif_embeddings']`, where `ref_adata` is an `ad.AnnData` object (either a backed reference AnnData or a training AnnData, as long as it has `.obsm['motif_embeddings']`). Use `VariantVinsonData.from_h5(...)` for variant data instead.
 
-The `.h5` file has one top-level dataset per `VinsonData` field it was written from — the same fields as the training AnnData schema above: `chrom`, `summit`, `class`, `density`, `background`, `read_depth`, `sample_id`, `dhs_id`, and optionally `indiv_id` / `dhs_weight`.
+The `.h5` file has one top-level dataset per field it was written from — the same fields as the training AnnData schema above: `chrom`, `summit`, `class`, `density`, `background`, `read_depth`, `sample_id`, `dhs_id`, and optionally `indiv_id` / `dhs_weight`.
 
 ```python
-from vinson.utils.data_formatting import extract_data_from_h5
+from vinson.utils.data_formatting import VinsonData
 
-data = extract_data_from_h5("<h5_file>", ref_adata="<adata_with_sample_embeds>", is_variant=False)
+data = VinsonData.from_h5(
+    "<h5_file>",
+    embeddings_df=adata_with_sample_embeds.obsm["motif_embeddings"],
+    is_inference=True,
+)
 ```
 
 ## From anndata file
@@ -132,10 +136,14 @@ Alternatively, build the dataset directly from a `VinsonData` object — e.g. lo
 
 ```python
 from torch.utils.data import DataLoader
-from vinson.utils.data_formatting import extract_data_from_h5
+from vinson.utils.data_formatting import VinsonData
 from vinson.datasets.sequence import SequenceEmbedDataset
 
-data = extract_data_from_h5("<h5_file>", ref_adata="<adata_with_sample_embeds>", is_variant=False)
+data = VinsonData.from_h5(
+    "<h5_file>",
+    embeddings_df=adata_with_sample_embeds.obsm["motif_embeddings"],
+    is_inference=False,
+)
 dataset = SequenceEmbedDataset(data=data, fasta_file="<fasta_file>")
 train_loader = DataLoader(dataset, batch_size=64, shuffle=True)
 
@@ -178,6 +186,42 @@ python train/submit_to_sbatch.py --model_type dhs <anndata_file> <fasta_file> <o
 Additional arguments controlling the job: `--run_name`, `--gpus_per_node`, `--cpus_per_gpu`, `--mem`, `--nodelist`, `--preset` (cluster-specific node presets), `--checkpoint`, `--epochs`, `--debug`.
 
 # Prediction
+
+## Inference datasets and VinsonData
+
+Prediction swaps in the inference-only counterparts of the training datasets ([`vinson/datasets/sequence.py`](../src/vinson/datasets/sequence.py), [`vinson/datasets/variant.py`](../src/vinson/datasets/variant.py)). These drop the target-parsing logic (no `class`/`density`/`ref_counts`/… required) and the random training-time augmentation — `shift`/`revcomp` are instead read per-example from the data itself, so every example is scored deterministically:
+
+| Training dataset | Inference counterpart | Output adds |
+| --- | --- | --- |
+| `SequenceOnlyDataset` | `InferenceSequenceOnlyDataset` | — |
+| `SequenceEmbedDataset` | `InferenceSequenceEmbedDataset` | `embed` |
+| `VariantEmbedDataset` | `InferenceVariantEmbedDataset` | `embed`; also checks `ref`/`alt` against the FASTA at each position (`strict_ref_check`) |
+
+All of these expect their `VinsonData`/`VariantVinsonData` to have been built with `is_inference=True` — the training datasets assert `not data.is_inference` and will raise if handed inference data, so pick the dataset class that matches how the container was constructed.
+
+Build an inference container one of two ways:
+
+- From a BED (DHS) or variant dataframe, expanding every `(sample_id, shift[, revcomp])` combination into its own row via `.explode()` under the hood:
+  ```python
+  from vinson.utils.data_formatting import VinsonData, VariantVinsonData
+
+  # DHS: one row per region x sample x shift, optionally x revcomp
+  data = VinsonData.inference_from_bed(
+      bed_df, sample_ids=["AG3897"], embeddings_df=adata.obsm["motif_embeddings"],
+      shifts=[-10, 0, 10], revcomp=True,
+  )
+
+  # Variant effect: same idea; revcomp defaults to True
+  data = VariantVinsonData.inference_from_variant(
+      variant_df, sample_ids=["AG3897"], embeddings_df=adata.obsm["motif_embeddings"],
+  )
+  ```
+- From a previously-written `.h5` file (see [From h5 file](#trainprediction-data-format)) with `is_inference=True`:
+  ```python
+  data = VinsonData.from_h5("<h5_file>", embeddings_df=adata.obsm["motif_embeddings"], is_inference=True)
+  ```
+
+`nextflow/bin/predict_DHS_model.py` is the reference implementation of the `.h5` path for the DHS model: it loads a `.h5` written by `extract_data_from_backed_anndata(...).write_h5()` via `VinsonData.from_h5(..., is_inference=True)` and feeds it to `InferenceSequenceEmbedDataset`. `predict/predict_all_variants.py` and `nextflow/bin/predict_variant_model.py` do the analogous thing for the variant model, branching on `vinson_data.is_inference` to pick `InferenceVariantEmbedDataset` (for a `.h5`-loaded, inference-only container) vs. `VariantEmbedDataset` (when loading full training-style AnnData with real targets, via `extract_variant_data_from_anndata`).
 
 Prediction is run through Nextflow, driven by a tab-separated samplesheet (see `nextflow/test_meta/*.tsv` for examples) with one row per sample/DHS to predict:
 
