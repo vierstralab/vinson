@@ -4,40 +4,70 @@ import numpy as np
 import torch
 from torch.utils.data import  DataLoader
 
-from genome_tools.data.extractors import FastaExtractor
-from vinson.utils.sequence_utils import one_hot_encode
+import pandas as pd
+
+from vinson.datasets.sequence import InferenceSequenceEmbedDataset
+from vinson.utils.data_formatting import VinsonData
 
 
-def assemble_batch(sample_id, interval, embeddings, fasta):
+def assemble_batch(sample_id, interval, embeddings, fasta, genotype_file=None, step=None, seqlen=1344):
     """
-    Assemble batch from sample_id, interval and embedding
-    
+    Assemble a single batch of model inputs for one sample.
+
     Parameters
     -------------
     sample_id: str
         Sample id, for example AGXXXXX
-    interval: GenomicInterval 
+    interval: GenomicInterval
         The target genomic window.
     embeddings: pandas.DataFrame
         DataFrame with embeddings, index must be sample_id
     fasta: str
-        Path to fasta file with genome 
+        Path to fasta file with genome
+    genotype_file: str, optional
+        VCF to inject the sample's genotypes into the sequence.
+    step: int, optional
+        If None, one model input centered on the interval center.
+        Otherwise, model inputs centered every `step` bp from `interval.start` to `interval.end`
+        (e.g. to predict a signal track across the interval).
+    seqlen: int, default 1344
+        Length of each model input.
+
+    Returns
+    -------
+    dict
+        Batch with 'ohe_seq', 'embed', 'chrom', 'summit', 'sample_id', 'shift', 'revcomp'.
     """
+    if step is None:
+        summits = np.array([interval.center.start])
+    else:
+        summits = np.arange(interval.start, interval.end + step, step)
 
-    with FastaExtractor(fasta) as ext:
-        seq = ext[interval]
-    dl = DataLoader(
-        [
-            {
-                'ohe_seq': one_hot_encode(seq.upper(), dtype=np.float32),
-                'sample_id': sample_id,
-                'summit': interval.center.start,
-                'chrom': interval.chrom,
-                'embed': embeddings.loc[sample_id].values.astype(np.float32)
-            }
-        ]
+    data = VinsonData.inference_from_bed(
+        pd.DataFrame({
+            'chrom': interval.chrom,
+            'start': summits,
+            'end': summits + 1,
+            'summit': summits,
+        }),
+        sample_ids=[sample_id],
+        embeddings_df=embeddings.loc[[sample_id], :],
     )
+    return assemble_batch_from_data(data, fasta, genotype_file=genotype_file, seqlen=seqlen)
 
+
+def assemble_batch_from_data(data: VinsonData, fasta, genotype_file=None, seqlen=1344):
+    """
+    Assemble all examples of an inference `VinsonData` (e.g. from `VinsonData.inference_from_bed`)
+    into a single batch.
+    """
+    dataset = InferenceSequenceEmbedDataset(
+        data=data,
+        fasta_file=fasta,
+        genotype_file=genotype_file,
+        seqlen=seqlen,
+    )
+    dl = DataLoader(dataset, batch_size=len(dataset), shuffle=False)
     return next(iter(dl))
 
 
