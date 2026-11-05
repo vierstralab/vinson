@@ -4,7 +4,7 @@ import h5py
 import pandas as pd
 
 from vinson.utils.helpers import detect_genotype_format
-from .adata_utils import slice_adata, compute_if_dask, get_examples_indices_from_layer, update_layers_dict
+from .adata_utils import slice_adata, compute_if_dask, get_examples_indices_from_layer, update_layers_dict, check_layers_aligned
 from .sanitize import sanitize_data, encode_inplace, DHS, VARIANT
 
 from .container import VinsonData, VariantVinsonData
@@ -85,6 +85,7 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
     if pre_jitter:
         data["offsets"] = None
     update_layers_dict(data, train_adata, suffix)
+    check_layers_aligned(data, reference="class")
     row_idx, col_idx = get_examples_indices_from_layer(data["class"])
     encodings = {}
 
@@ -158,6 +159,7 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str = Non
     if pre_jitter:
         data["offsets"] = None
     update_layers_dict(data, train_adata, suffix)
+    check_layers_aligned(data, reference="ref_counts")
     layers = data
     row_idx, col_idx = get_examples_indices_from_layer(data["ref_counts"])
     

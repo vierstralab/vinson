@@ -74,8 +74,7 @@ def main(adata, matrices):
     existing_epochs = list(adata.uns.get('epoch_names', []))
     adata.uns['epoch_names'] = existing_epochs + [e for e in epochs if e not in existing_epochs]
 
-    # only DHS/sequence training data has a 'class' layer; variants rely on obsm/varm
-    # split_data instead, so leave n_training_examples untouched when there's no class layer.
+    # leave n_training_examples untouched when there's no class layer.
     class_epochs = [e for e in adata.uns['epoch_names'] if f"class.{e}" in adata.layers]
     if class_epochs:
         adata.uns['n_training_examples'] = sum(adata.layers[f"class.{e}"].getnnz() for e in class_epochs)
