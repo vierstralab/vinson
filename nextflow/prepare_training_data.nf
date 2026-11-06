@@ -75,6 +75,7 @@ process assemble_train_anndata {
         ${zarr_anndata} \
         ${name} \
         ${matrices} \
+        --val_chroms ${params.val_chroms}
     """
 }
 
