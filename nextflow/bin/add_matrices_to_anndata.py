@@ -1,6 +1,6 @@
+import argparse
 import os
 import re
-import sys
 
 import dask.array as da
 import numpy as np
@@ -45,9 +45,16 @@ def align_to_class_layer(layer, class_layer):
     )
 
 
-def main(adata, matrices):
+def main(adata, matrices, val_chroms=("chr9", "chr21")):
     matrices_types = ['density', 'mean_bg_agg_cutcounts', 'class', 'offsets'] + list(adata.layers.keys())
     matrices_mapping, epochs = get_matrices_mapping_by_tag(matrices, matrices_types)
+
+    # remove dense layers
+    adata.X = None
+    for layer_name in list(adata.layers.keys()):
+        if not sp.issparse(adata.layers[layer_name]):
+            print(f"Dropping dense layer {layer_name}")
+            del adata.layers[layer_name]
 
     add_matrices_to_anndata(adata, matrices_mapping)
 
@@ -71,11 +78,14 @@ def main(adata, matrices):
         elif not sp.issparse(adata.layers[layer_name]):
             adata.layers[layer_name] = sp.csr_matrix(adata.layers[layer_name])
 
+    # all samples are used for training; DHSs on val_chroms are held out for validation
+    adata.obsm['split_data'] = np.full(adata.n_obs, 'train')
+    adata.varm['split_data'] = np.where(adata.var['#chr'].isin(val_chroms).to_numpy(), 'val', 'train')
+
     existing_epochs = list(adata.uns.get('epoch_names', []))
     adata.uns['epoch_names'] = existing_epochs + [e for e in epochs if e not in existing_epochs]
 
-    # only DHS/sequence training data has a 'class' layer; variants rely on obsm/varm
-    # split_data instead, so leave n_training_examples untouched when there's no class layer.
+    # leave n_training_examples untouched when there's no class layer.
     class_epochs = [e for e in adata.uns['epoch_names'] if f"class.{e}" in adata.layers]
     if class_epochs:
         adata.uns['n_training_examples'] = sum(adata.layers[f"class.{e}"].getnnz() for e in class_epochs)
@@ -84,11 +94,17 @@ def main(adata, matrices):
 
 
 if __name__ == '__main__':
-    adata_obj = read_zarr_backed(sys.argv[1])
-    output = sys.argv[2]
-    matrices = sys.argv[3:]
+    parser = argparse.ArgumentParser(description="Add per-epoch matrices to an AnnData and save it as a training h5ad")
+    parser.add_argument("anndata", help="Source AnnData zarr")
+    parser.add_argument("output", help="Output h5ad path")
+    parser.add_argument("matrices", nargs="+", help="'matrix.<tag>.<matrix_type>.npy|npz' files")
+    parser.add_argument("--val_chroms", default="chr9,chr21", help="Comma-separated chromosomes held out for validation")
+    args = parser.parse_args()
 
-    adata_obj = main(adata_obj, matrices)
+    adata_obj = read_zarr_backed(args.anndata)
+    output = args.output
+
+    adata_obj = main(adata_obj, args.matrices, val_chroms=args.val_chroms.split(','))
 
     # read_zarr_backed loads varm lazily as dask arrays regardless of their dtype;
     # h5ad can't write those (or object-dtype string arrays), so materialize first.

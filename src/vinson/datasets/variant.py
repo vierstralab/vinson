@@ -78,6 +78,7 @@ class InferenceVariantEmbedDataset(BaseSequenceDataset):
         return interval, anchor_variant, shift
 
     def _parse_sequence(self, data_dict: dict, interval: GenomicInterval, anchor_variant: VariantInterval):
+        self._init_fileread()
         if self.include_genotypes:
             indiv_id = data_dict['indiv_id']
         else:

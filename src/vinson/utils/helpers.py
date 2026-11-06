@@ -1,8 +1,12 @@
 from funkybob import RandomNameGenerator
 import yaml
 import gzip
+import io
+import urllib.request
+from contextlib import contextmanager
 from typing import List
 from genome_tools import GenomicInterval, VariantInterval
+from genome_tools.helpers import is_remote
 
 
 def generate_run_name() -> str:
@@ -46,11 +50,20 @@ def apply_edits(seq, interval: GenomicInterval, edits: List[VariantInterval], st
     return seq
 
 
+@contextmanager
+def _open_text(path):
+    """Open a local or remote, optionally gzipped, file for reading text. Streams remote files instead of buffering them."""
+    with (urllib.request.urlopen(path) if is_remote(path) else open(path, "rb")) as raw:
+        if path.endswith(".gz"):
+            with gzip.open(raw, "rt") as f:
+                yield f
+        else:
+            yield io.TextIOWrapper(raw)
+
+
 def detect_genotype_format(genotype_file):
     # helps with determining phased or unphased genotype file
-    opener = gzip.open if genotype_file.endswith(".gz") else open
-
-    with opener(genotype_file, "rt") as f:
+    with _open_text(genotype_file) as f:
         first_line = f.readline().strip()
         fields = first_line.split("\t")
 

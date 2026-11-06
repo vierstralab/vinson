@@ -11,7 +11,8 @@ process sample_epoch {
     conda "${params.conda}"
     tag "${epoch}"
     publishDir "${params.outdir}/raw_matrices", pattern: "${sampled_examples}"
-    cpus 10
+    cpus 20
+    label "high_mem"
 
     input:
         tuple val(epoch), val(meta)
@@ -74,6 +75,7 @@ process assemble_train_anndata {
         ${zarr_anndata} \
         ${name} \
         ${matrices} \
+        --val_chroms ${params.val_chroms}
     """
 }
 
@@ -84,9 +86,11 @@ process assemble_train_anndata {
 // matrix are each built once and just replicated under every epoch's layer suffix.
 // The class matrix is in the same on-disk convention as sample_epoch's output, so the
 // existing jitter_offsets process can be reused unmodified to compute offsets per epoch.
+// It's written once per epoch (matrix.{epoch}.class.npz) so assemble_train_anndata aligns
+// each epoch's offsets/density layers to it, like in the DHS workflow.
 process assemble_variant_train_anndata {
     conda "${params.conda}"
-    publishDir "${params.outdir}/raw_matrices", pattern: "${class_matrix}"
+    publishDir "${params.outdir}/raw_matrices", pattern: "matrix.*.class.npz"
 
     label "high_mem"
 
@@ -94,18 +98,18 @@ process assemble_variant_train_anndata {
         tuple val(epochs), path(variants_parquet), val(reference_anndata)
 
     output:
-        tuple val(epochs), path(name), path(class_matrix), path(sample_names)
+        tuple val(epochs), path(name), path(class_matrices), path(sample_names)
 
     script:
     name = "variant_anndata.zarr"
-    class_matrix = "matrix.variants.class.npz"
+    // listed explicitly (not globbed) so they're emitted in the same order as epochs, for transpose()
+    class_matrices = epochs.collect { e -> "matrix.${e}.class.npz" }
     sample_names = "variant_samples.txt"
     """
     python3 $moduleDir/bin/variants/create_training_adata.py \
         ${variants_parquet} \
         ${reference_anndata} \
         ${name} \
-        ${class_matrix} \
         ${sample_names} \
         --epoch ${epochs.join(' ')} \
         --val_chroms ${params.val_chroms}
@@ -144,10 +148,17 @@ workflow fromVariants {
     assembled = input_data
         | map(it -> tuple(it[1], file(it[0].variants_parquet), it[0].zarr_anndata))
         | groupTuple(by: [1, 2]) // [epochs], variants_parquet, reference_anndata
-        | assemble_variant_train_anndata // epochs, assembled_anndata, class_matrix, sample_names
+        | assemble_variant_train_anndata // [epochs], assembled_anndata, [class_matrices], sample_names
 
-    jittered = input_data
-        | combine(assembled.map(it -> tuple(it[2], it[3]))) // meta, epoch, class_matrix, sample_names
+    per_epoch = assembled
+        | transpose() // epoch, assembled_anndata, class_matrix, sample_names
+
+    class_matrices = per_epoch
+        | map(it -> it[2])
+
+    jittered = per_epoch
+        | join(input_data.map(it -> tuple(it[1], it[0]))) // epoch, assembled_anndata, class_matrix, sample_names, meta
+        | map(it -> tuple(it[4], it[0], it[2], it[3])) // meta, epoch, class_matrix, sample_names
         | jitter_offsets // meta, epoch, offsets.npz, offsets_matrix.npz
 
     // the variant anndata is masterlist-shaped (each variant is a 1bp "DHS")
@@ -160,7 +171,8 @@ workflow fromVariants {
 
     matrices = jittered
         | map(it -> it[3]) // offsets_matrix.npz
-        | mix(density_matrices) // bare matrix files, emitted individually (not pre-collected)
+        | mix(density_matrices)
+        | mix(per_epoch.map(it -> it[2])) // bare matrix files, emitted individually (not pre-collected)
 
     assembled
         | map(it -> tuple(it[1], "train_variant")) // zarr_anndata, prefix

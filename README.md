@@ -13,6 +13,7 @@ It has three main components, each documented in its own README:
 
 - [Repository layout](#repository-layout)
 - [Installation](#installation)
+- [Tutorials](#tutorials)
 - [Authors](#authors)
 
 # Repository layout
@@ -38,6 +39,15 @@ pip install .
 ```bash
 python train/dhs/train_dhs.py --help
 ```
+
+# Tutorials
+
+Walkthrough notebooks in [`tutorials/`](tutorials/):
+
+1. [Call peaks and generate embeddings](tutorials/1.Call_peaks_and_generate_embeddings.ipynb) — hotspot3 peak calling and building a motif embedding for a new sample
+2. [Predict density](tutorials/2.Predict_density.ipynb) — loading a model, predicting accessibility, scoring a BED file with `VinsonData`, plotting predicted tracks
+3. [Interpretation](tutorials/3.Interpretation.ipynb) — attribution scores and attribution-weighted motif hits
+4. [Predict variant](tutorials/4.Predict_variant.ipynb) — scoring variant effects across cell types
 
 # Authors
 

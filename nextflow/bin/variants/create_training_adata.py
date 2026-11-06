@@ -61,6 +61,8 @@ def build_variant_training_adata(variants, epochs, reference_anndata, val_chroms
     # tested (sample, variant) pairs, shared by every epoch, in the same var x obs
     # on-disk convention as nf-index's matrices, so the existing jitter_offsets
     # process can be reused unmodified (once per epoch, with a different seed).
+    # Saved once per epoch as matrix.{epoch}.class.npz, so add_matrices_to_anndata aligns
+    # that epoch's offsets/density layers to its sparsity pattern (and CSR order).
     class_matrix = sp.coo_matrix(
         (variants["class"].to_numpy(dtype=np.float32), (row_idx, col_idx)), shape=adata.shape
     ).tocsr().T
@@ -73,7 +75,6 @@ if __name__ == "__main__":
     parser.add_argument("variants_parquet", help="Non-aggregated variant table (parquet)")
     parser.add_argument("reference_anndata", help="Reference AnnData zarr (for obs + motif_embeddings)")
     parser.add_argument("output", help="Output AnnData zarr path")
-    parser.add_argument("class_matrix_output", help="Output path for the npz matrix, for jitter_offsets")
     parser.add_argument("sample_names_output", help="Output path for the sample names matching the class matrix columns")
     parser.add_argument("--epoch", nargs="+", required=True, help="Epoch names")
     parser.add_argument("--val_chroms", default="chr9,chr21", help="Comma-separated chromosomes held out for validation")
@@ -87,5 +88,6 @@ if __name__ == "__main__":
         val_chroms=args.val_chroms.split(','),
     )
     adata.write_zarr(args.output)
-    sp.save_npz(args.class_matrix_output, class_matrix, compressed=True)
+    for epoch in args.epoch:
+        sp.save_npz(f"matrix.{epoch}.class.npz", class_matrix, compressed=True)
     np.savetxt(args.sample_names_output, adata.obs_names, fmt='%s')

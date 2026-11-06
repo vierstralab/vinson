@@ -1,0 +1,7 @@
+# keep only the notebooks, figures and outputs/; everything else is written while running the tutorials
+# (remote tabix indexes, downloaded motif pfms, ...)
+/*
+!/*.ipynb
+!/.gitignore
+!/figures/
+!/outputs/

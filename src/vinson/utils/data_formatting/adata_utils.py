@@ -1,3 +1,4 @@
+import numpy as np
 import dask.array as da
 import anndata as ad
 
@@ -27,6 +28,24 @@ def update_layers_dict(layers: dict, train_adata: ad.AnnData, suffix: str = None
     for layer_name in layers:
         layer_key = layer_name if suffix is None else f"{layer_name}.{suffix}"
         layers[layer_name] = train_adata.layers[layer_key].tocoo()
+
+
+def check_layers_aligned(layers: dict, reference: str):
+    """
+    Layers are matched element-wise via `.data`, so every layer must store exactly the
+    reference layer's (row, col) entries in the same order. A layer in a different sparse
+    format (e.g. CSC vs CSR) or with dropped zeros would otherwise silently misalign examples.
+    """
+    ref = layers[reference]
+    for layer_name, layer in layers.items():
+        if layer_name == reference:
+            continue
+        if layer.nnz != ref.nnz or not (np.array_equal(layer.row, ref.row) and np.array_equal(layer.col, ref.col)):
+            raise ValueError(
+                f"Layer '{layer_name}' is not aligned with '{reference}' "
+                f"(nnz {layer.nnz} vs {ref.nnz}, or entries stored in a different order). "
+                "All layers of an epoch must share the reference layer's sparsity pattern and order."
+            )
 
 
 def get_number_of_train_examples(anndata_file,layer_prefix="class"):
