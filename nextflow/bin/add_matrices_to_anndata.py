@@ -49,6 +49,13 @@ def main(adata, matrices):
     matrices_types = ['density', 'mean_bg_agg_cutcounts', 'class', 'offsets'] + list(adata.layers.keys())
     matrices_mapping, epochs = get_matrices_mapping_by_tag(matrices, matrices_types)
 
+    # remove dense layers
+    adata.X = None
+    for layer_name in list(adata.layers.keys()):
+        if not sp.issparse(adata.layers[layer_name]):
+            print(f"Dropping dense layer {layer_name}")
+            del adata.layers[layer_name]
+
     add_matrices_to_anndata(adata, matrices_mapping)
 
     # downstream training code (vinson.utils.data_formatting) calls .tocoo() on these
