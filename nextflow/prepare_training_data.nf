@@ -11,7 +11,8 @@ process sample_epoch {
     conda "${params.conda}"
     tag "${epoch}"
     publishDir "${params.outdir}/raw_matrices", pattern: "${sampled_examples}"
-    cpus 10
+    cpus 20
+    label "high_mem"
 
     input:
         tuple val(epoch), val(meta)
