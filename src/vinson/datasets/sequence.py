@@ -328,6 +328,9 @@ class SequenceEmbedProfileDataset(SequenceEmbedDataset):
 
         data['obs'], data['exp'] = self.extract_obs_exp_data(sample_id, interval)
 
+        if data['revcomp']:
+            data['obs'], data['exp'] = data['obs'][::-1].copy(), data['exp'][::-1].copy()
+
         return data
 
     def extract_obs_exp_data(self, sample_id, interval):
