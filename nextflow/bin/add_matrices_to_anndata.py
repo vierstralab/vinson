@@ -85,10 +85,15 @@ def main(adata, matrices, val_chroms=("chr9", "chr21")):
     existing_epochs = list(adata.uns.get('epoch_names', []))
     adata.uns['epoch_names'] = existing_epochs + [e for e in epochs if e not in existing_epochs]
 
+    # count only the train samples x train DHSs slice.
     # leave n_training_examples untouched when there's no class layer.
     class_epochs = [e for e in adata.uns['epoch_names'] if f"class.{e}" in adata.layers]
     if class_epochs:
-        adata.uns['n_training_examples'] = sum(adata.layers[f"class.{e}"].getnnz() for e in class_epochs)
+        train_obs = adata.obsm['split_data'] == 'train'
+        train_var = adata.varm['split_data'] == 'train'
+        adata.uns['n_training_examples'] = sum(
+            adata.layers[f"class.{e}"][train_obs][:, train_var].getnnz() for e in class_epochs
+        )
 
     return adata
 
