@@ -109,8 +109,10 @@ def main(args):
             print("Setting total_steps for OneCycleLR...")
     
             train_loader = datamodule.train_dataloader()
-    
-            steps_per_epoch = len(train_loader)
+
+            # len(train_loader) counts batches before Lightning shards the data across devices (DistributedSampler).
+            # Round up: OneCycleLR raises if stepped more than total_steps times
+            steps_per_epoch = (len(train_loader) + trainer.num_devices - 1) // trainer.num_devices
     
             accumulate_grad_batches = trainer.accumulate_grad_batches
             if accumulate_grad_batches is None:

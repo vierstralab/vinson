@@ -64,6 +64,22 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.epoch_names = read_h5ad_elem(self.anndata_file, "uns/epoch_names")
 
         self.validation_epoch = self.epoch_names[0]
+        # Data is loaded lazily: validation in `val_dataloader`, one training epoch at a time in `train_dataloader`
+        self.validation_data = None
+        self.train_data = {}
+
+        self.train_epoch_cycler = cycle(self.epoch_names)
+
+        logger.info(f"Finished setup. Available epochs: {self.epoch_names}")
+
+    def load_validation_data(self):
+        """
+        Load the validation data (val split of the validation epoch). No-op if already loaded.
+        """
+        if self.validation_data is not None:
+            return
+
+        print(f"Loading validation data from epoch {self.validation_epoch}...", flush=True)
         adata = read_h5ad_epoch(self.anndata_file, self.validation_epoch)
         self.validation_data = {
             self.validation_epoch: self.get_data(
@@ -74,12 +90,8 @@ class SeqEmbedDataModule(L.LightningDataModule):
                 pre_jitter=self.pre_jitter,
             )
         }
-        # Only one training epoch is held in memory at a time, loaded in `train_dataloader`
-        self.train_data = {}
-
-        self.train_epoch_cycler = cycle(self.epoch_names)
-
-        logger.info(f"Finished setup. Available epochs: {self.epoch_names}")
+        del adata
+        gc.collect()
 
     def load_train_epoch(self, epoch):
         """
@@ -141,6 +153,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         return data_loader
 
     def val_dataloader(self):
+        self.load_validation_data()
         return DataLoader(
             self.validation_dataset(),
             shuffle=False,
