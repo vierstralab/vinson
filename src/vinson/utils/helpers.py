@@ -5,8 +5,15 @@ import io
 import urllib.request
 from contextlib import contextmanager
 from typing import List
+import h5py
+import anndata as ad
 from genome_tools import GenomicInterval, VariantInterval
 from genome_tools.helpers import is_remote
+
+try:
+    from anndata.io import read_elem
+except ImportError:  # anndata < 0.11
+    from anndata.experimental import read_elem
 
 
 def generate_run_name() -> str:
@@ -86,3 +93,25 @@ def detect_genotype_format(genotype_file):
         return False, has_header  # unphased
     else:
         raise ValueError(f"Unexpected number of columns: {n_cols}")
+
+
+def read_h5ad_elem(anndata_file, key):
+    """Read a single element (e.g. 'uns/epoch_names') of an h5ad file without loading the rest."""
+    with h5py.File(anndata_file, "r") as f:
+        if key not in f:
+            raise KeyError(f"'{key}' not found in {anndata_file}")
+        return read_elem(f[key])
+
+
+def read_h5ad_epoch(anndata_file, epoch) -> ad.AnnData:
+    """
+    Read an h5ad file into memory with only the layers of one epoch (`{layer}.{epoch}`).
+    X, obsp, varp and all other layers are not loaded.
+    """
+    with h5py.File(anndata_file, "r") as f:
+        elems = {key: read_elem(f[key]) for key in ("obs", "var", "obsm", "varm", "uns") if key in f}
+        elems["layers"] = {
+            layer: read_elem(f["layers"][layer])
+                for layer in f["layers"] if layer.endswith(f".{epoch}")
+        }
+    return ad.AnnData(**elems)

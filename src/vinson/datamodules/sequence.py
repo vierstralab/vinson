@@ -14,6 +14,7 @@ import pandas as pd
 import logging
 
 from vinson.utils.data_formatting import VinsonData
+from vinson.utils.helpers import read_h5ad_elem, read_h5ad_epoch
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +61,10 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
     def setup(self, stage):
         # changes epochs
-        adata = ad.read_h5ad(self.anndata_file)
-        if "epoch_names" not in adata.uns:
-            raise KeyError("AnnData missing 'epoch_names' in .uns")
-
-        self.epoch_names = adata.uns["epoch_names"]
+        self.epoch_names = read_h5ad_elem(self.anndata_file, "uns/epoch_names")
 
         self.validation_epoch = self.epoch_names[0]
+        adata = read_h5ad_epoch(self.anndata_file, self.validation_epoch)
         self.validation_data = {
             self.validation_epoch: self.get_data(
                 adata,
@@ -92,7 +90,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
         gc.collect()
 
         print(f"Loading training data for epoch {epoch}...", flush=True)
-        adata = ad.read_h5ad(self.anndata_file)
+        adata = read_h5ad_epoch(self.anndata_file, epoch)
         self.train_data = {
             epoch: self.get_data(
                 adata,
