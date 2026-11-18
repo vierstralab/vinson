@@ -6,7 +6,6 @@ from vinson.datasets.sequence import SequenceEmbedDataset, SequenceEmbedProfileD
 from itertools import cycle
 
 import anndata as ad
-from tqdm import tqdm
 import gc
 
 import pandas as pd
@@ -68,35 +67,43 @@ class SeqEmbedDataModule(L.LightningDataModule):
         self.epoch_names = adata.uns["epoch_names"]
 
         self.validation_epoch = self.epoch_names[0]
-
-        layer_names = list(adata.layers)
-        self.train_data = {}
-        for name in tqdm(self.epoch_names, desc="Loading training data for epochs"):
-            self.train_data[name] = self.get_data(
+        self.validation_data = {
+            self.validation_epoch: self.get_data(
                 adata,
-                name,
-                dhs_split="train",
+                self.validation_epoch,
+                dhs_split="val",
                 sample_split="train",
-                pre_jitter=self.pre_jitter
+                pre_jitter=self.pre_jitter,
             )
-            if name == self.validation_epoch:
-                self.validation_data = {
-                    self.validation_epoch: self.get_data(
-                        adata,
-                        self.validation_epoch,
-                        dhs_split="val",
-                        sample_split="train",
-                        pre_jitter=self.pre_jitter,
-                    )
-                }
-            for layer in layer_names:
-                if layer.endswith(name):
-                    del adata.layers[layer]
-                    gc.collect()
+        }
+        # Only one training epoch is held in memory at a time, loaded in `train_dataloader`
+        self.train_data = {}
 
         self.train_epoch_cycler = cycle(self.epoch_names)
 
         logger.info(f"Finished setup. Available epochs: {self.epoch_names}")
+
+    def load_train_epoch(self, epoch):
+        """
+        Replace the training data held in memory with the data of `epoch`.
+        """
+        # free the previous epoch before reading the next one
+        self.train_data = {}
+        gc.collect()
+
+        print(f"Loading training data for epoch {epoch}...", flush=True)
+        adata = ad.read_h5ad(self.anndata_file)
+        self.train_data = {
+            epoch: self.get_data(
+                adata,
+                epoch,
+                dhs_split="train",
+                sample_split="train",
+                pre_jitter=self.pre_jitter
+            )
+        }
+        del adata
+        gc.collect()
 
     def train_dataset(self, epoch=None):
         if epoch is None:
@@ -125,6 +132,7 @@ class SeqEmbedDataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         self.current_train_epoch = next(self.train_epoch_cycler)
+        self.load_train_epoch(self.current_train_epoch)
         # Cycle to next file index
         # Create new dataloader
         data_loader = DataLoader(
