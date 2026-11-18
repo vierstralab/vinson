@@ -126,7 +126,7 @@ def extract_data_from_train_anndata(train_adata: ad.AnnData, suffix: str, pre_ji
     
     data, encodings = sanitize_data(DHS, data, encodings, is_inference=False)
 
-    embeddings_df = train_adata.obsm['motif_embeddings']
+    embeddings_df = train_adata.obsm['motif_embeddings'].copy() # .copy(): a view would keep the full parent AnnData alive
     return VinsonData(
         data,
         encodings=encodings,
@@ -198,7 +198,7 @@ def extract_variant_data_from_anndata(train_adata: ad.AnnData, suffix: str = Non
         data['indiv_id'] = encoding_sources["indiv_id"][row_idx]
     
     data, encodings = sanitize_data(VARIANT, data, encodings, is_inference=False)
-    embeddings_df = train_adata.obsm['motif_embeddings']
+    embeddings_df = train_adata.obsm['motif_embeddings'].copy() # .copy(): a view would keep the full parent AnnData alive
 
     return VariantVinsonData(
         data,
@@ -242,7 +242,7 @@ def _extract_wide_raw(
         data[layer] = compute_if_dask(adata_slice.layers[layer]).T
 
     if with_embeddings:
-        return data, encodings, adata_slice.obsm["motif_embeddings"]
+        return data, encodings, adata_slice.obsm["motif_embeddings"].copy()
     return data, encodings, None
 
 
